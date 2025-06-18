@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: adsynthe-x
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: GOOGLE_ADS_CLIENT_ID
+        sync: false
+      - key: GOOGLE_ADS_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_ADS_DEVELOPER_TOKEN
+        sync: false
+      - key: GOOGLE_ADS_REFRESH_TOKEN
+        sync: false
+      - key: GOOGLE_ADS_MANAGER_ID
+        sync: false
+      - key: ADSCOM_API_KEY
+        sync: false
+      - key: ADSCOM_API_SECRET
+        sync: false 
