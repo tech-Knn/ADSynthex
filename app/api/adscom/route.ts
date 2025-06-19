@@ -45,6 +45,7 @@ const transformApiData = (apiResponse: any): AdsComResponse => {
       // Calculate metrics
       const visits = parseInt(item.visits) || 0;
       const clicks = parseInt(item.clicks) || 0;
+      // Calculate CTR ourselves instead of using API value
       const ctr = visits > 0 ? `${((clicks / visits) * 100).toFixed(2)}%` : '0.00%';
       const revenue = parseFloat(item.estimated_revenue) || 0;
       const rpm = visits > 0 ? (revenue / visits) * 1000 : 0;
@@ -186,7 +187,6 @@ export async function POST(request: NextRequest) {
           'country_code',
           'visits',
           'clicks',
-          'ctr',
           'estimated_revenue'
         ],
         filter_by: [

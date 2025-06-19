@@ -13,9 +13,55 @@ import {
 } from '@ant-design/icons';
 import { AdsComArticleData } from '../../lib/adscom-api';
 import { GoogleAdsAd } from '../../lib/google-ads-api';
+import Flag from 'react-world-flags';
 
 const { Panel } = Collapse;
 const { Title, Text } = Typography;
+
+// Country flag mapping
+const countryFlagEmoji = (countryCode: string): string => {
+  // Return empty string for N/A or invalid codes
+  if (!countryCode || countryCode.toLowerCase() === 'n/a' || countryCode.length > 2) {
+    return '';
+  }
+  
+  // Convert country code to regional indicator symbols (flag emoji)
+  const countryCodeUpper = countryCode.toUpperCase();
+  const codePoints = [
+    127397 + countryCodeUpper.charCodeAt(0),
+    127397 + countryCodeUpper.charCodeAt(1)
+  ];
+  
+  return String.fromCodePoint(...codePoints);
+};
+
+// Get full country name from code (optional enhancement)
+const getCountryName = (countryCode: string): string => {
+  const countryNames: {[key: string]: string} = {
+    'us': 'United States',
+    'ca': 'Canada',
+    'gb': 'United Kingdom',
+    'fr': 'France',
+    'de': 'Germany',
+    'it': 'Italy',
+    'es': 'Spain',
+    'br': 'Brazil',
+    'au': 'Australia',
+    'jp': 'Japan',
+    'cn': 'China',
+    'in': 'India',
+    'ru': 'Russia',
+    'mx': 'Mexico',
+    'id': 'Indonesia',
+    'ph': 'Philippines',
+    'ni': 'Nicaragua',
+    've': 'Venezuela',
+    // Add more as needed
+  };
+  
+  const code = countryCode.toLowerCase();
+  return countryNames[code] || countryCode.toUpperCase();
+};
 
 interface DataTableProps {
   revenueData: AdsComArticleData[];
@@ -95,6 +141,33 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
     return country;
   };
 
+  // Render country with flag
+  const renderCountryWithFlag = (country: string): React.ReactNode => {
+    if (!country) return <Tag>No country data</Tag>;
+    
+    // If country contains a number followed by 'countries'
+    if (/\d+\s+countries/.test(country)) {
+      return <Tag color="blue">{country}</Tag>;
+    }
+    
+    // If just a country code like 'us', 'id', etc.
+    if (country.length <= 2) {
+      const countryCode = country.toLowerCase();
+      return (
+        <Tag color="blue" className="country-tag">
+          <div className="country-code-display">
+            <span className="country-flag">
+              <Flag code={countryCode} height="16" />
+            </span>
+            <strong>{country.toUpperCase()}</strong>
+          </div>
+        </Tag>
+      );
+    }
+    
+    return <Tag color="blue">{country}</Tag>;
+  };
+
   // Get ROI status color
   const getRoiStatusColor = (roi: number) => {
     if (roi >= 50) return 'success';
@@ -162,6 +235,203 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
       </div>
     );
   };
+
+  // Define table columns
+  const columns = [
+    {
+      title: 'Article',
+      dataIndex: 'article',
+      key: 'article',
+      render: (text: string, record: CombinedRowData) => (
+        <div className="article-info">
+          <div className="article-title">
+            {record.article ? (
+              record.article.includes('-') 
+                ? formatArticleTitle(record.slug)
+                : record.article.includes('/') 
+                  ? formatArticleTitle(record.slug)
+                  : record.article
+            ) : formatArticleTitle(record.slug)}
+          </div>
+          {renderCountryWithFlag(record.country)}
+        </div>
+      ),
+      width: '25%',
+      fixed: 'left' as const,
+    },
+    {
+      title: 'Google Ads Metrics',
+      children: [
+        {
+          title: 'Conversion',
+          dataIndex: 'conversions',
+          key: 'conversions',
+          render: (value: number, record: CombinedRowData) => {
+            // Ensure conversions are displayed properly, use 0 as fallback
+            const conversions = Number(record.conversions || 0);
+            return safeFormat.number(conversions);
+          },
+          width: '7%',
+        },
+        {
+          title: 'Conv. Rate',
+          dataIndex: 'conversionRate',
+          key: 'conversionRate',
+          render: (value: number, record: CombinedRowData) => {
+            // First check if we have API-provided conversion rate
+            if (record.apiMetrics?.conversionRate && record.apiMetrics.conversionRate > 0) {
+              return safeFormat.percentage(record.apiMetrics.conversionRate);
+            }
+            
+            // If not, calculate conversion rate using formula: (conversion/clicks on ads)*100
+            const conversions = Number(record.conversions || 0);
+            const clicks = Number(record.costClicks || 0);
+            const convRate = clicks > 0 ? (conversions / clicks) * 100 : 0;
+            return safeFormat.percentage(convRate);
+          },
+          width: '7%',
+        },
+        {
+          title: 'CPC',
+          dataIndex: 'cpc',
+          key: 'cpc',
+          render: (value: number, record: CombinedRowData) => {
+            // Ensure we're using the calculated CPC or 0
+            const cpc = Number(record.cpc || 0);
+            return `$${safeFormat.currency(cpc, 2)}`;
+          },
+          width: '7%',
+        },
+        {
+          title: 'CPA',
+          dataIndex: 'cpa',
+          key: 'cpa',
+          render: (value: number, record: CombinedRowData) => {
+            // First check if we have API-provided CPA
+            if (record.apiMetrics?.cpa && record.apiMetrics.cpa > 0) {
+              return `$${safeFormat.currency(record.apiMetrics.cpa, 2)}`;
+            }
+            
+            // If not, calculate CPA using formula: cost/conversion
+            const conversions = Number(record.conversions || 0);
+            const cost = Number(record.cost || 0);
+            const cpa = conversions > 0 ? cost / conversions : 0;
+            return `$${safeFormat.currency(cpa, 2)}`;
+          },
+          width: '7%',
+        },
+        {
+          title: 'CTR',
+          dataIndex: 'costCtr',
+          key: 'costCtr',
+          render: (value: number, record: CombinedRowData) => {
+            // Ensure we're using the calculated CTR or 0
+            const ctr = Number(record.costCtr || 0);
+            return safeFormat.percentage(ctr);
+          },
+          width: '7%',
+        },
+        {
+          title: 'Cost',
+          dataIndex: 'cost',
+          key: 'cost',
+          render: (value: number, record: CombinedRowData) => {
+            // Ensure we're using a valid cost value
+            const cost = Number(record.cost || 0);
+            return (
+              <div className="metric-value text-error">${safeFormat.currency(cost, 2)}</div>
+            );
+          },
+          width: '7%',
+        },
+      ],
+    },
+    {
+      title: 'Ads.com Metrics',
+      children: [
+        {
+          title: 'Visits',
+          dataIndex: 'visits',
+          key: 'visits',
+          render: (value: number) => safeFormat.number(value),
+          width: '6%',
+        },
+        {
+          title: 'CTR',
+          dataIndex: 'ctr',
+          key: 'ctr',
+          render: (value: number) => safeFormat.percentage(value),
+          width: '6%',
+        },
+        {
+          title: 'EPC',
+          dataIndex: 'epc',
+          key: 'epc',
+          render: (value: number) => `$${safeFormat.currency(value, 4)}`,
+          width: '6%',
+        },
+        {
+          title: 'Clicks',
+          dataIndex: 'clicks',
+          key: 'clicks',
+          render: (value: number) => safeFormat.number(value),
+          width: '6%',
+        },
+        {
+          title: 'RPM',
+          dataIndex: 'rpm',
+          key: 'rpm',
+          render: (value: number) => `$${safeFormat.currency(value, 2)}`,
+          width: '6%',
+        },
+        {
+          title: 'Revenue',
+          dataIndex: 'revenue',
+          key: 'revenue',
+          render: (value: number, record: CombinedRowData) => formatRevenueDisplay(value, record.finalized),
+          width: '6%',
+        },
+        {
+          title: 'Profit',
+          dataIndex: 'profit',
+          key: 'profit',
+          render: (value: number) => (
+            <div className={`metric-value ${value >= 0 ? 'profit-positive' : 'profit-negative'}`}>
+              ${safeFormat.currency(Math.abs(value), 2)}
+              {value >= 0 ? (
+                <RiseOutlined className="metric-icon profit-positive" style={{ marginLeft: '5px' }} />
+              ) : (
+                <FallOutlined className="metric-icon profit-negative" style={{ marginLeft: '5px' }} />
+              )}
+            </div>
+          ),
+          width: '6%',
+        },
+        {
+          title: 'ROI',
+          dataIndex: 'roi',
+          key: 'roi',
+          render: (value: number, record: CombinedRowData) => (
+            <div className={`roi-value ${getRoiStatusColor(value) === 'success' ? 'text-success' : getRoiStatusColor(value) === 'warning' ? 'text-warning' : 'text-error'}`}>
+              {safeFormat.percentage(value, 1)}
+            </div>
+          ),
+          width: '6%',
+        },
+        {
+          title: 'IVT',
+          dataIndex: 'ivtCorrection',
+          key: 'ivtCorrection',
+          render: (value: number) => (
+            <div className={value >= 0 ? 'text-success' : 'text-error'}>
+              {value >= 0 ? '+' : ''}${safeFormat.currency(value, 2)}
+            </div>
+          ),
+          width: '6%',
+        },
+      ],
+    }
+  ];
 
   // Process and combine data
   const combinedData = useMemo(() => {
@@ -384,206 +654,106 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
     );
   };
 
-  // Define table columns
-  const columns = [
-    {
-      title: 'Article',
-      dataIndex: 'article',
-      key: 'article',
-      render: (text: string, record: CombinedRowData) => (
-        <div className="article-info">
-          <div className="article-title">
-            {record.article ? (
-              record.article.includes('-') 
-                ? formatArticleTitle(record.slug)
-                : record.article.includes('/') 
-                  ? formatArticleTitle(record.slug)
-                  : record.article
-            ) : formatArticleTitle(record.slug)}
-          </div>
-          {record.country ? (
-            <Tag color="blue">{formatCountryDisplay(record.country)}</Tag>
-          ) : (
-            <Tag>No country data</Tag>
-          )}
-        </div>
-      ),
-      width: '25%',
-      fixed: 'left' as const,
-    },
-    {
-      title: 'Google Ads Metrics',
-      children: [
-        {
-          title: 'Conversion',
-          dataIndex: 'conversions',
-          key: 'conversions',
-          render: (value: number, record: CombinedRowData) => {
-            // Ensure conversions are displayed properly, use 0 as fallback
-            const conversions = Number(record.conversions || 0);
-            return safeFormat.number(conversions);
-          },
-          width: '7%',
-        },
-        {
-          title: 'Conv. Rate',
-          dataIndex: 'conversionRate',
-          key: 'conversionRate',
-          render: (value: number, record: CombinedRowData) => {
-            // First check if we have API-provided conversion rate
-            if (record.apiMetrics?.conversionRate && record.apiMetrics.conversionRate > 0) {
-              return safeFormat.percentage(record.apiMetrics.conversionRate);
-            }
-            
-            // If not, calculate conversion rate using formula: (conversion/clicks on ads)*100
-            const conversions = Number(record.conversions || 0);
-            const clicks = Number(record.costClicks || 0);
-            const convRate = clicks > 0 ? (conversions / clicks) * 100 : 0;
-            return safeFormat.percentage(convRate);
-          },
-          width: '7%',
-        },
-        {
-          title: 'CPC',
-          dataIndex: 'cpc',
-          key: 'cpc',
-          render: (value: number, record: CombinedRowData) => {
-            // Ensure we're using the calculated CPC or 0
-            const cpc = Number(record.cpc || 0);
-            return `$${safeFormat.currency(cpc, 2)}`;
-          },
-          width: '7%',
-        },
-        {
-          title: 'CPA',
-          dataIndex: 'cpa',
-          key: 'cpa',
-          render: (value: number, record: CombinedRowData) => {
-            // First check if we have API-provided CPA
-            if (record.apiMetrics?.cpa && record.apiMetrics.cpa > 0) {
-              return `$${safeFormat.currency(record.apiMetrics.cpa, 2)}`;
-            }
-            
-            // If not, calculate CPA using formula: cost/conversion
-            const conversions = Number(record.conversions || 0);
-            const cost = Number(record.cost || 0);
-            const cpa = conversions > 0 ? cost / conversions : 0;
-            return `$${safeFormat.currency(cpa, 2)}`;
-          },
-          width: '7%',
-        },
-        {
-          title: 'CTR',
-          dataIndex: 'costCtr',
-          key: 'costCtr',
-          render: (value: number, record: CombinedRowData) => {
-            // Ensure we're using the calculated CTR or 0
-            const ctr = Number(record.costCtr || 0);
-            return safeFormat.percentage(ctr);
-          },
-          width: '7%',
-        },
-        {
-          title: 'Cost',
-          dataIndex: 'cost',
-          key: 'cost',
-          render: (value: number, record: CombinedRowData) => {
-            // Ensure we're using a valid cost value
-            const cost = Number(record.cost || 0);
-            return (
-              <div className="metric-value text-error">${safeFormat.currency(cost, 2)}</div>
-            );
-          },
-          width: '7%',
-        },
-      ],
-    },
-    {
-      title: 'Ads.com Metrics',
-      children: [
-        {
-          title: 'Visits',
-          dataIndex: 'visits',
-          key: 'visits',
-          render: (value: number) => safeFormat.number(value),
-          width: '6%',
-        },
-        {
-          title: 'CTR',
-          dataIndex: 'ctr',
-          key: 'ctr',
-          render: (value: number) => safeFormat.percentage(value),
-          width: '6%',
-        },
-        {
-          title: 'EPC',
-          dataIndex: 'epc',
-          key: 'epc',
-          render: (value: number) => `$${safeFormat.currency(value, 4)}`,
-          width: '6%',
-        },
-        {
-          title: 'Clicks',
-          dataIndex: 'clicks',
-          key: 'clicks',
-          render: (value: number) => safeFormat.number(value),
-          width: '6%',
-        },
-        {
-          title: 'RPM',
-          dataIndex: 'rpm',
-          key: 'rpm',
-          render: (value: number) => `$${safeFormat.currency(value, 2)}`,
-          width: '6%',
-        },
-        {
-          title: 'Revenue',
-          dataIndex: 'revenue',
-          key: 'revenue',
-          render: (value: number, record: CombinedRowData) => formatRevenueDisplay(value, record.finalized),
-          width: '6%',
-        },
-        {
-          title: 'Profit',
-          dataIndex: 'profit',
-          key: 'profit',
-          render: (value: number) => (
-            <div className={`metric-value ${value >= 0 ? 'profit-positive' : 'profit-negative'}`}>
-              ${safeFormat.currency(Math.abs(value), 2)}
-              {value >= 0 ? (
-                <RiseOutlined className="metric-icon profit-positive" style={{ marginLeft: '5px' }} />
-              ) : (
-                <FallOutlined className="metric-icon profit-negative" style={{ marginLeft: '5px' }} />
-              )}
-            </div>
-          ),
-          width: '6%',
-        },
-        {
-          title: 'ROI',
-          dataIndex: 'roi',
-          key: 'roi',
-          render: (value: number, record: CombinedRowData) => (
-            <div className={`roi-value ${getRoiStatusColor(value) === 'success' ? 'text-success' : getRoiStatusColor(value) === 'warning' ? 'text-warning' : 'text-error'}`}>
-              {safeFormat.percentage(value, 1)}
-            </div>
-          ),
-          width: '6%',
-        },
-        {
-          title: 'IVT',
-          dataIndex: 'ivtCorrection',
-          key: 'ivtCorrection',
-          render: (value: number) => (
-            <div className={value >= 0 ? 'text-success' : 'text-error'}>
-              {value >= 0 ? '+' : ''}${safeFormat.currency(value, 2)}
-            </div>
-          ),
-          width: '6%',
-        },
-      ],
+  // Generate mock country breakdown data
+  const generateCountryBreakdown = (record: CombinedRowData) => {
+    // Extract country information from the record
+    const countryText = record.country || '';
+    const countryCount = parseInt(countryText.match(/\d+/)?.[0] || '0');
+    
+    // Create country-specific data entries
+    const countryData = [];
+    
+    // Common country codes for demonstration - expanded list with more countries
+    const countryCodes = [
+      'id', 'au', 'us', 'br', 'it', 'in', 'ph', 'es', 'gb', 'ca', 
+      'fr', 'de', 'mx', 'jp', 'cn', 'ru', 'ar', 'nl', 'se', 'sg'
+    ];
+    const totalVisits = record.visits;
+    const totalClicks = record.clicks;
+    const totalRevenue = record.revenue;
+    const totalCost = record.cost;
+    
+    // Generate country breakdown data
+    const countriesToShow = Math.min(countryCount || 10, 20);
+    
+    for (let i = 0; i < countriesToShow; i++) {
+      // Create random but realistic distribution of metrics
+      const countryCode = countryCodes[i % countryCodes.length];
+      const visitShare = Math.random() * 0.3 + 0.01; // 1% to 31% of total visits
+      const visits = Math.round(totalVisits * visitShare);
+      const clickRate = Math.random() * 2 + 0.5; // 0.5x to 2.5x the average CTR
+      const clicks = Math.round(visits * clickRate * (record.ctr / 100));
+      const ctr = clicks > 0 && visits > 0 ? (clicks / visits) * 100 : 0;
+      
+      // Calculate additional metrics for this country
+      const revenueShare = Math.random() * 0.4 + 0.01; // 1% to 41% of total revenue
+      const revenue = Math.round(totalRevenue * revenueShare * 100) / 100;
+      const rpm = visits > 0 ? (revenue / visits) * 1000 : 0;
+      const epc = clicks > 0 ? revenue / clicks : 0;
+      
+      // Google Ads metrics
+      const costShare = Math.random() * 0.35 + 0.01; // 1% to 36% of total cost
+      const cost = Math.round(totalCost * costShare * 100) / 100;
+      const impressions = Math.round(visits * (Math.random() * 3 + 1.5)); // 1.5x to 4.5x visits
+      const costClicks = Math.round(clicks * (Math.random() * 0.5 + 0.5)); // 50% to 100% of clicks
+      const costCtr = impressions > 0 ? (costClicks / impressions) * 100 : 0;
+      const cpc = costClicks > 0 ? cost / costClicks : 0;
+      const conversions = Math.round(costClicks * (Math.random() * 0.1)); // 0% to 10% conversion rate
+      const conversionRate = costClicks > 0 ? (conversions / costClicks) * 100 : 0;
+      const cpa = conversions > 0 ? cost / conversions : 0;
+      
+      // Calculate profit and ROI
+      const profit = revenue - cost;
+      const roi = cost > 0 ? (profit / cost) * 100 : revenue > 0 ? Infinity : 0;
+      
+      countryData.push({
+        key: countryCode,
+        country: countryCode,
+        visits: visits,
+        clicks: clicks,
+        ctr: ctr,
+        rpm: rpm,
+        epc: epc,
+        revenue: revenue,
+        impressions: impressions,
+        costClicks: costClicks,
+        costCtr: costCtr,
+        cpc: cpc,
+        cost: cost,
+        profit: profit,
+        roi: roi,
+        conversions: conversions,
+        conversionRate: conversionRate,
+        cpa: cpa
+      });
     }
-  ];
+    
+    // If we have N/A data, add it as well
+    countryData.push({
+      key: 'n/a',
+      country: 'N/A',
+      countryName: 'N/A',
+      visits: Math.round(totalVisits * 0.05),
+      clicks: Math.round(totalClicks * 0.03),
+      ctr: 30.0,
+      rpm: Math.round(record.rpm * 0.8 * 100) / 100,
+      epc: Math.round(record.epc * 0.7 * 10000) / 10000,
+      revenue: Math.round(totalRevenue * 0.04 * 100) / 100,
+      impressions: Math.round(totalVisits * 0.05 * 2),
+      costClicks: Math.round(totalClicks * 0.03 * 0.7),
+      costCtr: 25.0,
+      cpc: Math.round(record.cpc * 0.9 * 100) / 100,
+      cost: Math.round(totalCost * 0.03 * 100) / 100,
+      profit: Math.round((totalRevenue * 0.04 - totalCost * 0.03) * 100) / 100,
+      roi: Math.round(((totalRevenue * 0.04 - totalCost * 0.03) / (totalCost * 0.03)) * 100),
+      conversions: Math.round(totalClicks * 0.03 * 0.7 * 0.05),
+      conversionRate: 5.0,
+      cpa: Math.round(record.cpc * 20 * 100) / 100
+    });
+    
+    // Sort by visits (highest first)
+    return countryData.sort((a, b) => b.visits - a.visits);
+  };
 
   // Define expandable row render function
   const expandedRowRender = (record: CombinedRowData) => (
@@ -604,32 +774,143 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
                 title: 'Country',
                 dataIndex: 'country',
                 key: 'country',
-                render: (text: string) => (
-                  <div className="country-code-display">
-                    <strong>{text.toUpperCase()}</strong>
-                  </div>
-                ),
+                render: (text: string) => {
+                  if (text === 'N/A') {
+                    return (
+                      <div className="country-code-display">
+                        <strong>N/A</strong>
+                      </div>
+                    );
+                  }
+                  
+                  return (
+                    <div className="country-code-display">
+                      <Flag code={text} height="16" className="country-flag-image" />
+                      <strong>{text.toUpperCase()}</strong>
+                    </div>
+                  );
+                },
+                fixed: 'left' as const,
               },
               {
-                title: 'Visits',
-                dataIndex: 'visits',
-                key: 'visits',
+                title: 'Google Ads Metrics',
+                children: [
+                  {
+                    title: 'Conversion',
+                    dataIndex: 'conversions',
+                    key: 'conversions',
+                    render: (value: number) => safeFormat.number(value),
+                  },
+                  {
+                    title: 'Conv. Rate',
+                    dataIndex: 'conversionRate',
+                    key: 'conversionRate',
+                    render: (value: number) => safeFormat.percentage(value),
+                  },
+                  {
+                    title: 'CPC',
+                    dataIndex: 'cpc',
+                    key: 'cpc',
+                    render: (value: number) => `$${safeFormat.currency(value, 2)}`,
+                  },
+                  {
+                    title: 'CPA',
+                    dataIndex: 'cpa',
+                    key: 'cpa',
+                    render: (value: number) => `$${safeFormat.currency(value, 2)}`,
+                  },
+                  {
+                    title: 'CTR',
+                    dataIndex: 'costCtr',
+                    key: 'costCtr',
+                    render: (value: number) => safeFormat.percentage(value),
+                  },
+                  {
+                    title: 'Cost',
+                    dataIndex: 'cost',
+                    key: 'cost',
+                    render: (value: number) => (
+                      <div className="metric-value text-error">${safeFormat.currency(value, 2)}</div>
+                    ),
+                  },
+                ]
               },
               {
-                title: 'Clicks',
-                dataIndex: 'clicks',
-                key: 'clicks',
+                title: 'Ads.com Metrics',
+                children: [
+                  {
+                    title: 'Visits',
+                    dataIndex: 'visits',
+                    key: 'visits',
+                    render: (value: number) => safeFormat.number(value),
+                  },
+                  {
+                    title: 'CTR',
+                    dataIndex: 'ctr',
+                    key: 'ctr',
+                    render: (value: number) => safeFormat.percentage(value),
+                  },
+                  {
+                    title: 'EPC',
+                    dataIndex: 'epc',
+                    key: 'epc',
+                    render: (value: number) => `$${safeFormat.currency(value, 4)}`,
+                  },
+                  {
+                    title: 'Clicks',
+                    dataIndex: 'clicks',
+                    key: 'clicks',
+                    render: (value: number) => safeFormat.number(value),
+                  },
+                  {
+                    title: 'RPM',
+                    dataIndex: 'rpm',
+                    key: 'rpm',
+                    render: (value: number) => `$${safeFormat.currency(value, 2)}`,
+                  },
+                  {
+                    title: 'Revenue',
+                    dataIndex: 'revenue',
+                    key: 'revenue',
+                    render: (value: number) => `$${safeFormat.currency(value, 2)}`,
+                  },
+                ]
               },
               {
-                title: 'CTR',
-                dataIndex: 'ctr',
-                key: 'ctr',
-                render: (value: number) => safeFormat.percentage(value),
-              },
+                title: 'Performance',
+                children: [
+                  {
+                    title: 'Profit',
+                    dataIndex: 'profit',
+                    key: 'profit',
+                    render: (value: number) => (
+                      <div className={`metric-value ${value >= 0 ? 'profit-positive' : 'profit-negative'}`}>
+                        ${safeFormat.currency(Math.abs(value), 2)}
+                        {value >= 0 ? (
+                          <RiseOutlined className="metric-icon profit-positive" style={{ marginLeft: '5px' }} />
+                        ) : (
+                          <FallOutlined className="metric-icon profit-negative" style={{ marginLeft: '5px' }} />
+                        )}
+                      </div>
+                    ),
+                  },
+                  {
+                    title: 'ROI',
+                    dataIndex: 'roi',
+                    key: 'roi',
+                    render: (value: number) => (
+                      <div className={`roi-value ${getRoiStatusColor(value) === 'success' ? 'text-success' : getRoiStatusColor(value) === 'warning' ? 'text-warning' : 'text-error'}`}>
+                        {safeFormat.percentage(value, 1)}
+                      </div>
+                    ),
+                  },
+                ]
+              }
             ]}
             pagination={false}
             size="small"
             className="country-breakdown-table"
+            scroll={{ x: 1500 }}
           />
         </Card>
       ) : (
@@ -655,54 +936,6 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
       )}
     </div>
   );
-
-  // Generate mock country breakdown data
-  const generateCountryBreakdown = (record: CombinedRowData) => {
-    // Extract country information from the record
-    const countryText = record.country || '';
-    const countryCount = parseInt(countryText.match(/\d+/)?.[0] || '0');
-    
-    // Create country-specific data entries
-    const countryData = [];
-    
-    // Common country codes for demonstration
-    const countryCodes = ['br', 've', 'ph', 'ni', 'id', 'gb', 'us', 'ca', 'fr', 'de'];
-    const totalVisits = record.visits;
-    const totalClicks = record.clicks;
-    
-    // Generate country breakdown data
-    const countriesToShow = Math.min(countryCount || 5, 10);
-    
-    for (let i = 0; i < countriesToShow; i++) {
-      // Create random but realistic distribution of metrics
-      const countryCode = countryCodes[i % countryCodes.length];
-      const visitShare = Math.random() * 0.3 + 0.01; // 1% to 31% of total visits
-      const visits = Math.round(totalVisits * visitShare);
-      const clickRate = Math.random() * 2 + 0.5; // 0.5x to 2.5x the average CTR
-      const clicks = Math.round(visits * clickRate * (record.ctr / 100));
-      const ctr = clicks > 0 && visits > 0 ? (clicks / visits) * 100 : 0;
-      
-      countryData.push({
-        key: countryCode,
-        country: countryCode,
-        visits: visits,
-        clicks: clicks,
-        ctr: ctr
-      });
-    }
-    
-    // If we have N/A data, add it as well
-    countryData.push({
-      key: 'n/a',
-      country: 'N/A',
-      visits: Math.round(totalVisits * 0.05),
-      clicks: Math.round(totalClicks * 0.03),
-      ctr: 30.0
-    });
-    
-    // Sort by visits (highest first)
-    return countryData.sort((a, b) => b.visits - a.visits);
-  };
 
   return (
     <div className="article-performance-container fade-in">
@@ -1092,6 +1325,77 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
         
         .country-icon {
           background: var(--primary-gradient);
+        }
+        
+        /* Add styles for country breakdown table */
+        .country-breakdown-table .ant-table-thead > tr > th {
+          background-color: #f0f2f5;
+          font-weight: 600;
+          text-align: center;
+          font-size: 12px;
+          padding: 8px 4px;
+        }
+        
+        .country-breakdown-table .ant-table-tbody > tr > td {
+          padding: 8px 4px;
+          font-size: 12px;
+          text-align: center;
+        }
+        
+        .country-breakdown-table .ant-table-cell-fix-left {
+          background: white;
+          z-index: 2;
+        }
+        
+        .country-breakdown-table .ant-table-container {
+          overflow-x: auto;
+        }
+        
+        .country-flag {
+          display: inline-block;
+          margin-right: 6px;
+          vertical-align: middle;
+        }
+        
+        .country-code-display {
+          display: flex;
+          align-items: center;
+          font-weight: 500;
+        }
+        
+        .country-code-display strong {
+          text-transform: uppercase;
+          margin-left: 4px;
+        }
+        
+        .country-tag {
+          display: flex;
+          align-items: center;
+          padding: 2px 8px;
+        }
+        
+        /* Fix flag sizing and alignment */
+        .country-flag img, .country-flag-image {
+          border: 1px solid rgba(0,0,0,0.1);
+          border-radius: 2px;
+          object-fit: cover;
+          vertical-align: middle;
+          box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+          margin-right: 4px;
+        }
+        
+        /* Country breakdown table styling to match screenshot */
+        .country-breakdown-table .country-code-display {
+          display: flex;
+          align-items: center;
+          padding: 4px 0;
+          justify-content: center;
+        }
+        
+        .country-breakdown-table .country-code-display strong {
+          font-weight: 600;
+          font-size: 13px;
+          color: #333;
         }
       `}</style>
     </div>
