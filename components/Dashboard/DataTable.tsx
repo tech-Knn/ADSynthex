@@ -79,8 +79,6 @@ interface CombinedRowData {
   rpm: number;
   epc: number;
   revenue: number;
-  initialRevenue: number;
-  ivtCorrection: number;
   impressions: number;
   costClicks: number;
   costCtr: number;
@@ -100,6 +98,23 @@ interface CombinedRowData {
 const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
   const [searchText, setSearchText] = useState('');
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
+  const [pageSize, setPageSize] = useState<number>(10);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [countryPageSize, setCountryPageSize] = useState<number>(10);
+  const [sortedInfo, setSortedInfo] = useState<{
+    columnKey: string | null;
+    order: 'ascend' | 'descend' | null;
+  }>({
+    columnKey: 'profit',
+    order: 'descend',
+  });
+  const [countrySortedInfo, setCountrySortedInfo] = useState<{
+    columnKey: string | null;
+    order: 'ascend' | 'descend' | null;
+  }>({
+    columnKey: 'visits',
+    order: 'descend',
+  });
 
   // Helper to normalize slugs (lowercase, trim slash, remove extension)
   const normalizeSlug = (raw: string): string => {
@@ -187,7 +202,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
     // If no costs at all, show N/A or infinity indicator
     if (cost === 0) {
       return revenue > 0 ? (
-        <span className="roi-value roi-success">∞%</span>
+        <span className="roi-value roi-success">Infinity%</span>
       ) : (
         <span className="roi-value roi-neutral">N/A</span>
       );
@@ -195,7 +210,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
     
     // For Infinity case (just in case)
     if (!isFinite(roi)) {
-      return <span className="roi-value roi-success">∞%</span>;
+      return <span className="roi-value roi-success">Infinity%</span>;
     }
     
     // Normal ROI calculation
@@ -258,6 +273,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
       ),
       width: '25%',
       fixed: 'left' as const,
+      sorter: (a: CombinedRowData, b: CombinedRowData) => a.article.localeCompare(b.article),
     },
     {
       title: 'Google Ads Metrics',
@@ -272,6 +288,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
             return safeFormat.number(conversions);
           },
           width: '7%',
+          sorter: (a: CombinedRowData, b: CombinedRowData) => (a.conversions || 0) - (b.conversions || 0),
         },
         {
           title: 'Conv. Rate',
@@ -290,6 +307,11 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
             return safeFormat.percentage(convRate);
           },
           width: '7%',
+          sorter: (a: CombinedRowData, b: CombinedRowData) => {
+            const aRate = a.apiMetrics?.conversionRate || ((a.conversions || 0) / (a.costClicks || 1)) * 100;
+            const bRate = b.apiMetrics?.conversionRate || ((b.conversions || 0) / (b.costClicks || 1)) * 100;
+            return aRate - bRate;
+          },
         },
         {
           title: 'CPC',
@@ -301,6 +323,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
             return `$${safeFormat.currency(cpc, 2)}`;
           },
           width: '7%',
+          sorter: (a: CombinedRowData, b: CombinedRowData) => (a.cpc || 0) - (b.cpc || 0),
         },
         {
           title: 'CPA',
@@ -319,6 +342,11 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
             return `$${safeFormat.currency(cpa, 2)}`;
           },
           width: '7%',
+          sorter: (a: CombinedRowData, b: CombinedRowData) => {
+            const aCpa = a.apiMetrics?.cpa || ((a.conversions || 0) > 0 ? (a.cost || 0) / (a.conversions || 1) : 0);
+            const bCpa = b.apiMetrics?.cpa || ((b.conversions || 0) > 0 ? (b.cost || 0) / (b.conversions || 1) : 0);
+            return aCpa - bCpa;
+          },
         },
         {
           title: 'CTR',
@@ -330,6 +358,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
             return safeFormat.percentage(ctr);
           },
           width: '7%',
+          sorter: (a: CombinedRowData, b: CombinedRowData) => (a.costCtr || 0) - (b.costCtr || 0),
         },
         {
           title: 'Cost',
@@ -343,6 +372,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
             );
           },
           width: '7%',
+          sorter: (a: CombinedRowData, b: CombinedRowData) => (a.cost || 0) - (b.cost || 0),
         },
       ],
     },
@@ -355,6 +385,8 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           key: 'visits',
           render: (value: number) => safeFormat.number(value),
           width: '6%',
+          sorter: (a: any, b: any) => a.visits - b.visits,
+          defaultSortOrder: 'descend' as const,
         },
         {
           title: 'CTR',
@@ -362,6 +394,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           key: 'ctr',
           render: (value: number) => safeFormat.percentage(value),
           width: '6%',
+          sorter: (a: CombinedRowData, b: CombinedRowData) => a.ctr - b.ctr,
         },
         {
           title: 'EPC',
@@ -369,6 +402,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           key: 'epc',
           render: (value: number) => `$${safeFormat.currency(value, 4)}`,
           width: '6%',
+          sorter: (a: CombinedRowData, b: CombinedRowData) => a.epc - b.epc,
         },
         {
           title: 'Clicks',
@@ -376,13 +410,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           key: 'clicks',
           render: (value: number) => safeFormat.number(value),
           width: '6%',
-        },
-        {
-          title: 'RPM',
-          dataIndex: 'rpm',
-          key: 'rpm',
-          render: (value: number) => `$${safeFormat.currency(value, 2)}`,
-          width: '6%',
+          sorter: (a: CombinedRowData, b: CombinedRowData) => a.clicks - b.clicks,
         },
         {
           title: 'Revenue',
@@ -390,6 +418,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           key: 'revenue',
           render: (value: number, record: CombinedRowData) => formatRevenueDisplay(value, record.finalized),
           width: '6%',
+          sorter: (a: CombinedRowData, b: CombinedRowData) => a.revenue - b.revenue,
         },
         {
           title: 'Profit',
@@ -398,14 +427,11 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           render: (value: number) => (
             <div className={`metric-value ${value >= 0 ? 'profit-positive' : 'profit-negative'}`}>
               ${safeFormat.currency(Math.abs(value), 2)}
-              {value >= 0 ? (
-                <RiseOutlined className="metric-icon profit-positive" style={{ marginLeft: '5px' }} />
-              ) : (
-                <FallOutlined className="metric-icon profit-negative" style={{ marginLeft: '5px' }} />
-              )}
             </div>
           ),
           width: '6%',
+          sorter: (a: CombinedRowData, b: CombinedRowData) => a.profit - b.profit,
+          defaultSortOrder: 'descend' as const,
         },
         {
           title: 'ROI',
@@ -417,17 +443,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
             </div>
           ),
           width: '6%',
-        },
-        {
-          title: 'IVT',
-          dataIndex: 'ivtCorrection',
-          key: 'ivtCorrection',
-          render: (value: number) => (
-            <div className={value >= 0 ? 'text-success' : 'text-error'}>
-              {value >= 0 ? '+' : ''}${safeFormat.currency(value, 2)}
-            </div>
-          ),
-          width: '6%',
+          sorter: (a: CombinedRowData, b: CombinedRowData) => a.roi - b.roi,
         },
       ],
     }
@@ -444,6 +460,9 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
       // Extract slug from article name
       const slug = normalizeSlug(article.article);
       
+      // Get finalized status from the article data
+      const finalizedRevenue = article.revenue;
+      
       const row: CombinedRowData = {
         key: slug,
         slug,
@@ -455,8 +474,6 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
         rpm: article.rpm,
         epc: article.epc,
         revenue: article.revenue,
-        initialRevenue: article.initialRevenue || article.revenue,
-        ivtCorrection: article.ivtCorrection || 0,
         impressions: 0,
         costClicks: 0,
         costCtr: 0,
@@ -604,8 +621,6 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
                 rpm: 0,
                 epc: 0,
                 revenue: 0,
-                initialRevenue: 0,
-                ivtCorrection: 0,
                 impressions: impressions,
                 costClicks: clicks,
                 // Calculate CTR using formula: (clicks on ad/impression)*100
@@ -688,6 +703,9 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
       // Calculate additional metrics for this country
       const revenueShare = Math.random() * 0.4 + 0.01; // 1% to 41% of total revenue
       const revenue = Math.round(totalRevenue * revenueShare * 100) / 100;
+      
+
+      
       const rpm = visits > 0 ? (revenue / visits) * 1000 : 0;
       const epc = clicks > 0 ? revenue / clicks : 0;
       
@@ -729,6 +747,8 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
     }
     
     // If we have N/A data, add it as well
+    const naRevenue = Math.round(totalRevenue * 0.04 * 100) / 100;
+    
     countryData.push({
       key: 'n/a',
       country: 'N/A',
@@ -738,14 +758,14 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
       ctr: 30.0,
       rpm: Math.round(record.rpm * 0.8 * 100) / 100,
       epc: Math.round(record.epc * 0.7 * 10000) / 10000,
-      revenue: Math.round(totalRevenue * 0.04 * 100) / 100,
+      revenue: naRevenue,
       impressions: Math.round(totalVisits * 0.05 * 2),
       costClicks: Math.round(totalClicks * 0.03 * 0.7),
       costCtr: 25.0,
       cpc: Math.round(record.cpc * 0.9 * 100) / 100,
       cost: Math.round(totalCost * 0.03 * 100) / 100,
-      profit: Math.round((totalRevenue * 0.04 - totalCost * 0.03) * 100) / 100,
-      roi: Math.round(((totalRevenue * 0.04 - totalCost * 0.03) / (totalCost * 0.03)) * 100),
+      profit: Math.round((naRevenue - totalCost * 0.03) * 100) / 100,
+      roi: Math.round(((naRevenue - totalCost * 0.03) / (totalCost * 0.03)) * 100),
       conversions: Math.round(totalClicks * 0.03 * 0.7 * 0.05),
       conversionRate: 5.0,
       cpa: Math.round(record.cpc * 20 * 100) / 100
@@ -767,9 +787,15 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
             <span>Country Breakdown</span>
           </div>
         } size="small" className="detail-card">
-          <Table 
-            dataSource={generateCountryBreakdown(record)}
-            columns={[
+                      <Table 
+              dataSource={generateCountryBreakdown(record)}
+              onChange={(pagination, filters, sorter: any) => {
+                setCountrySortedInfo({
+                  columnKey: sorter.columnKey,
+                  order: sorter.order,
+                });
+              }}
+              columns={[
               {
                 title: 'Country',
                 dataIndex: 'country',
@@ -791,6 +817,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
                   );
                 },
                 fixed: 'left' as const,
+                sorter: (a: any, b: any) => a.country.localeCompare(b.country),
               },
               {
                 title: 'Google Ads Metrics',
@@ -800,30 +827,35 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
                     dataIndex: 'conversions',
                     key: 'conversions',
                     render: (value: number) => safeFormat.number(value),
+                    sorter: (a: any, b: any) => (a.conversions || 0) - (b.conversions || 0),
                   },
                   {
                     title: 'Conv. Rate',
                     dataIndex: 'conversionRate',
                     key: 'conversionRate',
                     render: (value: number) => safeFormat.percentage(value),
+                    sorter: (a: any, b: any) => (a.conversionRate || 0) - (b.conversionRate || 0),
                   },
                   {
                     title: 'CPC',
                     dataIndex: 'cpc',
                     key: 'cpc',
                     render: (value: number) => `$${safeFormat.currency(value, 2)}`,
+                    sorter: (a: any, b: any) => (a.cpc || 0) - (b.cpc || 0),
                   },
                   {
                     title: 'CPA',
                     dataIndex: 'cpa',
                     key: 'cpa',
                     render: (value: number) => `$${safeFormat.currency(value, 2)}`,
+                    sorter: (a: any, b: any) => (a.cpa || 0) - (b.cpa || 0),
                   },
                   {
                     title: 'CTR',
                     dataIndex: 'costCtr',
                     key: 'costCtr',
                     render: (value: number) => safeFormat.percentage(value),
+                    sorter: (a: any, b: any) => (a.costCtr || 0) - (b.costCtr || 0),
                   },
                   {
                     title: 'Cost',
@@ -832,6 +864,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
                     render: (value: number) => (
                       <div className="metric-value text-error">${safeFormat.currency(value, 2)}</div>
                     ),
+                    sorter: (a: any, b: any) => (a.cost || 0) - (b.cost || 0),
                   },
                 ]
               },
@@ -839,46 +872,41 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
                 title: 'Ads.com Metrics',
                 children: [
                   {
-                    title: 'Visits',
-                    dataIndex: 'visits',
-                    key: 'visits',
-                    render: (value: number) => safeFormat.number(value),
+                                          title: 'Visits',
+                      dataIndex: 'visits',
+                      key: 'visits',
+                      render: (value: number) => safeFormat.number(value),
+                      sorter: (a: any, b: any) => a.visits - b.visits,
+                      defaultSortOrder: 'descend' as const,
                   },
                   {
                     title: 'CTR',
                     dataIndex: 'ctr',
                     key: 'ctr',
                     render: (value: number) => safeFormat.percentage(value),
+                    sorter: (a: any, b: any) => a.ctr - b.ctr,
                   },
                   {
                     title: 'EPC',
                     dataIndex: 'epc',
                     key: 'epc',
                     render: (value: number) => `$${safeFormat.currency(value, 4)}`,
+                    sorter: (a: any, b: any) => a.epc - b.epc,
                   },
                   {
                     title: 'Clicks',
                     dataIndex: 'clicks',
                     key: 'clicks',
                     render: (value: number) => safeFormat.number(value),
+                    sorter: (a: any, b: any) => a.clicks - b.clicks,
                   },
-                  {
-                    title: 'RPM',
-                    dataIndex: 'rpm',
-                    key: 'rpm',
-                    render: (value: number) => `$${safeFormat.currency(value, 2)}`,
-                  },
-                  {
-                    title: 'Revenue',
-                    dataIndex: 'revenue',
-                    key: 'revenue',
-                    render: (value: number) => `$${safeFormat.currency(value, 2)}`,
-                  },
-                ]
-              },
-              {
-                title: 'Performance',
-                children: [
+                                      {
+                      title: 'Revenue',
+                      dataIndex: 'revenue',
+                      key: 'revenue',
+                      render: (value: number) => `$${safeFormat.currency(value, 2)}`,
+                      sorter: (a: any, b: any) => a.revenue - b.revenue,
+                    },
                   {
                     title: 'Profit',
                     dataIndex: 'profit',
@@ -886,31 +914,28 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
                     render: (value: number) => (
                       <div className={`metric-value ${value >= 0 ? 'profit-positive' : 'profit-negative'}`}>
                         ${safeFormat.currency(Math.abs(value), 2)}
-                        {value >= 0 ? (
-                          <RiseOutlined className="metric-icon profit-positive" style={{ marginLeft: '5px' }} />
-                        ) : (
-                          <FallOutlined className="metric-icon profit-negative" style={{ marginLeft: '5px' }} />
-                        )}
                       </div>
                     ),
-                  },
-                  {
-                    title: 'ROI',
-                    dataIndex: 'roi',
-                    key: 'roi',
-                    render: (value: number) => (
-                      <div className={`roi-value ${getRoiStatusColor(value) === 'success' ? 'text-success' : getRoiStatusColor(value) === 'warning' ? 'text-warning' : 'text-error'}`}>
-                        {safeFormat.percentage(value, 1)}
-                      </div>
-                    ),
+                    sorter: (a: any, b: any) => a.profit - b.profit,
                   },
                 ]
               }
             ]}
-            pagination={false}
+            pagination={{ 
+              pageSize: countryPageSize,
+              showSizeChanger: true,
+              pageSizeOptions: ['5', '10', '20', '50'],
+              showTotal: (total) => `Total: ${total} countries`,
+              onChange: (page, size) => {
+                setCountryPageSize(size);
+              },
+              onShowSizeChange: (current, size) => {
+                setCountryPageSize(size);
+              }
+            }}
             size="small"
-            className="country-breakdown-table"
-            scroll={{ x: 1500 }}
+            scroll={{ x: 'max-content' }}
+            bordered
           />
         </Card>
       ) : (
@@ -938,183 +963,134 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
   );
 
   return (
-    <div className="article-performance-container fade-in">
-      <Card className="article-performance-card">
-        <div className="header-container">
-          <div className="header-title">
-            <div className="header-icon-wrapper">
-              <BarChartOutlined className="header-icon" />
-            </div>
-            <div>
-              <Title level={4}>Article Performance Report</Title>
-              <Text type="secondary">{filteredData.length} Articles found</Text>
-            </div>
+    <div className="data-table-container">
+      <div className="table-header">
+        <div className="table-title">
+          <div className="table-icon-wrapper">
+            <BarChartOutlined className="table-icon" />
           </div>
-          <div className="header-actions">
-            <div className="search-container">
-              <SearchOutlined className="search-icon" />
-              <Input 
-                placeholder="Search Article or Country..." 
-                value={searchText}
-                onChange={e => setSearchText(e.target.value)}
-                className="search-input"
-              />
-            </div>
+          <Title level={4}>Article Performance Report</Title>
+          <Text type="secondary">{filteredData.length} Articles found</Text>
+        </div>
+        <div className="table-actions">
+          <div className="table-search">
+            <Input
+              placeholder="Search Article or Country..."
+              prefix={<SearchOutlined />}
+              value={searchText}
+              onChange={e => setSearchText(e.target.value)}
+              allowClear
+            />
           </div>
         </div>
-
-        {filteredData.length === 0 ? (
-          <Empty 
-            description="No articles found" 
-            image={Empty.PRESENTED_IMAGE_SIMPLE} 
-            className="empty-data"
-          />
-        ) : (
-          <Table 
-            dataSource={filteredData}
-            columns={columns}
-            rowKey="key"
-            pagination={false}
-            bordered
-            expandable={{
-              expandedRowRender,
-              rowExpandable: (record: CombinedRowData): boolean => {
-                return record.finalUrls.length > 0 || !!(record.country && record.country.includes('countries'));
-              },
-              expandRowByClick: true
-            }}
-            className="performance-table"
-            scroll={{ x: 1800 }}
-          />
-        )}
-      </Card>
-
+      </div>
+      
+      <Table
+        dataSource={filteredData}
+        columns={columns}
+        rowKey="key"
+        expandable={{
+          expandedRowRender,
+          expandedRowKeys: expandedItems,
+          onExpand: (expanded, record) => toggleExpand(record.key)
+        }}
+        pagination={{
+          pageSize: pageSize,
+          current: currentPage,
+          total: filteredData.length,
+          showSizeChanger: true,
+          pageSizeOptions: ['10', '20', '50', '100'],
+          showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} articles`,
+          onChange: (page, size) => {
+            setCurrentPage(page);
+            setPageSize(size);
+          },
+          onShowSizeChange: (current, size) => {
+            setPageSize(size);
+            setCurrentPage(1); // Reset to first page when changing page size
+          }
+        }}
+        onChange={(pagination, filters, sorter: any) => {
+          setSortedInfo({
+            columnKey: sorter.columnKey,
+            order: sorter.order,
+          });
+        }}
+        scroll={{ x: 'max-content' }}
+        size="middle"
+        bordered
+      />
+      
       <style jsx global>{`
-        .article-performance-container {
-          font-family: var(--font-family);
-          margin-top: 32px;
-          position: relative;
-        }
-        
-        .article-performance-card {
-          border-radius: var(--border-radius);
-          box-shadow: var(--card-shadow);
-          overflow: hidden;
-        }
-        
-        /* Add scroll indicator */
-        .article-performance-card::after {
-          content: "";
-          position: absolute;
-          top: 50%;
-          right: 12px;
-          width: 24px;
-          height: 24px;
-          background-color: rgba(79, 70, 229, 0.6);
-          border-radius: 50%;
-          transform: translateY(-50%);
-          animation: pulse 2s infinite;
-          box-shadow: 0 0 0 rgba(79, 70, 229, 0.4);
-          opacity: 0.8;
-          pointer-events: none;
-          z-index: 10;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-        
-        /* Add scroll indicator arrow */
-        .article-performance-card::before {
-          content: "→";
-          position: absolute;
-          top: 50%;
-          right: 16px;
-          transform: translateY(-50%);
-          color: white;
-          font-weight: bold;
-          font-size: 16px;
-          z-index: 11;
-          pointer-events: none;
-        }
-        
-        @keyframes pulse {
-          0% {
-            box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.4);
-          }
-          70% {
-            box-shadow: 0 0 0 10px rgba(79, 70, 229, 0);
-          }
-          100% {
-            box-shadow: 0 0 0 0 rgba(79, 70, 229, 0);
-          }
-        }
-        
-        .header-container {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
+        .data-table-container {
+          background: white;
+          border-radius: 8px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+          padding: 20px;
           margin-bottom: 24px;
         }
         
-        .header-title {
-          display: flex;
-          align-items: center;
+        /* Tooltip styling */
+        .ant-tooltip {
+          max-width: 300px;
         }
         
-        .header-icon-wrapper {
-          width: 48px;
-          height: 48px;
-          border-radius: 12px;
-          background: var(--primary-gradient);
+        .ant-tooltip-inner {
+          padding: 8px 12px;
+          font-size: 14px;
+          line-height: 1.5;
+          border-radius: 4px;
+          box-shadow: 0 3px 6px -4px rgba(0,0,0,0.12), 0 6px 16px 0 rgba(0,0,0,0.08);
+        }
+        
+        .table-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 16px;
+          flex-wrap: wrap;
+        }
+        
+        .table-actions {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+        }
+        
+
+        
+        .table-title {
+          display: flex;
+          align-items: center;
+          margin-bottom: 8px;
+        }
+        
+        .table-icon-wrapper {
+          width: 40px;
+          height: 40px;
+          border-radius: 8px;
+          background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
           display: flex;
           align-items: center;
           justify-content: center;
-          margin-right: 16px;
-          box-shadow: 0 4px 6px rgba(79, 70, 229, 0.2);
+          margin-right: 12px;
         }
         
-        .header-icon {
-          font-size: 24px;
+        .table-icon {
           color: white;
+          font-size: 20px;
         }
         
-        .header-title h4 {
-          margin-bottom: 4px;
+        .table-title h4 {
+          margin: 0 12px 0 0;
           font-weight: 600;
         }
         
-        .header-actions {
-          display: flex;
-          align-items: center;
-        }
-        
-        .search-container {
-          position: relative;
-        }
-        
-        .search-icon {
-          position: absolute;
-          left: 12px;
-          top: 50%;
-          transform: translateY(-50%);
-          color: var(--text-secondary);
-          z-index: 1;
-        }
-        
-        .search-input {
+        .table-search {
           width: 300px;
-          padding-left: 36px;
-          border-radius: var(--border-radius-sm);
-          border: 1px solid var(--border-color);
-          background-color: #f9fafb;
+          max-width: 100%;
         }
         
-        .search-input:focus,
-        .search-input:hover {
-          background-color: #ffffff;
-          border-color: var(--primary-color);
-        }
-
         .article-info {
           display: flex;
           flex-direction: column;
@@ -1123,69 +1099,122 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
         .article-title {
           font-weight: 500;
           margin-bottom: 8px;
-          text-transform: capitalize;
-          color: var(--text-color);
+          color: #1f2937;
+          word-break: break-word;
+        }
+        
+        .country-tag {
+          margin-top: 4px;
+          display: inline-flex;
+          align-items: center;
+        }
+        
+        .country-code-display {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        
+        .country-flag {
+          margin-right: 4px;
+          display: flex;
+          align-items: center;
         }
         
         .metric-value {
-          font-weight: 600;
+          font-weight: 500;
+          display: flex;
+          align-items: center;
         }
         
-        .revenue-value {
-          color: var(--primary-color);
+        .text-primary {
+          color: #4f46e5;
+        }
+        
+        .text-secondary {
+          color: #f59e0b;
+        }
+        
+        .text-success {
+          color: #10b981;
+        }
+        
+        .text-error {
+          color: #ef4444;
+        }
+        
+        .text-warning {
+          color: #f59e0b;
         }
         
         .profit-positive {
-          color: var(--success-color);
+          color: #10b981;
         }
         
         .profit-negative {
-          color: var(--error-color);
+          color: #ef4444;
+        }
+        
+        .metric-icon {
+          margin-left: 4px;
+          font-size: 12px;
         }
         
         .roi-value {
-          font-weight: 600;
-          padding: 2px 8px;
-          border-radius: 12px;
+          font-weight: 500;
         }
         
         .roi-success {
-          color: var(--success-color);
+          color: #10b981;
         }
         
         .roi-warning {
-          color: var(--warning-color);
+          color: #f59e0b;
         }
         
         .roi-error {
-          color: var(--error-color);
+          color: #ef4444;
         }
         
-        .roi-column-content {
-          display: flex;
-          align-items: center;
-          gap: 8px;
+        .roi-neutral {
+          color: #6b7280;
         }
+        
+        .revenue-estimated-indicator {
+          color: #f59e0b;
+          margin-left: 2px;
+          font-weight: bold;
+        }
+        
 
-        .roi-progress {
-          margin-right: 8px;
+        
+        .expanded-row-content {
+          padding: 16px 0;
         }
         
         .detail-card {
-          border-radius: var(--border-radius-sm);
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-          border: none;
+          margin-bottom: 16px;
+          border-radius: 8px;
+        }
+        
+        .detail-card .ant-card-head {
+          background-color: #f9fafb;
+          border-bottom: none;
+          padding: 0 16px;
         }
         
         .detail-card-title {
           display: flex;
           align-items: center;
+          font-size: 16px;
+          font-weight: 600;
+          color: #374151;
         }
         
         .detail-card-icon-wrapper {
-          width: 32px;
-          height: 32px;
-          border-radius: 8px;
+          width: 28px;
+          height: 28px;
+          border-radius: 6px;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -1193,209 +1222,127 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
         }
         
         .detail-card-icon {
-          font-size: 14px;
           color: white;
-        }
-        
-        .url-icon {
-          background: var(--secondary-gradient);
-        }
-        
-        .url-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-          gap: 12px;
-        }
-        
-        .url-item {
-          margin-bottom: 0;
-          word-break: break-all;
-          display: flex;
-          align-items: center;
-          background-color: #f9fafb;
-          padding: 8px 12px;
-          border-radius: 8px;
-          transition: all 0.3s ease;
-        }
-        
-        .url-item:hover {
-          background-color: #f0f4ff;
-        }
-        
-        .url-icon-small {
-          margin-right: 8px;
-          color: var(--secondary-color);
-        }
-        
-        .performance-table .ant-table-thead > tr > th {
-          background-color: #f0f2f5;
-          font-weight: 600;
-          text-align: center;
-        }
-        
-        .performance-table .ant-table-thead > tr > th.ant-table-cell-fix-left {
-          background-color: #f0f2f5;
-        }
-        
-        /* Stick the article column to the left */
-        .performance-table .ant-table-cell-fix-left {
-          background: white;
-          z-index: 2;
-        }
-        
-        /* Table styles for better scrolling experience */
-        .performance-table .ant-table-container {
-          overflow-x: auto;
-        }
-        
-        /* Add horizontal scroll notice */
-        .performance-table::after {
-          content: "Scroll horizontally to see more metrics →";
-          display: block;
-          text-align: center;
-          padding: 8px;
-          background-color: #f9f9f9;
-          border-top: 1px solid #eee;
-          font-size: 12px;
-          color: #666;
-        }
-        
-        .text-error {
-          color: var(--error-color);
-        }
-        
-        .text-success {
-          color: var(--success-color);
-        }
-        
-        .text-warning {
-          color: var(--warning-color);
-        }
-        
-        .expanded-row-content {
-          padding: 16px;
-        }
-
-        /* Responsive styles */
-        @media (max-width: 992px) {
-          .search-input {
-            width: 200px;
-          }
-        }
-        
-        @media (max-width: 768px) {
-          .header-container {
-            flex-direction: column;
-            align-items: flex-start;
-          }
-          
-          .header-actions {
-            margin-top: 16px;
-            width: 100%;
-          }
-          
-          .search-container {
-            width: 100%;
-          }
-          
-          .search-input {
-            width: 100%;
-          }
-        }
-        
-        .revenue-estimated-indicator {
-          color: #ff9800;
-          font-weight: bold;
-          margin-left: 2px;
           font-size: 14px;
-          vertical-align: super;
-          cursor: help;
-        }
-        
-        .country-breakdown-table {
-          margin-top: 8px;
-        }
-        
-        .country-code-display {
-          display: flex;
-          align-items: center;
-          justify-content: flex-start;
-          text-transform: uppercase;
         }
         
         .country-icon {
-          background: var(--primary-gradient);
+          background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
         }
         
-        /* Add styles for country breakdown table */
-        .country-breakdown-table .ant-table-thead > tr > th {
-          background-color: #f0f2f5;
-          font-weight: 600;
-          text-align: center;
-          font-size: 12px;
-          padding: 8px 4px;
+        .url-icon {
+          background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
         }
         
-        .country-breakdown-table .ant-table-tbody > tr > td {
-          padding: 8px 4px;
-          font-size: 12px;
-          text-align: center;
-        }
-        
-        .country-breakdown-table .ant-table-cell-fix-left {
-          background: white;
-          z-index: 2;
-        }
-        
-        .country-breakdown-table .ant-table-container {
-          overflow-x: auto;
-        }
-        
-        .country-flag {
-          display: inline-block;
+        .country-flag-image {
           margin-right: 6px;
-          vertical-align: middle;
+        }
+        
+        /* Country breakdown table styling */
+        .ant-table {
+          font-size: 14px;
+        }
+        
+        .ant-table-thead > tr > th {
+          font-size: 14px;
+          font-weight: 600;
+          background-color: #f9fafb;
+          text-align: center;
+          padding: 10px 8px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        
+        .ant-table-thead > tr > th:hover {
+          background-color: #f0f5ff !important;
+        }
+        
+        .ant-table-column-sorter {
+          color: #4f46e5;
+        }
+        
+        .ant-table-column-sort {
+          background-color: #f0f5ff;
+        }
+        
+        .ant-table-tbody > tr > td {
+          font-size: 14px;
+          padding: 10px 8px;
+          text-align: center;
         }
         
         .country-code-display {
+          font-size: 14px;
+          font-weight: 500;
           display: flex;
           align-items: center;
+          justify-content: flex-start;
+        }
+        
+        .country-flag-image {
+          margin-right: 8px;
+          border: 1px solid rgba(0,0,0,0.05);
+          border-radius: 2px;
+        }
+        
+        .metric-value {
+          font-size: 14px;
           font-weight: 500;
         }
         
-        .country-code-display strong {
-          text-transform: uppercase;
-          margin-left: 4px;
+        .roi-value {
+          font-size: 14px;
+          font-weight: 500;
         }
         
-        .country-tag {
-          display: flex;
-          align-items: center;
-          padding: 2px 8px;
+        .ivt-value {
+          font-size: 14px;
+          font-weight: 500;
         }
         
-        /* Fix flag sizing and alignment */
-        .country-flag img, .country-flag-image {
-          border: 1px solid rgba(0,0,0,0.1);
-          border-radius: 2px;
-          object-fit: cover;
-          vertical-align: middle;
-          box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-          margin-right: 4px;
+        /* Pagination styling */
+        .ant-pagination {
+          font-size: 14px;
+          margin-top: 16px;
+          text-align: right;
         }
         
-        /* Country breakdown table styling to match screenshot */
-        .country-breakdown-table .country-code-display {
-          display: flex;
-          align-items: center;
-          padding: 4px 0;
-          justify-content: center;
+        .ant-pagination-options-size-changer.ant-select {
+          min-width: 110px;
+          font-size: 14px;
         }
         
-        .country-breakdown-table .country-code-display strong {
+        .ant-pagination-options {
+          margin-left: 16px;
+        }
+        
+        .ant-pagination-item-active {
           font-weight: 600;
-          font-size: 13px;
-          color: #333;
+          background: #f0f5ff;
+          border-color: #4f46e5;
+        }
+        
+        .ant-pagination-item-active a {
+          color: #4f46e5;
+        }
+        
+        .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+          color: #4f46e5;
+          font-weight: 600;
+          background-color: #f0f5ff;
+        }
+        
+        /* Performance indicators */
+        .profit-positive, .text-success {
+          color: #10b981;
+        }
+        
+        .profit-negative, .text-error {
+          color: #ef4444;
+        }
+        
+        .text-warning {
+          color: #f59e0b;
         }
       `}</style>
     </div>

@@ -76,7 +76,6 @@ export default function Dashboard() {
   const [loading, setLoading] = useState<boolean>(false);
   const [revenueData, setRevenueData] = useState<AdsComArticleData[]>([]);
   const [costData, setCostData] = useState<GoogleAdsAd[]>([]);
-  const [apiLimitations, setApiLimitations] = useState<string>('');
   
   // Default to today initially 
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>([
@@ -300,9 +299,8 @@ export default function Dashboard() {
           <div className="page-header">
             <div>
               <Title level={2}>Performance Dashboard</Title>
-              <Text type="secondary">
+                              <Text type="secondary">
                 Data from {dateRange[0].format('MMM D, YYYY')} to {dateRange[1].format('MMM D, YYYY')}
-                {apiLimitations && <span className="api-limitation-notice"> • {apiLimitations}</span>}
               </Text>
             </div>
           </div>
@@ -478,11 +476,7 @@ export default function Dashboard() {
             padding: 24px;
           }
           
-          .api-limitation-notice {
-            color: #ff4d4f;
-            font-style: italic;
-            margin-left: 8px;
-          }
+
           
           .quick-date-buttons {
             display: flex;
