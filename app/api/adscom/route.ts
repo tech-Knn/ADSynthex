@@ -39,8 +39,8 @@ const transformApiData = (apiResponse: any): AdsComResponse => {
         }
       }
       
-      // Format country
-      const countryCode = item.country_code || 'Unknown';
+      // Format country - ensure non-empty value
+      const countryCode = item.country_code || 'N/A';
       
       // Calculate metrics
       const visits = parseInt(item.visits) || 0;
@@ -65,6 +65,19 @@ const transformApiData = (apiResponse: any): AdsComResponse => {
       const ivtCorrection = parseFloat((revenue * (ivtPercentage / 100)).toFixed(2));
       const initialRevenue = parseFloat((revenue - ivtCorrection).toFixed(2));
       
+      const countryEntry = {
+        country: countryCode,
+        visits,
+        clicks,
+        ctr,
+        revenue,
+        rpm,
+        epc,
+        initialRevenue,
+        ivtCorrection,
+        finalized
+      };
+      
       // Add or update the article in the map
       if (articleMap.has(article)) {
         const existingArticle = articleMap.get(article);
@@ -74,15 +87,11 @@ const transformApiData = (apiResponse: any): AdsComResponse => {
         existingArticle.initialRevenue += initialRevenue;
         existingArticle.ivtCorrection += ivtCorrection;
         existingArticle.finalized = existingArticle.finalized && finalized; // Only final if all entries are final
-        
-        // Track countries
-        if (countryCode && !existingArticle.countries.includes(countryCode)) {
-          existingArticle.countries.push(countryCode);
-        }
+        existingArticle.countryBreakdown.push(countryEntry);
       } else {
         articleMap.set(article, {
           article,
-          countries: countryCode ? [countryCode] : [],
+          countryBreakdown: [countryEntry],
           visits,
           clicks,
           revenue,
@@ -99,11 +108,21 @@ const transformApiData = (apiResponse: any): AdsComResponse => {
     const articles: AdsComArticleData[] = Array.from(articleMap.values()).map(item => {
       // Format countries display text
       let countryText = '';
-      if (item.countries.length === 1) {
-        countryText = item.countries[0];
-      } else if (item.countries.length > 1) {
-        countryText = `${item.countries.length} countries`;
+      const validCountries = item.countryBreakdown.map((c: any) => c.country).filter((c: any) => c !== 'N/A');
+      const uniqueCountries = [...new Set(validCountries)];
+      
+      if (uniqueCountries.length === 0) {
+        // No valid country data
+        countryText = 'N/A';
+      } else if (uniqueCountries.length === 1) {
+        // Single country
+        countryText = uniqueCountries[0] as string;
+      } else {
+        // Multiple countries
+        countryText = `${uniqueCountries.length} countries`;
       }
+      
+      console.log(`Article ${item.article}: Found ${uniqueCountries.length} unique countries → "${countryText}"`);
       
       // Recalculate metrics based on aggregated data
       const ctr = item.visits > 0 ? `${((item.clicks / item.visits) * 100).toFixed(2)}%` : '0.00%';
@@ -121,7 +140,8 @@ const transformApiData = (apiResponse: any): AdsComResponse => {
         revenue: item.revenue,
         initialRevenue: item.initialRevenue,
         ivtCorrection: item.ivtCorrection,
-        finalized: item.finalized
+        finalized: item.finalized,
+        countryBreakdown: item.countryBreakdown.sort((a: any, b: any) => b.visits - a.visits),
       };
     });
     
@@ -161,8 +181,8 @@ const transformApiData = (apiResponse: any): AdsComResponse => {
 
 export async function POST(request: NextRequest) {
   try {
-    const { startDate, endDate } = await request.json();
-    console.log(`Ads.com API request for date range: ${startDate} to ${endDate}`);
+    const { startDate, endDate, customerId } = await request.json();
+    console.log(`Ads.com API request for date range: ${startDate} to ${endDate}${customerId ? `, Customer ID: ${customerId}` : ''}`);
     console.log('DEBUG: Current time', new Date().toISOString());
     
     // Debug: Print all environment variables
@@ -194,6 +214,9 @@ export async function POST(request: NextRequest) {
       // Request body for /ads/reports/parking-events (estimated revenue)
       const body = {
         columns: [
+          // We need subid_1 to identify the customer account
+          'subid_1',
+          // Keep existing columns
           'subid_5',
           'country_code',
           'visits',
@@ -207,7 +230,8 @@ export async function POST(request: NextRequest) {
             value: [`${apiStartDate} 00:00:00`, `${apiEndDate} 23:59:59`]
           }
         ],
-        group_by: ['subid_5', 'country_code'],
+        // Group by subid_1 as well so we preserve that tag in the aggregated rows
+        group_by: ['subid_1', 'subid_5', 'country_code'],
         order_by: [{ column: 'estimated_revenue', order: 'desc' }],
         page: 1,
         per_page: 500  // Balanced value - not too large to cause timeout, not too small to require many pages
@@ -403,9 +427,72 @@ export async function POST(request: NextRequest) {
       
       // If we have successful data, process it
       if (successData) {
+        // Debug: print the distinct subid_1 values so we can confirm the exact tags each account uses
+        try {
+          if (Array.isArray(successData?.data)) {
+            const uniqueTags = Array.from(
+              new Set(
+                successData.data
+                  .map((row: any) => (row?.subid_1 ?? '').toString().trim().toLowerCase())
+              )
+            ).filter(Boolean);
+            console.log('[DEBUG] distinct subid_1 values in this response:', uniqueTags);
+          }
+        } catch (dbgErr) {
+          console.warn('[DEBUG] Failed to compute distinct subid_1 tags:', dbgErr);
+        }
+
+        // If a customerId is provided, filter raw data rows by subid_1 first
+        if (customerId && successData.data && Array.isArray(successData.data)) {
+          const customerSubidMap: { [key: string]: string[] } = {
+            '3146253756': ['utc04'],
+            '5723554317': ['utc03'],
+            '9071440966': ['utc02'],
+            '5857090949': ['utc05'],
+            '6201189752': ['utc06'],
+            '4277350349': ['siddhi']
+            // The IST customer (8677814915) will be handled as the fallback below
+          };
+
+          const excludeSubidsForIst = ['utc04', 'utc03', 'utc02', 'utc05', 'utc06', 'siddhi'];
+
+          if (customerSubidMap[customerId]) {
+            const allowedSubids = customerSubidMap[customerId];
+            successData.data = successData.data.filter((row: any) => {
+              const val = String(row.subid_1 || '').toLowerCase();
+              return allowedSubids.some(code => val.includes(code));
+            });
+            console.log(`Filtered raw Ads.com rows for customer ${customerId} by subid_1 (${allowedSubids.join(', ')}) → ${successData.data.length} rows`);
+          } else if (customerId === '8677814915') {
+            // For IST account, include rows whose subid_1 is NOT in the known list above (case-insensitive)
+            successData.data = successData.data.filter((row: any) => {
+              const val = String(row.subid_1 || '').toLowerCase();
+              return !excludeSubidsForIst.some(code => val.includes(code));
+            });
+            console.log(`Filtered raw Ads.com rows for IST customer ${customerId} (exclude ${excludeSubidsForIst.join(', ')}) → ${successData.data.length} rows`);
+          }
+
+          // If filtering removed everything we just log a warning. 
+          // All accounts share the same domain, so a domain fallback would incorrectly
+          // wipe valid rows.  Returning the sub-ID–filtered (potentially empty) set is safer.
+          if (successData.data.length === 0) {
+            console.warn('Sub-ID filter returned zero rows for this customer; skipping any domain fallback because all accounts share the same domain.');
+          }
+        }
+        
         // Transform API data to expected format
         const transformedData = transformApiData(successData);
         console.log(`Transformed data: ${transformedData.data.length} articles`);
+        
+        // Filter by customer ID if provided
+        if (customerId && transformedData && transformedData.data) {
+          console.log(`Filtering real API data by Customer ID: ${customerId}`);
+          
+          // Here you would implement actual filtering logic based on how customer IDs 
+          // correspond to your data structure. For now, it's just a placeholder
+          // and we'll pass through the unfiltered data
+          console.warn('Customer ID filtering for real API data not fully implemented yet');
+        }
         
         return NextResponse.json(transformedData, {
           headers: {
@@ -424,6 +511,55 @@ export async function POST(request: NextRequest) {
       console.error('Ads.com API error, falling back to mock:', apiErr);
       const mockData = getMockArticleData(startDate, endDate);
       console.log(`DEBUG: Using mock data with ${mockData.data.length} articles for date range ${startDate} to ${endDate}`);
+      
+      // Filter mock data by customer ID if provided
+      if (customerId) {
+        console.log(`Filtering mock data by Customer ID: ${customerId}`);
+        
+        // Map customer IDs to domains for filtering
+        const customerDomainMap: { [key: string]: string } = {
+          '3146253756': 'freshcuesdaily.com',
+          '5723554317': 'techinsightsweekly.com',
+          '9071440966': 'innovationspotlight.net',
+          '8677814915': 'futuretechtoday.com',
+          '4277350349': 'emergingtrendsreport.org'
+        };
+        
+        const domain = customerDomainMap[customerId];
+        if (domain) {
+          console.log(`Found domain mapping for customer ID ${customerId}: ${domain}`);
+          const originalCount = mockData.data.length;
+          
+          // Filter articles by domain
+          mockData.data = mockData.data.filter(article => {
+            const matches = article.article.includes(domain);
+            return matches;
+          });
+          
+          console.log(`Filtered by domain "${domain}": ${originalCount} → ${mockData.data.length} articles`);
+          
+          // Recalculate totals
+          mockData.totalArticles = mockData.data.length;
+          mockData.totalVisits = mockData.data.reduce((sum, article) => sum + article.visits, 0);
+          mockData.totalClicks = mockData.data.reduce((sum, article) => sum + article.clicks, 0);
+          mockData.totalRevenue = parseFloat(mockData.data.reduce((sum, article) => sum + article.revenue, 0).toFixed(2));
+          
+          if (mockData.data.length > 0) {
+            const totalCtr = mockData.data.reduce((sum, article) => {
+              const ctr = typeof article.ctr === 'string' ? 
+                parseFloat(article.ctr.replace('%', '')) : article.ctr;
+              return sum + ctr;
+            }, 0);
+            mockData.averageCtr = totalCtr / mockData.data.length;
+            
+            const totalRpm = mockData.data.reduce((sum, article) => sum + article.rpm, 0);
+            mockData.averageRpm = totalRpm / mockData.data.length;
+          }
+        } else {
+          console.warn(`No domain mapping found for Customer ID: ${customerId}, returning all data`);
+        }
+      }
+      
       console.log('DEBUG: Mock data first article revenue:', mockData.data[0]?.revenue);
       console.log('DEBUG: Mock data for industrial packaging article:', 
         mockData.data.find(a => a.article.includes('revolutionizing-industrial-packaging')));
@@ -457,12 +593,36 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url);
     const startDate = url.searchParams.get('startDate') || '';
     const endDate = url.searchParams.get('endDate') || '';
+    const customerId = url.searchParams.get('customerId') || null;
     
-    console.log(`GET: Ads.com API request for date range: ${startDate} to ${endDate}`);
+    console.log(`GET: Ads.com API request for date range: ${startDate} to ${endDate}${customerId ? `, Customer ID: ${customerId}` : ''}`);
     
     // For now, immediately use mock data while debugging
     console.log('Using mock Ads.com data for GET debugging');
     const mockData = getMockArticleData(startDate, endDate);
+    
+    // Filter by customer ID if provided
+    if (customerId) {
+      const customerDomainMap: { [key: string]: string } = {
+        '3146253756': 'freshcuesdaily.com',
+        '5723554317': 'techinsightsweekly.com',
+        '9071440966': 'innovationspotlight.net',
+        '8677814915': 'futuretechtoday.com',
+        '4277350349': 'emergingtrendsreport.org'
+      };
+      
+      const domain = customerDomainMap[customerId];
+      if (domain) {
+        mockData.data = mockData.data.filter(article => article.article.includes(domain));
+        
+        // Recalculate totals
+        mockData.totalArticles = mockData.data.length;
+        mockData.totalVisits = mockData.data.reduce((sum, article) => sum + article.visits, 0);
+        mockData.totalClicks = mockData.data.reduce((sum, article) => sum + article.clicks, 0);
+        mockData.totalRevenue = parseFloat(mockData.data.reduce((sum, article) => sum + article.revenue, 0).toFixed(2));
+      }
+    }
+    
     console.log(`Mock data: ${mockData.data.length} articles for date range ${startDate} to ${endDate}`);
     return NextResponse.json(mockData, {
       headers: {

@@ -61,8 +61,8 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ revenueData, costData }) =>
         <Title level={4} className="dashboard-title">Dashboard Overview</Title>
       </div>
       
-      <Row gutter={[16, 16]} justify="space-between" align="stretch">
-        <Col xs={12} sm={12} md={8} lg={6} xl={4}>
+      <Row gutter={[32, 20]} justify="center" align="stretch">
+        <Col xs={12} sm={12} md={8} lg={6} xl={6}>
           <div className="tile tile-1">
             <div className="tile-content">
               <div className="tile-icon tile-icon-1">
@@ -80,7 +80,7 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ revenueData, costData }) =>
           </div>
         </Col>
         
-        <Col xs={12} sm={12} md={8} lg={6} xl={4}>
+        <Col xs={12} sm={12} md={8} lg={6} xl={6}>
           <div className="tile tile-2">
             <div className="tile-content">
               <div className="tile-icon tile-icon-2">
@@ -98,7 +98,7 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ revenueData, costData }) =>
           </div>
         </Col>
         
-        <Col xs={12} sm={12} md={8} lg={6} xl={4}>
+        <Col xs={12} sm={12} md={8} lg={6} xl={6}>
           <div className="tile tile-3">
             <div className="tile-content">
               <div className="tile-icon tile-icon-3">
@@ -123,7 +123,7 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ revenueData, costData }) =>
           </div>
         </Col>
         
-        <Col xs={12} sm={12} md={8} lg={6} xl={4}>
+        <Col xs={12} sm={12} md={8} lg={6} xl={6}>
           <div className="tile tile-4">
             <div className="tile-content">
               <div className="tile-icon tile-icon-4">
@@ -182,7 +182,9 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ revenueData, costData }) =>
           border-radius: 12px;
           box-shadow: 0 2px 8px rgba(0,0,0,0.08);
           border: 1px solid rgba(0,0,0,0.05);
-          padding: 16px;
+          padding: 20px;
+          width: 100%;
+          min-width: 0;
           height: 100%;
           transition: all 0.3s ease;
           display: flex;
@@ -251,12 +253,12 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ revenueData, costData }) =>
         }
         
         .tile-value {
-          font-size: 22px;
+          font-size: 26px;
           font-weight: 700;
           margin-bottom: 4px;
           white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
+          overflow: visible;
+          text-overflow: initial;
           line-height: 1.2;
         }
         
@@ -288,8 +290,8 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ revenueData, costData }) =>
         .metric-value {
           font-weight: 600;
           white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
+          overflow: visible;
+          text-overflow: initial;
         }
         
         .trend-icon {

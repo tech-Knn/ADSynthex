@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { fetchGoogleAdsData, getMockGoogleAdsData, GoogleAdsAd } from '../../../lib/google-ads-api';
 
 // Helper to transform API response
-const transformApiResponse = (response: any, startDate?: string, endDate?: string) => {
+const transformApiResponse = (response: any, startDate?: string, endDate?: string, customerId?: string | null) => {
   if (!response || !response.campaigns || !response.ads) {
     console.warn('Invalid Google Ads API response structure:', response);
-    return getMockGoogleAdsData(startDate, endDate); // Fall back to mock data with date range
+    return getMockGoogleAdsData(startDate, endDate, customerId); // Fall back to mock data with date range
   }
   
   try {
@@ -52,21 +52,32 @@ const transformApiResponse = (response: any, startDate?: string, endDate?: strin
       };
     }).filter(Boolean); // Remove null entries
     
+    // Filter by customer ID if provided
+    let filteredAds = transformedAds;
+    if (customerId) {
+      console.log(`Filtering ads by customer ID ${customerId}. Before: ${transformedAds.length} ads`);
+      filteredAds = transformedAds.filter((ad: any) => ad.customer_id === customerId);
+      console.log(`After filtering: ${filteredAds.length} ads remain`);
+    }
+    
+    // Calculate total cost after filtering
+    const totalCost = filteredAds.reduce((sum: number, ad: any) => sum + ad.metrics.cost, 0);
+    
     return {
       campaigns: response.campaigns || [],
-      ads: transformedAds,
-      total_cost: transformedAds.reduce((sum: number, ad: any) => sum + ad.metrics.cost, 0)
+      ads: filteredAds,
+      total_cost: totalCost
     };
   } catch (error) {
     console.error('Error transforming Google Ads API response:', error);
-    return getMockGoogleAdsData(startDate, endDate); // Fall back to mock data with date range
+    return getMockGoogleAdsData(startDate, endDate, customerId); // Fall back to mock data with date range
   }
 };
 
 export async function POST(request: NextRequest) {
   try {
-    const { startDate, endDate } = await request.json();
-    console.log(`Google Ads API request for date range: ${startDate} to ${endDate}`);
+    const { startDate, endDate, customerId } = await request.json();
+    console.log(`Google Ads API request for date range: ${startDate} to ${endDate}, Customer ID: ${customerId || 'All'}`);
     console.log('DEBUG: Current time', new Date().toISOString());
     
     // Debug: Print all environment variables
@@ -95,7 +106,7 @@ export async function POST(request: NextRequest) {
       }
       
       // Try to fetch real data with the provided date range
-      console.log(`Fetching Google Ads data for ${startDate} to ${endDate}`);
+      console.log(`Fetching Google Ads data for ${startDate} to ${endDate}${customerId ? `, customer ID: ${customerId}` : ''}`);
       const realData = await fetchGoogleAdsData(startDate, endDate);
       
       // Check if we got meaningful data
@@ -103,7 +114,7 @@ export async function POST(request: NextRequest) {
         console.log(`Successfully fetched ${realData.ads.length} ads from Google Ads API`);
         
         // Transform the API data
-        const transformedData = transformApiResponse(realData, startDate, endDate);
+        const transformedData = transformApiResponse(realData, startDate, endDate, customerId);
         console.log(`Transformed data has ${transformedData.ads.length} ads`);
         
         return NextResponse.json(transformedData, {
@@ -120,17 +131,13 @@ export async function POST(request: NextRequest) {
       console.error('Google Ads API error, falling back to mock:', apiErr);
       
       // Use mock data but adjust based on date range to make it more realistic
-      const mockData = getMockGoogleAdsData(startDate, endDate);
+      const mockData = getMockGoogleAdsData(startDate, endDate, customerId);
       console.log(`DEBUG: Using mock Google Ads data: ${mockData.campaigns.length} campaigns, ${mockData.ads.length} ads`);
       console.log(`DEBUG: Using mock data with date range ${startDate} to ${endDate}`);
       
-      // Log specific data related to industrial packaging
-      const packagingAd = mockData.ads.find(ad => 
-        ad.final_urls && 
-        ad.final_urls.some(url => url.includes('industrial-packaging'))
-      );
-      console.log('DEBUG: Industrial packaging ad cost:', packagingAd?.metrics.cost);
-      console.log('DEBUG: Industrial packaging ad details:', packagingAd);
+      if (customerId) {
+        console.log(`DEBUG: Filtered mock data by customer ID ${customerId}`);
+      }
       
       return NextResponse.json(mockData, {
         headers: {
@@ -161,12 +168,13 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url);
     const startDate = url.searchParams.get('startDate') || '';
     const endDate = url.searchParams.get('endDate') || '';
+    const customerId = url.searchParams.get('customerId') || null;
     
-    console.log(`GET: Google Ads API request for date range: ${startDate} to ${endDate}`);
+    console.log(`GET: Google Ads API request for date range: ${startDate} to ${endDate}${customerId ? `, customer ID: ${customerId}` : ''}`);
     
     // For debugging, use mock data
     console.log('Using mock Google Ads data for GET debugging');
-    const mockData = getMockGoogleAdsData(startDate, endDate);
+    const mockData = getMockGoogleAdsData(startDate, endDate, customerId);
     console.log(`Mock data: ${mockData.campaigns.length} campaigns, ${mockData.ads.length} ads`);
     return NextResponse.json(mockData, {
       headers: {

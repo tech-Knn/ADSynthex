@@ -35,7 +35,8 @@
     "typeRoots": [
       "./types",
       "./node_modules/@types"
-    ]
+    ],
+    "downlevelIteration": true
   },
   "include": [
     "**/*.d.ts",

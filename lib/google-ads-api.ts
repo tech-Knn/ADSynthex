@@ -122,6 +122,7 @@ export interface GoogleAdsAd {
 export interface GoogleAdsData {
   campaigns: GoogleAdsCampaign[];
   ads: GoogleAdsAd[];
+  total_cost?: number;
 }
 
 // Process campaign data
@@ -412,36 +413,9 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string): Pr
   return data;
 }
 
-// For development/testing purposes when API is not available
-export function getMockGoogleAdsData(startDate?: string, endDate?: string): GoogleAdsData {
-  console.log(`Generating mock Google Ads data for date range: ${startDate || 'default'} to ${endDate || 'default'}`);
-  
-  // Always ensure we have enough ads to match all articles (target 553)
-  const targetAdCount = 553;  
-  
-  // Can use the date range to adjust mock data (e.g., reduce data for shorter date ranges)
-  const dateMultiplier = 1.0; // Default multiplier
-  
-  if (startDate && endDate) {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const daysDiff = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-    
-    // For single-day requests, reduce the mock data volumes
-    if (daysDiff === 1) {
-      // For single day, reduce metrics by factor
-      console.log('Adjusting mock data for single-day request');
-      return generateSingleDayMockData(startDate, targetAdCount);
-    } 
-    // For date ranges larger than 3 days, increase proportionally
-    else if (daysDiff > 3) {
-      // For longer ranges, increase metrics proportionally
-      console.log(`Adjusting mock data for ${daysDiff}-day request`);
-    }
-  }
-  
-  // Default mock data (for 3-day range)
-  // Start with our base campaigns and ads
+// Helper function to get base mock data
+function getBaseMockData(): GoogleAdsData {
+  // Base campaigns
   const baseCampaigns = [
     {
       customer_id: '3146253756',
@@ -599,6 +573,7 @@ export function getMockGoogleAdsData(startDate?: string, endDate?: string): Goog
     }
   ];
   
+  // Base ads
   const baseAds = [
     {
       customer_id: '3146253756',
@@ -772,107 +747,87 @@ export function getMockGoogleAdsData(startDate?: string, endDate?: string): Goog
     }
   ];
   
-  // Generate additional ads to reach target count
+  // Generate additional data to reach target count of 553
+  const targetAdCount = 553;
   const additionalAdsNeeded = targetAdCount - baseAds.length;
-  console.log(`Generating ${additionalAdsNeeded} additional ads to reach target count of ${targetAdCount}`);
-  
-  // Templates for ad creation
-  const urlPrefixes = [
-    'https://www.freshcuesdaily.com/',
-    'https://techinsightsweekly.com/',
-    'https://innovationspotlight.net/',
-    'https://futuretechtoday.com/',
-    'https://emergingtrendsreport.org/',
-    'https://nextgentechnology.info/',
-    'https://digitaltransformationhub.com/'
-  ];
-  
-  // Topics for generating URLs
-  const topics = [
-    'industrial-automation',
-    'machine-learning',
-    'cloud-computing',
-    'cybersecurity',
-    'blockchain',
-    'internet-of-things',
-    'big-data-analytics',
-    'artificial-intelligence',
-    'edge-computing',
-    'quantum-computing',
-    'robotics-innovations',
-    'sustainable-manufacturing',
-    'digital-transformation',
-    'supply-chain-optimization',
-    'predictive-maintenance',
-    'smart-factories',
-    'industrial-iot',
-    'augmented-reality',
-    'virtual-reality',
-    '3d-printing',
-    'additive-manufacturing'
-  ];
   
   // Generate additional ads
-  const additionalAds = [];
-  for (let i = 0; i < additionalAdsNeeded; i++) {
-    // Select a random campaign as template (alternate between first and second)
-    const campaignIndex = i % 2;
-    const campaign = baseCampaigns[campaignIndex];
-    
-    // Generate variation
-    const variationFactor = 0.3 + Math.random() * 0.7; // 0.3 to 1.0
-    
-    // Generate URL
-    const urlPrefix = urlPrefixes[i % urlPrefixes.length];
-    const topic = topics[i % topics.length];
-    const finalUrl = `${urlPrefix}${topic}-article-${i + 8}`;
-    
-    // Calculate metrics
-    const impressions = Math.round(2000 * variationFactor);
-    const clicks = Math.round(impressions * (0.1 + Math.random() * 0.2)); // 10-30% CTR
-    const costMicros = Math.round(clicks * 50000 * variationFactor); // Average CPC of $0.05-$0.15
-    const cost = parseFloat((costMicros / 1000000).toFixed(2));
-    const conversions = Math.round(clicks * (0.01 + Math.random() * 0.04)); // 1-5% conversion rate
-    const ctr = parseFloat((clicks / impressions * 100).toFixed(2));
-    const cpc = parseFloat((cost / clicks).toFixed(4));
-    const conversionRate = parseFloat((conversions / clicks * 100).toFixed(2));
-    const cpa = parseFloat((cost / conversions).toFixed(2));
-    
-    // Create ad
-    additionalAds.push({
-      customer_id: campaign.customer_id,
-      customer_name: campaign.customer_name,
-      campaign_id: `campaign-${i + 8}`,
-      campaign_name: `Campaign for ${topic}`,
-      campaign_status: 'ENABLED',
-      ad_group_id: `adgroup-${i + 8}`,
-      ad_group_name: `Ad Group for ${topic}`,
-      ad_group_status: 'ENABLED',
-      ad_id: `ad-${i + 8}`,
-      ad_name: `Ad for ${topic}`,
-      ad_status: 'ENABLED',
-      final_urls: [finalUrl],
-      metrics: {
-        impressions,
-        clicks,
-        cost_micros: costMicros,
-        cost,
-        conversions,
-        conversion_rate: conversionRate,
-        ctr,
-        cpc,
-        cpa
-      }
-    });
-  }
+  const additionalAds = generateAdditionalAds(additionalAdsNeeded, baseCampaigns);
   
   // Combine base ads with additional ads
   const allAds = [...baseAds, ...additionalAds];
-  console.log(`Total Google Ads mock ads: ${allAds.length}`);
   
   return {
     campaigns: baseCampaigns,
     ads: allAds
+  };
+}
+
+// For development/testing when API is not available
+export function getMockGoogleAdsData(startDate?: string, endDate?: string, customerId?: string | null): GoogleAdsData {
+  console.log(`Generating mock Google Ads data for date range: ${startDate || 'default'} to ${endDate || 'default'}${customerId ? `, customer ID: ${customerId}` : ''}`);
+
+  // Get base mock data
+  const baseData = getBaseMockData();
+  
+  // Filter by customer ID if provided
+  let filteredAds = baseData.ads;
+  if (customerId) {
+    filteredAds = baseData.ads.filter((ad: GoogleAdsAd) => ad.customer_id === customerId);
+    console.log(`Filtered ads by customer ID ${customerId}: ${filteredAds.length} of ${baseData.ads.length} ads remain`);
+  }
+  
+  // Adjust data based on date range
+  if (startDate && endDate) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    // Calculate days between dates
+    const daysDiff = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    
+    // For single day requests, provide a day-specific variation
+    if (daysDiff === 1) {
+      console.log(`Generating single-day mock Google Ads data for: ${startDate}`);
+      const singleDayData = generateSingleDayMockData(startDate, filteredAds.length);
+      
+      // Apply customer ID filter to single day data if needed
+      if (customerId) {
+        singleDayData.ads = singleDayData.ads.filter((ad: GoogleAdsAd) => ad.customer_id === customerId);
+      }
+      
+      return singleDayData;
+    }
+    
+    // For multi-day ranges, adjust the data proportionally
+    if (daysDiff > 1) {
+      console.log(`Adjusting mock Google Ads data for ${daysDiff}-day range`);
+      
+      // Scale up metrics based on daysDiff
+      filteredAds = filteredAds.map((ad: GoogleAdsAd) => {
+        const scaleFactor = 0.8 + (Math.random() * 0.4); // Scale factor between 0.8-1.2
+        
+        return {
+          ...ad,
+          metrics: {
+            ...ad.metrics,
+            impressions: Math.round(ad.metrics.impressions * daysDiff * scaleFactor),
+            clicks: Math.round(ad.metrics.clicks * daysDiff * scaleFactor),
+            cost_micros: Math.round(ad.metrics.cost_micros * daysDiff * scaleFactor),
+            cost: parseFloat((ad.metrics.cost * daysDiff * scaleFactor).toFixed(2)),
+            conversions: Math.round(ad.metrics.conversions * daysDiff * scaleFactor),
+          }
+        };
+      });
+    }
+  }
+  
+  // Calculate total cost
+  const totalCost = filteredAds.reduce((sum: number, ad: GoogleAdsAd) => sum + ad.metrics.cost, 0);
+  
+  return {
+    campaigns: baseData.campaigns,
+    ads: filteredAds,
+    total_cost: totalCost
   };
 }
 

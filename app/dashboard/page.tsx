@@ -9,6 +9,13 @@ import DataTable from '../../components/Dashboard/DataTable';
 import { AdsComArticleData } from '../../lib/adscom-api';
 import { GoogleAdsAd } from '../../lib/google-ads-api';
 
+// Declare custom window property for TypeScript
+declare global {
+  interface Window {
+    __selectedCustomerId?: string | null;
+  }
+}
+
 const { Header, Content } = Layout;
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -76,6 +83,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState<boolean>(false);
   const [revenueData, setRevenueData] = useState<AdsComArticleData[]>([]);
   const [costData, setCostData] = useState<GoogleAdsAd[]>([]);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   
   // Default to today initially 
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>([
@@ -93,7 +101,10 @@ export default function Dashboard() {
     const timestamp = new Date().getTime();
     
     try {
-      console.log(`API call to ${endpoint}:`, params);
+      // Get the current customer ID from window if available
+      const currentCustomerId = typeof window !== 'undefined' ? window.__selectedCustomerId : selectedCustomerId;
+      
+      console.log(`API call to ${endpoint}:`, params, 'with customerId:', currentCustomerId);
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
@@ -103,6 +114,7 @@ export default function Dashboard() {
         },
         body: JSON.stringify({
           ...params,
+          customerId: currentCustomerId,
           _timestamp: timestamp // Add timestamp parameter
         }),
         cache: 'no-store'
@@ -120,13 +132,15 @@ export default function Dashboard() {
     }
   };
 
-  const fetchData = async (startDate: string, endDate: string) => {
+  const fetchData = async (startDate: string, endDate: string, customerId?: string | null) => {
+    const messageKey = 'dataFetch';
+
     setLoading(true);
     try {
       // Use makeApiCall instead of direct fetch
       const [adscomData, googleAdsData] = await Promise.all([
-        makeApiCall('/api/adscom', { startDate, endDate }),
-        makeApiCall('/api/google-ads', { startDate, endDate })
+        makeApiCall('/api/adscom', { startDate, endDate, customerId }),
+        makeApiCall('/api/google-ads', { startDate, endDate, customerId })
       ]);
       
       // Handle null data safely
@@ -143,13 +157,41 @@ export default function Dashboard() {
       
       setRevenueData(articleData);
       setCostData(adsData);
-      message.success('Data loaded successfully');
+      
+      // Success toast (no persistent loading toast anymore)
+      if (customerId) {
+        const customerName = getCustomerNameById(customerId);
+        message.success({ key: messageKey, content: `Data for ${customerName} loaded successfully`, duration: 2 });
+      } else {
+        message.success({ key: messageKey, content: 'Data loaded successfully for all accounts', duration: 2 });
+      }
     } catch (error) {
       console.error('Error fetching data:', error);
-      message.error('Failed to load data');
+      message.error({ key: messageKey, content: 'Failed to load data', duration: 2 });
     } finally {
       setLoading(false);
     }
+  };
+
+  // Get customer name by ID
+  const getCustomerNameById = (customerId: string | null): string => {
+    if (!customerId) return 'All Accounts';
+    
+    const customerIdKey = `CID_${customerId}`;
+    const account = CUSTOMER_ACCOUNTS.find(acc => acc.id === customerIdKey);
+    return account ? account.name : 'Unknown Account';
+  };
+
+  // Helper to handle account selection
+  const handleAccountChange = (customerId: string | null) => {
+    setSelectedCustomerId(customerId);
+    
+    // Refresh data with new customer ID filter
+    const startDate = dateRange[0].format('YYYY-MM-DD');
+    const endDate = dateRange[1].format('YYYY-MM-DD');
+    
+    // Direct call with the customerId parameter
+    fetchData(startDate, endDate, customerId);
   };
 
   useEffect(() => {
@@ -157,8 +199,41 @@ export default function Dashboard() {
     const today = dayjs();
     console.log('Initial load - forcing Today:', today.format('YYYY-MM-DD'));
     setDateRange([today, today]);
-    fetchData(today.format('YYYY-MM-DD'), today.format('YYYY-MM-DD'));
-  }, []);
+    
+    // Check if there's already a selected account ID in the window object
+    if (typeof window !== 'undefined' && window.__selectedCustomerId !== undefined) {
+      setSelectedCustomerId(window.__selectedCustomerId);
+      // Use the existing customer ID when fetching data initially
+      fetchData(today.format('YYYY-MM-DD'), today.format('YYYY-MM-DD'), window.__selectedCustomerId);
+    } else {
+      // No customer ID set yet, fetch all data
+      fetchData(today.format('YYYY-MM-DD'), today.format('YYYY-MM-DD'));
+    }
+    
+    // Listen for account changes from the layout component
+    const handleAccountChangedEvent = (event: CustomEvent) => {
+      const customerId = event.detail;
+      console.log('Account changed event received:', customerId);
+      
+      // Update the selected customer ID state
+      setSelectedCustomerId(customerId);
+      
+      // Refresh data with new customer ID filter
+      const startDate = dateRange[0].format('YYYY-MM-DD');
+      const endDate = dateRange[1].format('YYYY-MM-DD');
+      
+      // Directly call fetchData with the new customerId to avoid state update delays
+      fetchData(startDate, endDate, customerId);
+    };
+    
+    // Add event listener
+    window.addEventListener('accountChanged', handleAccountChangedEvent as EventListener);
+    
+    // Remove event listener on cleanup
+    return () => {
+      window.removeEventListener('accountChanged', handleAccountChangedEvent as EventListener);
+    };
+  }, []); // Empty dependency array - run once on mount
 
   const handleDateChange = (
     dates: [Dayjs | null, Dayjs | null] | null,
@@ -175,9 +250,53 @@ export default function Dashboard() {
       
       setDateRange([dates[0], dates[1]]);
       // Fetch data whenever date range changes
-      setTimeout(() => fetchData(dates[0]!.format('YYYY-MM-DD'), dates[1]!.format('YYYY-MM-DD')), 100); // Short timeout to ensure state is updated
+      setTimeout(() => fetchData(dates[0]!.format('YYYY-MM-DD'), dates[1]!.format('YYYY-MM-DD'), selectedCustomerId), 100); // Short timeout to ensure state is updated
     }
   };
+
+  // Helper function to get customer accounts data
+  const CUSTOMER_ACCOUNTS = [
+    {
+      id: 'all',
+      name: 'All Accounts',
+      value: null
+    },
+    {
+      id: 'CID_3146253756',
+      name: 'Ads.com - RSOC - UTC - 04',
+      value: '3146253756'
+    },
+    {
+      id: 'CID_5723554317',
+      name: 'Ads.com - RSOC - UTC - 03',
+      value: '5723554317'
+    },
+    {
+      id: 'CID_9071440966',
+      name: 'Ads.com - RSOC - UTC - 02',
+      value: '9071440966'
+    },
+    {
+      id: 'CID_8677814915',
+      name: 'Ads.com - RSOC - IST',
+      value: '8677814915'
+    },
+    {
+      id: 'CID_4277350349',
+      name: 'RSOC - UTC - Ads.com',
+      value: '4277350349'
+    },
+    {
+      id: 'CID_5857090949',
+      name: 'Ads.com - RSOC - UTC - 05',
+      value: '5857090949'
+    },
+    {
+      id: 'CID_6201189752',
+      name: 'Ads.com - RSOC - UTC - 06',
+      value: '6201189752'
+    }
+  ];
 
   const handlePeriodSelect = (period: string) => {
     // Only proceed if period is different or we're forcing a refresh
@@ -186,7 +305,7 @@ export default function Dashboard() {
       const { start, end } = getDateRangeForPeriod(period);
       const startDate = start.format('YYYY-MM-DD');
       const endDate = end.format('YYYY-MM-DD');
-      fetchData(startDate, endDate);
+      fetchData(startDate, endDate, selectedCustomerId);
       return;
     }
     
@@ -195,13 +314,13 @@ export default function Dashboard() {
     const startDate = start.format('YYYY-MM-DD');
     const endDate = end.format('YYYY-MM-DD');
     setDateRange([start, end]);
-    fetchData(startDate, endDate);
+    fetchData(startDate, endDate, selectedCustomerId);
   };
 
   const handleRefresh = () => {
     const startDate = dateRange[0].format('YYYY-MM-DD');
     const endDate = dateRange[1].format('YYYY-MM-DD');
-    fetchData(startDate, endDate);
+    fetchData(startDate, endDate, selectedCustomerId);
   };
 
   // Helper to get date ranges for different periods
@@ -298,23 +417,30 @@ export default function Dashboard() {
         <Content className="dashboard-content">
           <div className="page-header">
             <div>
-              <Title level={2}>Performance Dashboard</Title>
-                              <Text type="secondary">
+              <Title level={2}>
+                Performance Dashboard
+                {selectedCustomerId && (
+                  <span style={{ fontWeight: 'normal', fontSize: '0.8em', marginLeft: '12px' }}>
+                    ({getCustomerNameById(selectedCustomerId)})
+                  </span>
+                )}
+              </Title>
+              <Text type="secondary">
                 Data from {dateRange[0].format('MMM D, YYYY')} to {dateRange[1].format('MMM D, YYYY')}
               </Text>
             </div>
           </div>
           
           {loading ? (
-            <div className="loading-container">
-              <Row gutter={[24, 24]}>
-                {[1, 2, 3, 4].map(i => (
-                  <Col xs={24} sm={12} md={12} lg={6} key={i}>
-                    <Skeleton active paragraph={{ rows: 2 }} className="skeleton-card" />
-                  </Col>
-                ))}
-              </Row>
-              <Skeleton active paragraph={{ rows: 10 }} className="skeleton-table" />
+            <div className="loading-container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px' }}>
+              <div className="modern-loader-wrapper">
+                <div className="modern-loader" aria-label="Loading indicator" role="status">
+                  <span className="dot" />
+                  <span className="dot" />
+                  <span className="dot" />
+                </div>
+                <Title level={5} style={{ marginTop: 16, color: 'var(--text-secondary)' }}>Loading…</Title>
+              </div>
             </div>
           ) : (
             <>
@@ -476,8 +602,6 @@ export default function Dashboard() {
             padding: 24px;
           }
           
-
-          
           .quick-date-buttons {
             display: flex;
             gap: 8px;
@@ -519,8 +643,52 @@ export default function Dashboard() {
               width: 100%;
             }
             
+            .quick-date-buttons {
+              margin-right: 0;
+              margin-bottom: 8px;
+            }
+            
             .refresh-button {
               width: 100%;
+            }
+          }
+          
+          /* Modern bouncing dots loader */
+          .modern-loader-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+          }
+          
+          .modern-loader {
+            display: flex;
+            gap: 12px;
+          }
+          
+          .modern-loader .dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: var(--primary-color);
+            animation: dotBounce 0.6s infinite ease-in-out alternate;
+          }
+          
+          .modern-loader .dot:nth-child(2) {
+            animation-delay: 0.2s;
+          }
+          
+          .modern-loader .dot:nth-child(3) {
+            animation-delay: 0.4s;
+          }
+          
+          @keyframes dotBounce {
+            0% {
+              transform: translateY(0);
+              opacity: 1;
+            }
+            100% {
+              transform: translateY(-10px);
+              opacity: 0.7;
             }
           }
         `}</style>

@@ -9,6 +9,19 @@ const adsComClient = axios.create({
   }
 });
 
+export interface AdsComCountryData {
+  country: string;
+  visits: number;
+  clicks: number;
+  ctr: string;
+  rpm: number;
+  epc: number;
+  revenue: number;
+  initialRevenue: number;
+  ivtCorrection: number;
+  finalized?: boolean;
+}
+
 export interface AdsComArticleData {
   article: string;
   country: string;
@@ -21,6 +34,7 @@ export interface AdsComArticleData {
   initialRevenue: number;
   ivtCorrection: number;
   finalized?: boolean;   // Add flag to know if revenue is finalized or still estimated
+  countryBreakdown?: AdsComCountryData[];
 }
 
 export interface AdsComResponse {
@@ -137,7 +151,7 @@ export function getMockArticleData(startDate?: string, endDate?: string): AdsCom
     },
     {
       article: 'freshcuesdaily.com/industrial-crusher-machines-enhancing-efficiency-in-high-demand-lump-crushing-industry',
-      country: '10 countries',
+      country: '9 countries',
       visits: 2285,
       clicks: 1149,
       ctr: '50.28%',
@@ -238,8 +252,8 @@ export function getMockArticleData(startDate?: string, endDate?: string): AdsCom
     const ivtCorrection = parseFloat((revenue * (ivtPercentage / 100)).toFixed(2));
     const initialRevenue = parseFloat((revenue - ivtCorrection).toFixed(2));
     
-    // Random number of countries between 1 and 20
-    const countryCount = Math.floor(Math.random() * 20) + 1;
+    // Random number of countries between 1 and 7 (more realistic count)
+    const countryCount = Math.floor(Math.random() * 7) + 1;
     const country = countryCount === 1 ? 'US' : `${countryCount} countries`;
     
     // Calculate CTR, RPM, and EPC
@@ -331,7 +345,7 @@ function generateSingleDayMockData(dateString: string, targetArticleCount: numbe
     },
     {
       article: 'freshcuesdaily.com/revolutionizing-industrial-packaging-with-automation-machines-top-brands-cutting-edge-solutions',
-      country: '23 countries',
+      country: '28 countries',
       visits: Math.round(3339 * adjustedFactor),
       clicks: Math.round(2210 * adjustedFactor),
       ctr: '66.19%',
@@ -340,7 +354,7 @@ function generateSingleDayMockData(dateString: string, targetArticleCount: numbe
     },
     {
       article: 'freshcuesdaily.com/industrial-crusher-machines-enhancing-efficiency-in-high-demand-lump-crushing-industry',
-      country: '10 countries',
+      country: '9 countries',
       visits: Math.round(2285 * adjustedFactor),
       clicks: Math.round(1149 * adjustedFactor),
       ctr: '50.28%',
@@ -443,8 +457,8 @@ function generateSingleDayMockData(dateString: string, targetArticleCount: numbe
     const revenue = parseFloat((baseArticle.rpm * visits / 1000).toFixed(2));
     const ivtData = generateIVTData(revenue);
     
-    // Random number of countries between 1 and 20
-    const countryCount = Math.floor(Math.random() * 20) + 1;
+    // Random number of countries between 1 and 7 (more realistic count)
+    const countryCount = Math.floor(Math.random() * 7) + 1;
     const country = countryCount === 1 ? 'US' : `${countryCount} countries`;
     
     // Calculate CTR
@@ -574,7 +588,7 @@ function generateAdditionalMockArticles(count: number): AdsComArticleData[] {
     
     articles.push({
       article: `freshcuesdaily.com/article-${i+8}`,
-      country: `${Math.floor(Math.random() * 20) + 1} countries`,
+      country: `${Math.floor(Math.random() * 7) + 1} countries`,
       visits,
       clicks,
       ctr: `${template.ctrPercent}.${Math.floor(Math.random() * 100)}%`,

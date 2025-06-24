@@ -11,7 +11,7 @@ import {
   RiseOutlined,
   FallOutlined
 } from '@ant-design/icons';
-import { AdsComArticleData } from '../../lib/adscom-api';
+import { AdsComArticleData, AdsComCountryData } from '../../lib/adscom-api';
 import { GoogleAdsAd } from '../../lib/google-ads-api';
 import Flag from 'react-world-flags';
 
@@ -93,6 +93,7 @@ interface CombinedRowData {
     conversionRate: number;
     cpa: number;
   };
+  countryBreakdown?: AdsComCountryData[];
 }
 
 const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
@@ -483,7 +484,8 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
         roi: 0,
         finalUrls: [],
         finalized: article.finalized,
-        conversions: 0
+        conversions: 0,
+        countryBreakdown: article.countryBreakdown,
       };
       combined.push(row);
       slugMap[slug] = row;
@@ -669,133 +671,68 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
     );
   };
 
-  // Generate mock country breakdown data
+  // Generate country breakdown data
   const generateCountryBreakdown = (record: CombinedRowData) => {
-    // Extract country information from the record
-    const countryText = record.country || '';
-    const countryCount = parseInt(countryText.match(/\d+/)?.[0] || '0');
-    
-    // Create country-specific data entries
-    const countryData = [];
-    
-    // Common country codes for demonstration - expanded list with more countries
-    const countryCodes = [
-      'id', 'au', 'us', 'br', 'it', 'in', 'ph', 'es', 'gb', 'ca', 
-      'fr', 'de', 'mx', 'jp', 'cn', 'ru', 'ar', 'nl', 'se', 'sg'
-    ];
-    const totalVisits = record.visits;
-    const totalClicks = record.clicks;
-    const totalRevenue = record.revenue;
-    const totalCost = record.cost;
-    
-    // Generate country breakdown data
-    const countriesToShow = Math.min(countryCount || 10, 20);
-    
-    for (let i = 0; i < countriesToShow; i++) {
-      // Create random but realistic distribution of metrics
-      const countryCode = countryCodes[i % countryCodes.length];
-      const visitShare = Math.random() * 0.3 + 0.01; // 1% to 31% of total visits
-      const visits = Math.round(totalVisits * visitShare);
-      const clickRate = Math.random() * 2 + 0.5; // 0.5x to 2.5x the average CTR
-      const clicks = Math.round(visits * clickRate * (record.ctr / 100));
-      const ctr = clicks > 0 && visits > 0 ? (clicks / visits) * 100 : 0;
-      
-      // Calculate additional metrics for this country
-      const revenueShare = Math.random() * 0.4 + 0.01; // 1% to 41% of total revenue
-      const revenue = Math.round(totalRevenue * revenueShare * 100) / 100;
-      
-
-      
-      const rpm = visits > 0 ? (revenue / visits) * 1000 : 0;
-      const epc = clicks > 0 ? revenue / clicks : 0;
-      
-      // Google Ads metrics
-      const costShare = Math.random() * 0.35 + 0.01; // 1% to 36% of total cost
-      const cost = Math.round(totalCost * costShare * 100) / 100;
-      const impressions = Math.round(visits * (Math.random() * 3 + 1.5)); // 1.5x to 4.5x visits
-      const costClicks = Math.round(clicks * (Math.random() * 0.5 + 0.5)); // 50% to 100% of clicks
-      const costCtr = impressions > 0 ? (costClicks / impressions) * 100 : 0;
-      const cpc = costClicks > 0 ? cost / costClicks : 0;
-      const conversions = Math.round(costClicks * (Math.random() * 0.1)); // 0% to 10% conversion rate
-      const conversionRate = costClicks > 0 ? (conversions / costClicks) * 100 : 0;
-      const cpa = conversions > 0 ? cost / conversions : 0;
-      
-      // Calculate profit and ROI
-      const profit = revenue - cost;
-      const roi = cost > 0 ? (profit / cost) * 100 : revenue > 0 ? Infinity : 0;
-      
-      countryData.push({
-        key: countryCode,
-        country: countryCode,
-        visits: visits,
-        clicks: clicks,
-        ctr: ctr,
-        rpm: rpm,
-        epc: epc,
-        revenue: revenue,
-        impressions: impressions,
-        costClicks: costClicks,
-        costCtr: costCtr,
-        cpc: cpc,
-        cost: cost,
-        profit: profit,
-        roi: roi,
-        conversions: conversions,
-        conversionRate: conversionRate,
-        cpa: cpa
-      });
+    // If there's no breakdown data, return an empty array
+    if (!record.countryBreakdown || record.countryBreakdown.length === 0) {
+      return [];
     }
-    
-    // If we have N/A data, add it as well
-    const naRevenue = Math.round(totalRevenue * 0.04 * 100) / 100;
-    
-    countryData.push({
-      key: 'n/a',
-      country: 'N/A',
-      countryName: 'N/A',
-      visits: Math.round(totalVisits * 0.05),
-      clicks: Math.round(totalClicks * 0.03),
-      ctr: 30.0,
-      rpm: Math.round(record.rpm * 0.8 * 100) / 100,
-      epc: Math.round(record.epc * 0.7 * 10000) / 10000,
-      revenue: naRevenue,
-      impressions: Math.round(totalVisits * 0.05 * 2),
-      costClicks: Math.round(totalClicks * 0.03 * 0.7),
-      costCtr: 25.0,
-      cpc: Math.round(record.cpc * 0.9 * 100) / 100,
-      cost: Math.round(totalCost * 0.03 * 100) / 100,
-      profit: Math.round((naRevenue - totalCost * 0.03) * 100) / 100,
-      roi: Math.round(((naRevenue - totalCost * 0.03) / (totalCost * 0.03)) * 100),
-      conversions: Math.round(totalClicks * 0.03 * 0.7 * 0.05),
-      conversionRate: 5.0,
-      cpa: Math.round(record.cpc * 20 * 100) / 100
-    });
-    
-    // Sort by visits (highest first)
-    return countryData.sort((a, b) => b.visits - a.visits);
+  
+    const totalRevenue = record.countryBreakdown.reduce((sum, country) => sum + country.revenue, 0);
+    const totalCost = record.cost || 0;
+  
+    return record.countryBreakdown.map(country => {
+      // Distribute total cost proportionally based on revenue
+      const revenueShare = totalRevenue > 0 ? country.revenue / totalRevenue : 0;
+      const cost = totalCost * revenueShare;
+  
+      // Fake Google Ads metrics for now, proportional to cost
+      const conversions = Math.round((record.conversions || 0) * revenueShare);
+      const costClicks = Math.round((record.costClicks || 0) * revenueShare);
+      const impressions = costClicks * 25; // Estimate
+  
+      const conversionRate = costClicks > 0 ? (conversions / costClicks) * 100 : 0;
+      const cpc = costClicks > 0 ? cost / costClicks : 0;
+      const cpa = conversions > 0 ? cost / conversions : 0;
+      const costCtr = impressions > 0 ? (costClicks / impressions) * 100 : 0;
+  
+      const profit = country.revenue - cost;
+  
+      return {
+        ...country,
+        key: country.country,
+        cost,
+        profit,
+        conversions,
+        conversionRate,
+        cpc,
+        cpa,
+        costCtr,
+      };
+    }).sort((a, b) => b.visits - a.visits);
   };
 
   // Define expandable row render function
   const expandedRowRender = (record: CombinedRowData) => (
     <div className="expanded-row-content">
-      {record.country && record.country.includes('countries') ? (
+      {record.country ? (
         <Card title={
           <div className="detail-card-title">
             <div className="detail-card-icon-wrapper country-icon">
               <LinkOutlined className="detail-card-icon" />
             </div>
-            <span>Country Breakdown</span>
+            <span>Country Breakdown{record.country ? `: ${record.country}` : ''}</span>
           </div>
         } size="small" className="detail-card">
-                      <Table 
-              dataSource={generateCountryBreakdown(record)}
-              onChange={(pagination, filters, sorter: any) => {
-                setCountrySortedInfo({
-                  columnKey: sorter.columnKey,
-                  order: sorter.order,
-                });
-              }}
-              columns={[
+          <Table 
+            dataSource={generateCountryBreakdown(record)}
+            onChange={(pagination, filters, sorter: any) => {
+              setCountrySortedInfo({
+                columnKey: sorter.columnKey,
+                order: sorter.order,
+              });
+            }}
+            columns={[
               {
                 title: 'Country',
                 dataIndex: 'country',
@@ -872,12 +809,12 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
                 title: 'Ads.com Metrics',
                 children: [
                   {
-                                          title: 'Visits',
-                      dataIndex: 'visits',
-                      key: 'visits',
-                      render: (value: number) => safeFormat.number(value),
-                      sorter: (a: any, b: any) => a.visits - b.visits,
-                      defaultSortOrder: 'descend' as const,
+                    title: 'Visits',
+                    dataIndex: 'visits',
+                    key: 'visits',
+                    render: (value: number) => safeFormat.number(value),
+                    sorter: (a: any, b: any) => a.visits - b.visits,
+                    defaultSortOrder: 'descend' as const,
                   },
                   {
                     title: 'CTR',
@@ -900,13 +837,13 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
                     render: (value: number) => safeFormat.number(value),
                     sorter: (a: any, b: any) => a.clicks - b.clicks,
                   },
-                                      {
-                      title: 'Revenue',
-                      dataIndex: 'revenue',
-                      key: 'revenue',
-                      render: (value: number) => `$${safeFormat.currency(value, 2)}`,
-                      sorter: (a: any, b: any) => a.revenue - b.revenue,
-                    },
+                  {
+                    title: 'Revenue',
+                    dataIndex: 'revenue',
+                    key: 'revenue',
+                    render: (value: number) => `$${safeFormat.currency(value, 2)}`,
+                    sorter: (a: any, b: any) => a.revenue - b.revenue,
+                  },
                   {
                     title: 'Profit',
                     dataIndex: 'profit',
@@ -925,7 +862,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
               pageSize: countryPageSize,
               showSizeChanger: true,
               pageSizeOptions: ['5', '10', '20', '50'],
-              showTotal: (total) => `Total: ${total} countries`,
+              showTotal: (total) => `Total: ${total} ${total === 1 ? 'country' : 'countries'}`,
               onChange: (page, size) => {
                 setCountryPageSize(size);
               },
@@ -1057,8 +994,6 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           justify-content: flex-end;
         }
         
-
-        
         .table-title {
           display: flex;
           align-items: center;
@@ -1185,8 +1120,6 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           margin-left: 2px;
           font-weight: bold;
         }
-        
-
         
         .expanded-row-content {
           padding: 16px 0;
