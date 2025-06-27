@@ -142,19 +142,6 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   return (
     <App>
       <Layout style={{ minHeight: '100vh' }}>
-        {/* Add standalone logout button that's always visible */}
-        <Tooltip title="Logout">
-          <Button 
-            type="primary" 
-            icon={<LogoutOutlined />} 
-            onClick={handleLogout}
-            shape="round"
-            className="logout-button"
-          >
-            Logout
-          </Button>
-        </Tooltip>
-        
         <Sider 
           collapsible 
           collapsed={collapsed} 
@@ -271,7 +258,17 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
               </Title>
             </div>
             
-            {/* We'll keep this comment to show where the old logout button was */}
+            <Tooltip title="Logout">
+              <Button 
+                type="primary" 
+                icon={<LogoutOutlined />} 
+                onClick={handleLogout}
+                shape="round"
+                className="logout-button"
+              >
+                Logout
+              </Button>
+            </Tooltip>
           </Header>
           <Content style={{ margin: '24px', overflow: 'initial' }}>
             {children}
