@@ -8,7 +8,7 @@ export default function Home() {
   const router = useRouter();
   
   useEffect(() => {
-    router.push('/dashboard');
+    router.push('/login');
   }, [router]);
   
   return (
@@ -20,7 +20,7 @@ export default function Home() {
       height: '100vh' 
     }}>
       <Spin size="large" />
-      <p style={{ marginTop: '16px' }}>Redirecting to dashboard...</p>
+      <p style={{ marginTop: '16px' }}>Redirecting to login...</p>
     </div>
   );
 }

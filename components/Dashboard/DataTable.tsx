@@ -134,26 +134,6 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
   const formatArticleTitle = (slug: string): string => {
     if (!slug) return '';
     
-    // Check if this is a full URL
-    if (slug.startsWith('http')) {
-      // Extract just the path part after the domain
-      const urlParts = slug.split('/');
-      // Get the last meaningful segment (article name)
-      const articlePart = urlParts[urlParts.length - 1] || '';
-      
-      // Remove any query parameters or file extensions
-      const cleanArticlePart = articlePart
-        .split('?')[0]
-        .replace(/\.(html?|php|aspx?)$/, '');
-        
-      // Format the article title from the clean part
-      return cleanArticlePart
-        .split('-')
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(' ');
-    }
-    
-    // For non-URL slugs, just format normally
     return slug
       .split('-')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
@@ -281,7 +261,13 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
       render: (text: string, record: CombinedRowData) => (
         <div className="article-info">
           <div className="article-title">
-            {formatArticleTitle(record.article || record.slug)}
+            {record.article ? (
+              record.article.includes('-') 
+                ? formatArticleTitle(record.slug)
+                : record.article.includes('/') 
+                  ? formatArticleTitle(record.slug)
+                  : record.article
+            ) : formatArticleTitle(record.slug)}
           </div>
           {renderCountryWithFlag(record.country)}
         </div>

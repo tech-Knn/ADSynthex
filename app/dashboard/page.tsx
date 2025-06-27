@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { Layout, Typography, DatePicker, Button, Skeleton, Row, Col, App } from 'antd';
 import { CalendarOutlined, ReloadOutlined, BarChartOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
+import { useSearchParams } from 'next/navigation';
 import SummaryCards from '../../components/Dashboard/SummaryCards';
 import DataTable from '../../components/Dashboard/DataTable';
 import { AdsComArticleData } from '../../lib/adscom-api';
@@ -79,11 +80,12 @@ const fetchGoogleAdsData = async (startDate: string, endDate: string): Promise<G
   }
 };
 
-export default function Dashboard() {
+function DashboardContent() {
   const [loading, setLoading] = useState<boolean>(false);
   const [revenueData, setRevenueData] = useState<AdsComArticleData[]>([]);
   const [costData, setCostData] = useState<GoogleAdsAd[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const searchParams = useSearchParams();
   
   // Default to today initially 
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>([
@@ -200,30 +202,52 @@ export default function Dashboard() {
     console.log('Initial load - forcing Today:', today.format('YYYY-MM-DD'));
     setDateRange([today, today]);
     
-    // Check if there's already a selected account ID in the window object
-    if (typeof window !== 'undefined' && window.__selectedCustomerId !== undefined) {
-      setSelectedCustomerId(window.__selectedCustomerId);
-      // Use the existing customer ID when fetching data initially
-      fetchData(today.format('YYYY-MM-DD'), today.format('YYYY-MM-DD'), window.__selectedCustomerId);
-    } else {
-      // No customer ID set yet, fetch all data
-      fetchData(today.format('YYYY-MM-DD'), today.format('YYYY-MM-DD'));
+    // Check for account parameter in URL
+    const accountParam = searchParams?.get('account') || null;
+    
+    let customerId = null;
+    
+    // Check if there's an account parameter in URL
+    if (accountParam) {
+      console.log('Found account parameter in URL:', accountParam);
+      // If it's a CID_ prefix, extract just the number
+      customerId = accountParam.startsWith('CID_') 
+        ? accountParam.replace('CID_', '') 
+        : accountParam;
+        
+      console.log('Using account ID from URL:', customerId);
+      
+      // Set the selected customer ID
+      setSelectedCustomerId(customerId);
+      
+      // Update window.__selectedCustomerId for consistency
+      if (typeof window !== 'undefined') {
+        window.__selectedCustomerId = customerId;
+      }
+    } 
+    // If no account param, check if there's already a selected account ID in the window object
+    else if (typeof window !== 'undefined' && window.__selectedCustomerId !== undefined) {
+      customerId = window.__selectedCustomerId;
+      setSelectedCustomerId(customerId);
     }
+    
+    // Use the customer ID when fetching data initially
+    fetchData(today.format('YYYY-MM-DD'), today.format('YYYY-MM-DD'), customerId);
     
     // Listen for account changes from the layout component
     const handleAccountChangedEvent = (event: CustomEvent) => {
-      const customerId = event.detail;
-      console.log('Account changed event received:', customerId);
+      const newCustomerId = event.detail;
+      console.log('Account changed event received:', newCustomerId);
       
       // Update the selected customer ID state
-      setSelectedCustomerId(customerId);
+      setSelectedCustomerId(newCustomerId);
       
       // Refresh data with new customer ID filter
       const startDate = dateRange[0].format('YYYY-MM-DD');
       const endDate = dateRange[1].format('YYYY-MM-DD');
       
       // Directly call fetchData with the new customerId to avoid state update delays
-      fetchData(startDate, endDate, customerId);
+      fetchData(startDate, endDate, newCustomerId);
     };
     
     // Add event listener
@@ -233,7 +257,7 @@ export default function Dashboard() {
     return () => {
       window.removeEventListener('accountChanged', handleAccountChangedEvent as EventListener);
     };
-  }, []); // Empty dependency array - run once on mount
+  }, [searchParams]); // Add searchParams as dependency so the effect runs when URL changes
 
   const handleDateChange = (
     dates: [Dayjs | null, Dayjs | null] | null,
@@ -694,5 +718,24 @@ export default function Dashboard() {
         `}</style>
       </Layout>
     </App>
+  );
+}
+
+// Add loading fallback component
+function DashboardLoading() {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ marginBottom: '20px' }}>Loading dashboard...</div>
+      </div>
+    </div>
+  );
+}
+
+export default function Dashboard() {
+  return (
+    <Suspense fallback={<DashboardLoading />}>
+      <DashboardContent />
+    </Suspense>
   );
 } 
