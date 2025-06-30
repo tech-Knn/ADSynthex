@@ -134,7 +134,16 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
   const formatArticleTitle = (slug: string): string => {
     if (!slug) return '';
     
-    return slug
+    // If the slug contains a domain, extract only the article part after the domain
+    let titleSlug = slug;
+    if (slug.includes('/')) {
+      // Split by '/' and remove the domain part (first element)
+      const parts = slug.split('/');
+      // Get all parts after the domain
+      titleSlug = parts.slice(1).join('/');
+    }
+    
+    return titleSlug
       .split('-')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
       .join(' ');
@@ -258,21 +267,22 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
       title: 'Article',
       dataIndex: 'article',
       key: 'article',
-      render: (text: string, record: CombinedRowData) => (
-        <div className="article-info">
-          <div className="article-title">
-            {record.article ? (
-              record.article.includes('-') 
-                ? formatArticleTitle(record.slug)
-                : record.article.includes('/') 
-                  ? formatArticleTitle(record.slug)
-                  : record.article
-            ) : formatArticleTitle(record.slug)}
+      render: (text: string, record: CombinedRowData) => {
+        const fullTitle = formatArticleTitle(record.article);
+        const truncated = fullTitle.split(' ').slice(0, 3).join(' ');
+
+        return (
+          <div className="article-info">
+            <Tooltip title={fullTitle} placement="topLeft">
+              <div className="article-title truncated-title">
+                {truncated}{fullTitle.split(' ').length > 3 ? '…' : ''}
+              </div>
+            </Tooltip>
+            {renderCountryWithFlag(record.country)}
           </div>
-          {renderCountryWithFlag(record.country)}
-        </div>
-      ),
-      width: '25%',
+        );
+      },
+      width: '22%',
       fixed: 'left' as const,
       sorter: (a: CombinedRowData, b: CombinedRowData) => a.article.localeCompare(b.article),
     },
@@ -288,7 +298,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
             const conversions = Number(record.conversions || 0);
             return safeFormat.number(conversions);
           },
-          width: '7%',
+          width: '5%',
           sorter: (a: CombinedRowData, b: CombinedRowData) => (a.conversions || 0) - (b.conversions || 0),
         },
         {
@@ -307,7 +317,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
             const convRate = clicks > 0 ? (conversions / clicks) * 100 : 0;
             return safeFormat.percentage(convRate);
           },
-          width: '7%',
+          width: '5%',
           sorter: (a: CombinedRowData, b: CombinedRowData) => {
             const aRate = a.apiMetrics?.conversionRate || ((a.conversions || 0) / (a.costClicks || 1)) * 100;
             const bRate = b.apiMetrics?.conversionRate || ((b.conversions || 0) / (b.costClicks || 1)) * 100;
@@ -323,7 +333,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
             const cpc = Number(record.cpc || 0);
             return `$${safeFormat.currency(cpc, 2)}`;
           },
-          width: '7%',
+          width: '5%',
           sorter: (a: CombinedRowData, b: CombinedRowData) => (a.cpc || 0) - (b.cpc || 0),
         },
         {
@@ -342,7 +352,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
             const cpa = conversions > 0 ? cost / conversions : 0;
             return `$${safeFormat.currency(cpa, 2)}`;
           },
-          width: '7%',
+          width: '5%',
           sorter: (a: CombinedRowData, b: CombinedRowData) => {
             const aCpa = a.apiMetrics?.cpa || ((a.conversions || 0) > 0 ? (a.cost || 0) / (a.conversions || 1) : 0);
             const bCpa = b.apiMetrics?.cpa || ((b.conversions || 0) > 0 ? (b.cost || 0) / (b.conversions || 1) : 0);
@@ -358,7 +368,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
             const ctr = Number(record.costCtr || 0);
             return safeFormat.percentage(ctr);
           },
-          width: '7%',
+          width: '5%',
           sorter: (a: CombinedRowData, b: CombinedRowData) => (a.costCtr || 0) - (b.costCtr || 0),
         },
         {
@@ -372,7 +382,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
               <div className="metric-value text-error">${safeFormat.currency(cost, 2)}</div>
             );
           },
-          width: '7%',
+          width: '5%',
           sorter: (a: CombinedRowData, b: CombinedRowData) => (a.cost || 0) - (b.cost || 0),
         },
       ],
@@ -385,7 +395,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           dataIndex: 'visits',
           key: 'visits',
           render: (value: number) => safeFormat.number(value),
-          width: '6%',
+          width: '5%',
           sorter: (a: any, b: any) => a.visits - b.visits,
           defaultSortOrder: 'descend' as const,
         },
@@ -394,7 +404,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           dataIndex: 'ctr',
           key: 'ctr',
           render: (value: number) => safeFormat.percentage(value),
-          width: '6%',
+          width: '5%',
           sorter: (a: CombinedRowData, b: CombinedRowData) => a.ctr - b.ctr,
         },
         {
@@ -402,7 +412,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           dataIndex: 'epc',
           key: 'epc',
           render: (value: number) => `$${safeFormat.currency(value, 4)}`,
-          width: '6%',
+          width: '5%',
           sorter: (a: CombinedRowData, b: CombinedRowData) => a.epc - b.epc,
         },
         {
@@ -410,7 +420,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           dataIndex: 'clicks',
           key: 'clicks',
           render: (value: number) => safeFormat.number(value),
-          width: '6%',
+          width: '5%',
           sorter: (a: CombinedRowData, b: CombinedRowData) => a.clicks - b.clicks,
         },
         {
@@ -418,7 +428,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           dataIndex: 'revenue',
           key: 'revenue',
           render: (value: number, record: CombinedRowData) => formatRevenueDisplay(value, record.finalized),
-          width: '6%',
+          width: '5%',
           sorter: (a: CombinedRowData, b: CombinedRowData) => a.revenue - b.revenue,
         },
         {
@@ -430,7 +440,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
               ${safeFormat.currency(Math.abs(value), 2)}
             </div>
           ),
-          width: '6%',
+          width: '5%',
           sorter: (a: CombinedRowData, b: CombinedRowData) => a.profit - b.profit,
           defaultSortOrder: 'descend' as const,
         },
@@ -443,7 +453,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
               {safeFormat.percentage(value, 1)}
             </div>
           ),
-          width: '6%',
+          width: '5%',
           sorter: (a: CombinedRowData, b: CombinedRowData) => a.roi - b.roi,
         },
       ],

@@ -1,10 +1,16 @@
 /* Global styles */
 
 :root {
-  /* Modern color palette */
-  --primary-color: #4f46e5;
-  --primary-gradient: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-  --primary-hover: #4338ca;
+  /* Dashboard color palette - updated to purple */
+  --primary-blue: #6a3de8;
+  --primary-blue-dark: #5429c9;
+  --primary-blue-light: #8057f5;
+  --primary-blue-gradient: linear-gradient(135deg, #6a3de8 0%, #5429c9 100%);
+  
+  /* Keep existing colors as fallbacks */
+  --primary-color: #6a3de8;
+  --primary-gradient: linear-gradient(135deg, #6a3de8 0%, #5429c9 100%);
+  --primary-hover: #8057f5;
   --secondary-color: #f43f5e;
   --secondary-gradient: linear-gradient(135deg, #f43f5e 0%, #ec4899 100%);
   --success-color: #10b981;
@@ -24,7 +30,7 @@
   --card-hover-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
   
   /* Tile Colors */
-  --tile-bg-1: #eff6ff;
+  --tile-bg-1: #f5f0ff;
   --tile-bg-2: #fef2f2;
   --tile-bg-3: #f0fdf4;
   --tile-bg-4: #fdf4ff;
@@ -382,12 +388,8 @@ a:hover {
 
 /* Animations */
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-.fade-in {
-  animation: fadeIn 0.5s ease-in;
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes slideUp {
@@ -395,14 +397,26 @@ a:hover {
   to { transform: translateY(0); opacity: 1; }
 }
 
-.slide-up {
-  animation: slideUp 0.5s ease-out;
-}
-
 @keyframes pulse {
   0% { transform: scale(1); }
   50% { transform: scale(1.05); }
   100% { transform: scale(1); }
+}
+
+@keyframes float {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  25% { transform: translate(5px, 10px) rotate(2deg); }
+  50% { transform: translate(2px, 5px) rotate(5deg); }
+  75% { transform: translate(8px, -2px) rotate(2deg); }
+  100% { transform: translate(0, 0) rotate(0deg); }
+}
+
+.fade-in {
+  animation: fadeIn 0.5s ease-in;
+}
+
+.slide-up {
+  animation: slideUp 0.5s ease-out;
 }
 
 .pulse {
@@ -451,4 +465,154 @@ a:hover {
   justify-content: center;
   align-items: center;
   height: 400px;
+}
+
+/* Ensure logout button is always visible */
+.logout-button {
+  z-index: 9999 !important;
+  position: fixed !important;
+  top: 16px !important;
+  right: 20px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+  background: var(--primary-gradient) !important;
+  border: none !important;
+}
+
+/* Animation for the logout button to make it more visible */
+@keyframes gentle-pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+/* Add hover effect to logout button */
+.logout-button:hover {
+  animation: gentle-pulse 1s infinite;
+}
+
+/* Login page specific styles */
+.ant-tabs-nav::before {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.03) !important;
+}
+
+.ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--primary-blue) !important;
+  font-weight: 600;
+}
+
+.ant-tabs-ink-bar {
+  background: var(--primary-blue) !important;
+  height: 3px !important;
+  border-radius: 3px !important;
+}
+
+.ant-tabs-tab:hover {
+  color: var(--primary-blue-light) !important;
+}
+
+.ant-input-affix-wrapper {
+  border-radius: 12px !important;
+  padding: 12px 16px !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+  border: 1px solid var(--border-color) !important;
+  transition: all 0.3s ease !important;
+  background-color: rgba(249, 250, 251, 0.8) !important;
+}
+
+.ant-input-affix-wrapper:hover,
+.ant-input-affix-wrapper:focus,
+.ant-input-affix-wrapper-focused {
+  border-color: var(--primary-blue) !important;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1) !important;
+  transform: translateY(-1px) !important;
+  background-color: rgba(255, 255, 255, 1) !important;
+}
+
+.ant-input {
+  font-size: 15px !important;
+  background-color: transparent !important;
+}
+
+.ant-input-password-icon.anticon {
+  color: var(--primary-blue) !important;
+  opacity: 0.7;
+  transition: all 0.3s ease !important;
+}
+
+.ant-input-password-icon.anticon:hover {
+  opacity: 1;
+  color: var(--primary-blue-light) !important;
+}
+
+.ant-input-prefix {
+  margin-right: 10px !important;
+  color: var(--primary-blue) !important;
+  opacity: 0.7;
+}
+
+/* Login button styles */
+.ant-form .ant-btn-primary,
+.login-button {
+  background: var(--primary-gradient) !important;
+  border: none !important;
+  height: 50px !important;
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  box-shadow: 0 4px 12px rgba(106, 61, 232, 0.15) !important;
+  transition: all 0.3s ease !important;
+  letter-spacing: 0.5px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px !important;
+}
+
+.ant-form .ant-btn-primary:hover,
+.login-button:hover {
+  background: var(--primary-color) !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 16px rgba(106, 61, 232, 0.25) !important;
+}
+
+.ant-form .ant-btn-primary:active,
+.login-button:active {
+  background: var(--primary-blue-dark) !important;
+  transform: translateY(0) !important;
+}
+
+/* Remove the gradient animation for login buttons */
+.ant-form .ant-btn-primary::after,
+.login-button::after {
+  display: none;
+}
+
+/* Login page specific styles */
+.login-bg-wave {
+  background: var(--primary-gradient) !important;
+}
+
+/* ------------------------------ */
+/*  DataTable alignment tweaks    */
+/* ------------------------------ */
+
+.article-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.25;
+}
+
+.article-title {
+  max-width: 100%;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.truncated-title {
+  /* ensure the ellipsis is visible */
+  width: 100%;
+}
+
+.country-tag {
+  margin-top: 4px;
 } 

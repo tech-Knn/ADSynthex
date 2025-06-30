@@ -29,13 +29,32 @@ const transformApiData = (apiResponse: any): AdsComResponse => {
       // Usually in format "article-ACTUALVALUE" or just the article URL
       let article = subid5Value;
       
-      // If the subid has a slash, it's likely a full URL - use it directly
-      if (!subid5Value.includes('/') && subid5Value.includes('-')) {
-        // If it's using the recommended format with prefix, extract the value part
-        const parts = subid5Value.split('-');
-        if (parts.length > 1) {
-          // Take everything after the first dash
-          article = parts.slice(1).join('-');
+      /*
+       * subid_5 can be formatted in a couple of different ways depending on how
+       * the tracking links were set up:
+       *   1. A full URL slug such as "freshcuesdaily.com/industrial-crusher-machines..."
+       *   2. A raw slug such as "industrial-crusher-machines-enhancing-efficiency..."
+       *   3. A prefixed slug where the prefix helps to identify the value that
+       *      follows, e.g. "article-industrial-crusher-machines...".
+       *
+       * The old implementation simply removed the first dash-separated segment
+       * for any value that did not contain a slash.  Unfortunately, that meant
+       * legitimate first words like "industrial", "choosing", "how", etc. were
+       * being chopped off when the slug was in form (2).  The dashboard then
+       * displayed titles without their leading keywords.
+       *
+       * The fix below is more surgical: we ONLY strip the prefix when the slug
+       * starts with a *known* marker such as "article-" or "url-".  In every
+       * other case we leave the slug untouched so that its first real word is
+       * preserved.
+       */
+
+      if (!subid5Value.includes('/')) {
+        const knownPrefixes = ['article-', 'url-', 'landing-'];
+        const matchedPrefix = knownPrefixes.find(prefix => subid5Value.startsWith(prefix));
+
+        if (matchedPrefix) {
+          article = subid5Value.substring(matchedPrefix.length);
         }
       }
       
