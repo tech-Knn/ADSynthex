@@ -469,11 +469,13 @@ export async function POST(request: NextRequest) {
             '9071440966': ['utc02'],
             '5857090949': ['utc05'],
             '6201189752': ['utc06'],
+            '4071621621': ['utc07'],
+            '7579121709': ['utc08'],
             '4277350349': ['siddhi']
             // The IST customer (8677814915) will be handled as the fallback below
           };
 
-          const excludeSubidsForIst = ['utc04', 'utc03', 'utc02', 'utc05', 'utc06', 'siddhi'];
+          const excludeSubidsForIst = ['utc04', 'utc03', 'utc02', 'utc05', 'utc06', 'utc07', 'utc08', 'siddhi'];
 
           if (customerSubidMap[customerId]) {
             const allowedSubids = customerSubidMap[customerId];

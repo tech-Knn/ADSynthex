@@ -54,6 +54,16 @@ const CUSTOMER_ACCOUNTS = [
     value: '6201189752'
   },
   {
+    id: 'CID_4071621621',
+    name: 'Ads.com - RSOC - UTC - 07',
+    value: '4071621621'
+  },
+  {
+    id: 'CID_7579121709',
+    name: 'Ads.com - RSOC - UTC - 08',
+    value: '7579121709'
+  },
+  {
     id: 'CID_4277350349',
     name: 'RSOC - UTC - Ads.com',
     value: '4277350349'
