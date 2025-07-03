@@ -267,6 +267,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
       title: 'Article',
       dataIndex: 'article',
       key: 'article',
+      className: 'article-column',
       render: (text: string, record: CombinedRowData) => {
         const fullTitle = formatArticleTitle(record.article);
         const truncated = fullTitle.split(' ').slice(0, 3).join(' ');
@@ -275,15 +276,15 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           <div className="article-info">
             <Tooltip title={fullTitle} placement="topLeft">
               <div className="article-title truncated-title">
-                {truncated}{fullTitle.split(' ').length > 3 ? '…' : ''}
+                {truncated}{fullTitle.split(' ').length > 3 ? '...' : ''}
               </div>
             </Tooltip>
-            {renderCountryWithFlag(record.country)}
+            {/* Country buttons removed from main view as per user request */}
           </div>
         );
       },
-      width: '22%',
-      fixed: 'left' as const,
+      width: '20%',
+      align: 'left' as const,
       sorter: (a: CombinedRowData, b: CombinedRowData) => a.article.localeCompare(b.article),
     },
     {
@@ -298,7 +299,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
             const conversions = Number(record.conversions || 0);
             return safeFormat.number(conversions);
           },
-          width: '5%',
+          width: '6%',
           sorter: (a: CombinedRowData, b: CombinedRowData) => (a.conversions || 0) - (b.conversions || 0),
         },
         {
@@ -317,7 +318,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
             const convRate = clicks > 0 ? (conversions / clicks) * 100 : 0;
             return safeFormat.percentage(convRate);
           },
-          width: '5%',
+          width: '6%',
           sorter: (a: CombinedRowData, b: CombinedRowData) => {
             const aRate = a.apiMetrics?.conversionRate || ((a.conversions || 0) / (a.costClicks || 1)) * 100;
             const bRate = b.apiMetrics?.conversionRate || ((b.conversions || 0) / (b.costClicks || 1)) * 100;
@@ -731,7 +732,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
             <div className="detail-card-icon-wrapper country-icon">
               <LinkOutlined className="detail-card-icon" />
             </div>
-            <span>Country Breakdown{record.country ? `: ${record.country}` : ''}</span>
+            <span>Country Breakdown {record.country && renderCountryWithFlag(record.country)}</span>
           </div>
         } size="small" className="detail-card">
           <Table 
@@ -963,9 +964,9 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
             order: sorter.order,
           });
         }}
-        scroll={{ x: 'max-content' }}
-        size="middle"
+        size="small"
         bordered
+        className="performance-table"
       />
       
       <style jsx global>{`
@@ -975,6 +976,23 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           box-shadow: 0 2px 8px rgba(0,0,0,0.05);
           padding: 20px;
           margin-bottom: 24px;
+          overflow: visible;
+          width: 100%;
+        }
+        
+        /* Make expand button more visible */
+        .ant-table-row-expand-icon {
+          background-color: #f0f2ff;
+          border-color: #6366f1;
+          color: #6366f1;
+          transition: all 0.3s;
+          transform: scale(1.1);
+          margin-right: 8px;
+        }
+        
+        .ant-table-row-expand-icon:hover {
+          background-color: #e6e8ff;
+          box-shadow: 0 0 5px rgba(99, 102, 241, 0.3);
         }
         
         /* Tooltip styling */
@@ -1039,13 +1057,23 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
         .article-info {
           display: flex;
           flex-direction: column;
+          justify-content: center;
+          height: 100%;
+          padding: 2px 0;
         }
         
         .article-title {
           font-weight: 500;
-          margin-bottom: 8px;
           color: #1f2937;
-          word-break: break-word;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          line-height: 1.2;
+          max-width: 100%;
+          padding-right: 8px;
+          display: flex;
+          align-items: center;
+          height: 20px;
+          text-align: left;
         }
         
         .country-tag {
@@ -1058,6 +1086,9 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           display: flex;
           align-items: center;
           gap: 6px;
+          font-size: 14px;
+          font-weight: 500;
+          justify-content: flex-start;
         }
         
         .country-flag {
@@ -1070,6 +1101,40 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           font-weight: 500;
           display: flex;
           align-items: center;
+          justify-content: center;
+          height: 100%;
+          font-size: 14px;
+        }
+        
+        /* Fix alignment for all numeric cells */
+        .ant-table-cell-fix-left + td, 
+        .ant-table-cell-fix-left + td ~ td {
+          text-align: center;
+        }
+        
+        /* Left align the article column */
+        .article-column {
+          text-align: left !important;
+        }
+        
+        /* Consistent number formatting */
+        .ant-table-cell .anticon {
+          margin-left: 4px;
+        }
+        
+        .ant-table-thead > tr > th {
+          font-weight: 600;
+          background: #f3f4f6;
+          cursor: pointer;
+          transition: all 0.2s;
+          padding: 4px 6px;
+          height: 32px;
+          font-size: 14px;
+          text-align: center;
+        }
+        
+        .ant-table-thead > tr > th:hover {
+          background-color: #f0f5ff !important;
         }
         
         .text-primary {
@@ -1107,6 +1172,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
         
         .roi-value {
           font-weight: 500;
+          font-size: 14px;
         }
         
         .roi-success {
@@ -1132,11 +1198,13 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
         }
         
         .expanded-row-content {
-          padding: 16px 0;
+          padding: 6px 0;
+          margin-top: -1px;
+          background-color: #f9fafb;
         }
         
         .detail-card {
-          margin-bottom: 16px;
+          margin-bottom: 8px;
           border-radius: 8px;
         }
         
@@ -1178,26 +1246,67 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
         }
         
         .country-flag-image {
-          margin-right: 6px;
+          margin-right: 8px;
+          border: 1px solid rgba(0,0,0,0.05);
+          border-radius: 2px;
         }
         
         /* Country breakdown table styling */
         .ant-table {
           font-size: 14px;
+          border-spacing: 0;
         }
         
-        .ant-table-thead > tr > th {
-          font-size: 14px;
-          font-weight: 600;
-          background-color: #f9fafb;
+        .ant-table table {
+          border-collapse: collapse;
+        }
+        
+        /* Important rule to override default Ant Design table spacing */
+        .ant-table-tbody > tr > td, .ant-table-thead > tr > th {
+          border-bottom-width: 1px !important;
+        }
+        
+        /* Improve table alignment */
+        .ant-table-cell {
+          vertical-align: middle !important;
           text-align: center;
-          padding: 10px 8px;
-          cursor: pointer;
-          transition: all 0.2s;
+          height: 30px;
+          padding: 0px 6px;
+          border-bottom: 1px solid #f0f0f0;
         }
         
-        .ant-table-thead > tr > th:hover {
-          background-color: #f0f5ff !important;
+        .ant-table-cell:first-child {
+          text-align: left;
+          padding-left: 8px;
+        }
+        
+        .article-column {
+          width: 200px;
+          min-width: 200px;
+          max-width: 240px;
+        }
+        
+        .ant-table-row {
+          height: 30px;
+          line-height: 1.2;
+        }
+        
+        /* Fix spacing between rows */
+        .ant-table-tbody > tr {
+          margin: 0;
+          padding: 0;
+        }
+        
+        /* Remove extra space in expanded rows */
+        .ant-table-expanded-row > td {
+          padding: 0 !important;
+        }
+        
+        .ant-table-tbody > tr > td {
+          font-size: 14px;
+          padding: 0px 6px;
+          text-align: center;
+          margin: 0;
         }
         
         .ant-table-column-sorter {
@@ -1206,41 +1315,6 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
         
         .ant-table-column-sort {
           background-color: #f0f5ff;
-        }
-        
-        .ant-table-tbody > tr > td {
-          font-size: 14px;
-          padding: 10px 8px;
-          text-align: center;
-        }
-        
-        .country-code-display {
-          font-size: 14px;
-          font-weight: 500;
-          display: flex;
-          align-items: center;
-          justify-content: flex-start;
-        }
-        
-        .country-flag-image {
-          margin-right: 8px;
-          border: 1px solid rgba(0,0,0,0.05);
-          border-radius: 2px;
-        }
-        
-        .metric-value {
-          font-size: 14px;
-          font-weight: 500;
-        }
-        
-        .roi-value {
-          font-size: 14px;
-          font-weight: 500;
-        }
-        
-        .ivt-value {
-          font-size: 14px;
-          font-weight: 500;
         }
         
         /* Pagination styling */
@@ -1275,17 +1349,61 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           background-color: #f0f5ff;
         }
         
-        /* Performance indicators */
-        .profit-positive, .text-success {
-          color: #10b981;
+        /* Performance table specific styles */
+        .performance-table .ant-table-thead > tr > th {
+          padding: 4px 6px;
         }
         
-        .profit-negative, .text-error {
-          color: #ef4444;
+        .performance-table .ant-table-tbody > tr > td {
+          padding: 0px 6px;
         }
         
-        .text-warning {
-          color: #f59e0b;
+        .performance-table .ant-table-cell {
+          white-space: normal;
+        }
+        
+        .performance-table .article-column .ant-table-cell {
+          white-space: normal;
+        }
+        
+        /* Fix for article column display */
+        .article-column {
+          overflow: visible;
+        }
+        
+        .truncated-title {
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          overflow: hidden;
+          max-width: 220px;
+        }
+        
+        /* Override any scrolling behavior */
+        .ant-table-body {
+          overflow: visible !important;
+        }
+        
+        .ant-table-container {
+          overflow: visible !important;
+        }
+        
+        .ant-table {
+          overflow: visible !important;
+          width: 100% !important;
+        }
+        
+        .ant-table-content {
+          overflow: visible !important;
+        }
+        
+        .ant-table-wrapper {
+          overflow: visible !important;
+        }
+        
+        /* Fix table layout to prevent horizontal scrolling */
+        .performance-table table {
+          table-layout: fixed;
+          width: 100%;
         }
       `}</style>
     </div>
