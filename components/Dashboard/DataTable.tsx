@@ -884,6 +884,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
             size="small"
             scroll={{ x: 'max-content' }}
             bordered
+            rowClassName={() => 'country-row-3d'}
           />
         </Card>
       ) : (
@@ -967,6 +968,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
         size="small"
         bordered
         className="performance-table"
+        rowClassName={() => 'performance-row-3d'}
       />
       
       <style jsx global>{`
@@ -1037,6 +1039,12 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           align-items: center;
           justify-content: center;
           margin-right: 12px;
+          animation: floatTableIcon 2s ease-in-out infinite alternate;
+        }
+        
+        @keyframes floatTableIcon {
+          0% { transform: translateY(0); }
+          100% { transform: translateY(-5px); }
         }
         
         .table-icon {
@@ -1404,6 +1412,28 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
         .performance-table table {
           table-layout: fixed;
           width: 100%;
+        }
+        
+        /* 3D lift effect for article table rows */
+        .performance-table .ant-table-tbody > tr.performance-row-3d {
+          transition: box-shadow 0.3s cubic-bezier(0.4,0,0.2,1), transform 0.3s cubic-bezier(0.4,0,0.2,1);
+        }
+        .performance-table .ant-table-tbody > tr.performance-row-3d:hover {
+          box-shadow: 0 8px 24px rgba(99,102,241,0.12), 0 2px 8px rgba(0,0,0,0.08);
+          transform: translateY(-4px) scale(1.01) perspective(600px) rotateX(1deg) rotateY(-1deg);
+          z-index: 2;
+          background: #f5f7ff !important;
+        }
+        
+        /* 3D lift effect for country breakdown table rows */
+        .detail-card .ant-table-tbody > tr.country-row-3d {
+          transition: box-shadow 0.3s cubic-bezier(0.4,0,0.2,1), transform 0.3s cubic-bezier(0.4,0,0.2,1);
+        }
+        .detail-card .ant-table-tbody > tr.country-row-3d:hover {
+          box-shadow: 0 8px 24px rgba(99,102,241,0.12), 0 2px 8px rgba(0,0,0,0.08);
+          transform: translateY(-4px) scale(1.01) perspective(600px) rotateX(1deg) rotateY(-1deg);
+          z-index: 2;
+          background: #f5f7ff !important;
         }
       `}</style>
     </div>

@@ -186,33 +186,38 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ revenueData, costData }) =>
           width: 100%;
           min-width: 0;
           height: 100%;
-          transition: all 0.3s ease;
+          transition: box-shadow 0.3s cubic-bezier(0.4,0,0.2,1), transform 0.3s cubic-bezier(0.4,0,0.2,1);
           display: flex;
           flex-direction: column;
         }
         
         .tile:hover {
-          box-shadow: 0 4px 12px rgba(0,0,0,0.12);
-          transform: translateY(-2px);
+          box-shadow: 0 8px 24px rgba(99,102,241,0.18), 0 2px 8px rgba(0,0,0,0.10);
+          transform: translateY(-8px) scale(1.03) perspective(600px) rotateX(2deg) rotateY(-2deg);
         }
         
         .tile-content {
           display: flex;
           align-items: flex-start;
-          flex: 1;
         }
         
         .tile-icon {
-          width: 36px;
-          height: 36px;
-          border-radius: 8px;
           display: flex;
           align-items: center;
           justify-content: center;
+          width: 36px;
+          height: 36px;
+          border-radius: 8px;
           margin-right: 12px;
           color: white;
           font-size: 16px;
           flex-shrink: 0;
+          transition: transform 0.3s cubic-bezier(0.4,0,0.2,1), box-shadow 0.3s cubic-bezier(0.4,0,0.2,1);
+        }
+        
+        .tile:hover .tile-icon {
+          transform: translateY(-5px);
+          box-shadow: 0 8px 16px rgba(0,0,0,0.15);
         }
         
         .tile-icon-1 {
@@ -353,6 +358,17 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ revenueData, costData }) =>
             height: 32px;
             font-size: 14px;
           }
+        }
+        
+        /* Animation for card icons */
+        @keyframes floatIcon {
+          0% { transform: translateY(0); }
+          100% { transform: translateY(-5px); }
+        }
+        
+        /* Apply floating animation to the Article Performance Report icon */
+        .table-icon-wrapper {
+          animation: floatIcon 2s ease-in-out infinite alternate;
         }
       `}</style>
     </div>

@@ -523,6 +523,7 @@ function DashboardContent() {
           .logo-container {
             display: flex;
             align-items: center;
+            animation: floatLogo 2.5s ease-in-out infinite alternate;
           }
           
           .logo-icon {
@@ -726,6 +727,11 @@ function DashboardContent() {
               transform: translateY(-10px);
               opacity: 0.7;
             }
+          }
+          
+          @keyframes floatLogo {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(-10px) scale(1.04); }
           }
         `}</style>
       </Layout>
