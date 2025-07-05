@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchGoogleAdsData, getMockGoogleAdsData, GoogleAdsAd } from '../../../lib/google-ads-api';
+import { fetchGoogleAdsData, getMockGoogleAdsData, getQuotaStatus, GoogleAdsAd } from '../../../lib/google-ads-api';
 
 // Helper to transform API response
 const transformApiResponse = (response: any, startDate?: string, endDate?: string, customerId?: string | null) => {
@@ -60,6 +60,27 @@ const transformApiResponse = (response: any, startDate?: string, endDate?: strin
       console.log(`After filtering: ${filteredAds.length} ads remain`);
     }
     
+    // Filter out Taboola data
+    if (filteredAds && filteredAds.length > 0) {
+      const originalCount = filteredAds.length;
+      
+      // Filter out any ads with 'taboola' in final_urls (case-insensitive)
+      filteredAds = filteredAds.filter((ad: any) => {
+        if (!ad.final_urls || !Array.isArray(ad.final_urls)) return true;
+        
+        // Check if any URL contains "taboola"
+        const hasTaboolaUrl = ad.final_urls.some((url: string) => 
+          url.toLowerCase().includes('taboola')
+        );
+        
+        return !hasTaboolaUrl;
+      });
+      
+      if (originalCount !== filteredAds.length) {
+        console.log(`Filtered out Taboola ads: removed ${originalCount - filteredAds.length} ads`);
+      }
+    }
+    
     // Calculate total cost after filtering
     const totalCost = filteredAds.reduce((sum: number, ad: any) => sum + ad.metrics.cost, 0);
     
@@ -89,6 +110,27 @@ export async function POST(request: NextRequest) {
     console.log('GOOGLE_ADS_MANAGER_ID:', process.env.GOOGLE_ADS_MANAGER_ID ? 'Set (length: ' + process.env.GOOGLE_ADS_MANAGER_ID.length + ')' : 'Not set');
     
     try {
+      // Check quota status before making API calls
+      const quotaStatus = getQuotaStatus();
+      console.log('Google Ads API quota status:', quotaStatus);
+      
+      if (quotaStatus.remainingRequests <= 0) {
+        console.warn('Google Ads API daily quota exceeded, using mock data');
+        const mockData = getMockGoogleAdsData(startDate, endDate, customerId);
+        return NextResponse.json({
+          ...mockData,
+          _quotaExceeded: true,
+          _quotaStatus: quotaStatus,
+          _message: 'Daily API quota exceeded. Using mock data.'
+        }, {
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          }
+        });
+      }
+      
       // Check if we have all required environment variables
       const requiredEnvVars = [
         'GOOGLE_ADS_CLIENT_ID',
@@ -107,6 +149,8 @@ export async function POST(request: NextRequest) {
       
       // Try to fetch real data with the provided date range
       console.log(`Fetching Google Ads data for ${startDate} to ${endDate}${customerId ? `, customer ID: ${customerId}` : ''}`);
+      console.log(`Remaining API quota: ${quotaStatus.remainingRequests} requests`);
+      
       const realData = await fetchGoogleAdsData(startDate, endDate);
       
       // Check if we got meaningful data
@@ -117,7 +161,14 @@ export async function POST(request: NextRequest) {
         const transformedData = transformApiResponse(realData, startDate, endDate, customerId);
         console.log(`Transformed data has ${transformedData.ads.length} ads`);
         
-        return NextResponse.json(transformedData, {
+        // Add quota status to response
+        const updatedQuotaStatus = getQuotaStatus();
+        
+        return NextResponse.json({
+          ...transformedData,
+          _quotaStatus: updatedQuotaStatus,
+          _message: 'Real data fetched successfully'
+        }, {
           headers: {
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache',
@@ -130,6 +181,9 @@ export async function POST(request: NextRequest) {
     } catch (apiErr) {
       console.error('Google Ads API error, falling back to mock:', apiErr);
       
+      // Get updated quota status
+      const quotaStatus = getQuotaStatus();
+      
       // Use mock data but adjust based on date range to make it more realistic
       const mockData = getMockGoogleAdsData(startDate, endDate, customerId);
       console.log(`DEBUG: Using mock Google Ads data: ${mockData.campaigns.length} campaigns, ${mockData.ads.length} ads`);
@@ -139,7 +193,13 @@ export async function POST(request: NextRequest) {
         console.log(`DEBUG: Filtered mock data by customer ID ${customerId}`);
       }
       
-      return NextResponse.json(mockData, {
+      return NextResponse.json({
+        ...mockData,
+        _apiError: true,
+        _errorMessage: (apiErr as Error).message || 'Unknown API error',
+        _quotaStatus: quotaStatus,
+        _message: 'API error occurred. Using mock data as fallback.'
+      }, {
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache',

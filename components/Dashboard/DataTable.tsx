@@ -330,7 +330,6 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           dataIndex: 'cpc',
           key: 'cpc',
           render: (value: number, record: CombinedRowData) => {
-            // Ensure we're using the calculated CPC or 0
             const cpc = Number(record.cpc || 0);
             return `$${safeFormat.currency(cpc, 2)}`;
           },
@@ -342,21 +341,13 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           dataIndex: 'cpa',
           key: 'cpa',
           render: (value: number, record: CombinedRowData) => {
-            // First check if we have API-provided CPA
-            if (record.apiMetrics?.cpa && record.apiMetrics.cpa > 0) {
-              return `$${safeFormat.currency(record.apiMetrics.cpa, 2)}`;
-            }
-            
-            // If not, calculate CPA using formula: cost/conversion
-            const conversions = Number(record.conversions || 0);
-            const cost = Number(record.cost || 0);
-            const cpa = conversions > 0 ? cost / conversions : 0;
+            const cpa = record.apiMetrics?.cpa ?? (record.conversions && record.conversions > 0 ? record.cost / record.conversions : 0);
             return `$${safeFormat.currency(cpa, 2)}`;
           },
           width: '5%',
           sorter: (a: CombinedRowData, b: CombinedRowData) => {
-            const aCpa = a.apiMetrics?.cpa || ((a.conversions || 0) > 0 ? (a.cost || 0) / (a.conversions || 1) : 0);
-            const bCpa = b.apiMetrics?.cpa || ((b.conversions || 0) > 0 ? (b.cost || 0) / (b.conversions || 1) : 0);
+            const aCpa = a.apiMetrics?.cpa ?? ((a.conversions || 0) > 0 ? (a.cost || 0) / (a.conversions || 1) : 0);
+            const bCpa = b.apiMetrics?.cpa ?? ((b.conversions || 0) > 0 ? (b.cost || 0) / (b.conversions || 1) : 0);
             return aCpa - bCpa;
           },
         },
@@ -438,7 +429,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           key: 'profit',
           render: (value: number) => (
             <div className={`metric-value ${value >= 0 ? 'profit-positive' : 'profit-negative'}`}>
-              ${safeFormat.currency(Math.abs(value), 2)}
+              ${safeFormat.currency(value, 2)}
             </div>
           ),
           width: '5%',
@@ -567,24 +558,23 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           targetRow.costCtr = targetRow.impressions > 0 ? 
             (targetRow.costClicks / targetRow.impressions) * 100 : 0;
             
-          // Calculate CPC using formula: cost/clicks on ad
-          targetRow.cpc = targetRow.costClicks > 0 ? 
-            cost / targetRow.costClicks : 0;
+          // Calculate CPC using formula: total cost / total ad clicks
+          if (targetRow.costClicks > 0) {
+            targetRow.cpc = targetRow.cost / targetRow.costClicks;
+          } else {
+            targetRow.cpc = 0;
+          }
             
           targetRow.cost += cost;
           targetRow.conversions = (targetRow.conversions || 0) + conversions;
           targetRow.profit = targetRow.revenue - targetRow.cost;
           
-          // Store API-provided metrics if available for later use
-          if (!targetRow.apiMetrics) {
-            targetRow.apiMetrics = {
-              conversionRate: apiConversionRate,
-              cpa: apiCpa
-            };
-          } else if (apiConversionRate || apiCpa) {
-            // Update with new values if we have them
-            targetRow.apiMetrics.conversionRate = apiConversionRate || targetRow.apiMetrics.conversionRate;
-            targetRow.apiMetrics.cpa = apiCpa || targetRow.apiMetrics.cpa;
+          // Calculate CPA using formula: total cost / total conversions
+          if (targetRow.conversions > 0) {
+            if (!targetRow.apiMetrics) targetRow.apiMetrics = { conversionRate: apiConversionRate, cpa: 0 };
+            targetRow.apiMetrics.cpa = targetRow.cost / targetRow.conversions;
+          } else if (targetRow.apiMetrics) {
+            targetRow.apiMetrics.cpa = 0;
           }
           
           // Calculate ROI using correct formula: (Profit / Cost) * 100%
@@ -659,8 +649,22 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
       });
     });
     
+    // Filter out any remaining Taboola data (as a fallback)
+    const filteredCombined = combined.filter(row => {
+      // Check if any URL contains "taboola"
+      const hasTaboolaUrl = row.finalUrls.some(url => 
+        url.toLowerCase().includes('taboola')
+      );
+      
+      // Check if article name contains "taboola"
+      const hasTaboolaName = row.article.toLowerCase().includes('taboola');
+      
+      // Keep only rows that don't have Taboola in URLs or article name
+      return !hasTaboolaUrl && !hasTaboolaName;
+    });
+
     // Sort by profit (highest first)
-    return combined.sort((a, b) => b.profit - a.profit);
+    return filteredCombined.sort((a, b) => b.profit - a.profit);
   }, [revenueData, costData]);
 
   // Filter data based on search text
@@ -861,7 +865,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
                     key: 'profit',
                     render: (value: number) => (
                       <div className={`metric-value ${value >= 0 ? 'profit-positive' : 'profit-negative'}`}>
-                        ${safeFormat.currency(Math.abs(value), 2)}
+                        ${safeFormat.currency(value, 2)}
                       </div>
                     ),
                     sorter: (a: any, b: any) => a.profit - b.profit,

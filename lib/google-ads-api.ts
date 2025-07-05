@@ -7,7 +7,179 @@ import * as utils from './google-ads-utils';
 // Target accounts configuration
 const TARGET_ACCOUNTS = config.TARGET_ACCOUNTS;
 
-// Google Ads client initialization
+// Rate limiting configuration
+const RATE_LIMIT_CONFIG = {
+  maxRequestsPerMinute: 60, // Conservative limit
+  maxRequestsPerDay: 8000,  // Leave buffer for other operations
+  delayBetweenAccounts: 1000, // 1 second between accounts
+  delayBetweenRequests: 200,  // 200ms between requests
+  maxRetries: 3,
+  backoffMultiplier: 2,
+  maxBackoffDelay: 10000
+};
+
+// Rate limiting state
+let requestCount = 0;
+let lastRequestTime = 0;
+let dailyRequestCount = 0;
+let lastDailyReset = new Date().toDateString();
+
+// Helper function to reset daily counter
+function resetDailyCounter() {
+  const today = new Date().toDateString();
+  if (today !== lastDailyReset) {
+    dailyRequestCount = 0;
+    lastDailyReset = today;
+  }
+}
+
+// Helper function to check rate limits
+function checkRateLimits(): boolean {
+  resetDailyCounter();
+  
+  if (dailyRequestCount >= RATE_LIMIT_CONFIG.maxRequestsPerDay) {
+    console.warn('Daily rate limit exceeded for Google Ads API');
+    return false;
+  }
+  
+  const now = Date.now();
+  if (now - lastRequestTime < RATE_LIMIT_CONFIG.delayBetweenRequests) {
+    return false;
+  }
+  
+  return true;
+}
+
+// Helper function to wait for rate limit
+async function waitForRateLimit(): Promise<void> {
+  const now = Date.now();
+  const timeSinceLastRequest = now - lastRequestTime;
+  
+  if (timeSinceLastRequest < RATE_LIMIT_CONFIG.delayBetweenRequests) {
+    const waitTime = RATE_LIMIT_CONFIG.delayBetweenRequests - timeSinceLastRequest;
+    console.log(`Rate limiting: waiting ${waitTime}ms before next request`);
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+  }
+  
+  lastRequestTime = Date.now();
+  requestCount++;
+  dailyRequestCount++;
+}
+
+// Helper function to check API quotas and provide detailed error information
+function analyzeApiError(error: any): { shouldRetry: boolean; errorType: string; message: string } {
+  const errorMessage = error.message || error.toString();
+  
+  // Rate limit errors
+  if (errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
+    return {
+      shouldRetry: true,
+      errorType: 'RATE_LIMIT',
+      message: 'API rate limit exceeded. This is normal for high-volume requests.'
+    };
+  }
+  
+  // Quota exceeded errors
+  if (errorMessage.includes('quota') || errorMessage.includes('QUOTA_EXCEEDED')) {
+    return {
+      shouldRetry: false,
+      errorType: 'QUOTA_EXCEEDED',
+      message: 'Daily API quota exceeded. Please try again tomorrow or contact support.'
+    };
+  }
+  
+  // Authentication errors
+  if (errorMessage.includes('401') || errorMessage.includes('UNAUTHENTICATED') || 
+      errorMessage.includes('403') || errorMessage.includes('PERMISSION_DENIED')) {
+    return {
+      shouldRetry: false,
+      errorType: 'AUTHENTICATION',
+      message: 'Authentication failed. Please check your API credentials.'
+    };
+  }
+  
+  // Server errors
+  if (errorMessage.includes('500') || errorMessage.includes('502') || 
+      errorMessage.includes('503') || errorMessage.includes('504')) {
+    return {
+      shouldRetry: true,
+      errorType: 'SERVER_ERROR',
+      message: 'Google Ads API server error. This is temporary.'
+    };
+  }
+  
+  // Network errors
+  if (errorMessage.includes('network') || errorMessage.includes('timeout') || 
+      errorMessage.includes('ECONNRESET') || errorMessage.includes('ENOTFOUND')) {
+    return {
+      shouldRetry: true,
+      errorType: 'NETWORK_ERROR',
+      message: 'Network connectivity issue. Retrying...'
+    };
+  }
+  
+  // Default case
+  return {
+    shouldRetry: false,
+    errorType: 'UNKNOWN',
+    message: `Unknown error: ${errorMessage}`
+  };
+}
+
+// Helper function to retry with exponential backoff
+async function retryWithBackoff<T>(
+  operation: () => Promise<T>,
+  maxRetries: number = RATE_LIMIT_CONFIG.maxRetries,
+  baseDelay: number = 1000
+): Promise<T> {
+  let lastError: Error;
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error: any) {
+      lastError = error;
+      
+      const errorAnalysis = analyzeApiError(error);
+      
+      if (attempt < maxRetries && errorAnalysis.shouldRetry) {
+        const delay = Math.min(
+          baseDelay * Math.pow(RATE_LIMIT_CONFIG.backoffMultiplier, attempt),
+          RATE_LIMIT_CONFIG.maxBackoffDelay
+        );
+        
+        console.log(`Google Ads API attempt ${attempt + 1} failed: ${errorAnalysis.errorType} - ${errorAnalysis.message}`);
+        console.log(`Retrying in ${delay}ms...`);
+        
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      
+      // Log final error with detailed information
+      console.error(`Google Ads API failed after ${attempt + 1} attempts:`, {
+        errorType: errorAnalysis.errorType,
+        message: errorAnalysis.message,
+        originalError: error.message
+      });
+      
+      // For quota exceeded, log additional information
+      if (errorAnalysis.errorType === 'QUOTA_EXCEEDED') {
+        console.error('Quota exceeded details:', {
+          dailyRequestCount,
+          maxRequestsPerDay: RATE_LIMIT_CONFIG.maxRequestsPerDay,
+          resetTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+        });
+      }
+      
+      // For other errors or max retries reached, throw the error
+      throw error;
+    }
+  }
+  
+  throw lastError!;
+}
+
+// Google Ads client initialization with better error handling
 export function initializeGoogleAdsClient() {
   try {
     const client = new GoogleAdsApi({
@@ -317,8 +489,21 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string): Pr
     ads: []
   };
 
-  for (const account of TARGET_ACCOUNTS) {
+  console.log(`Starting Google Ads API fetch for ${TARGET_ACCOUNTS.length} accounts`);
+  console.log(`Rate limit config: ${RATE_LIMIT_CONFIG.maxRequestsPerDay} requests/day, ${RATE_LIMIT_CONFIG.delayBetweenRequests}ms between requests`);
+
+  for (let i = 0; i < TARGET_ACCOUNTS.length; i++) {
+    const account = TARGET_ACCOUNTS[i];
+    
     try {
+      // Check rate limits before processing each account
+      if (!checkRateLimits()) {
+        console.warn(`Rate limit reached, skipping account ${account.id}`);
+        continue;
+      }
+
+      console.log(`Processing account ${i + 1}/${TARGET_ACCOUNTS.length}: ${account.id} (${account.name})`);
+      
       // Create account-specific customer
       const accountCustomer = client.Customer({
         customer_id: account.id,
@@ -326,11 +511,21 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string): Pr
         login_customer_id: process.env.GOOGLE_ADS_MANAGER_ID || ''
       });
       
+      // Helper function to make API calls with retry and rate limiting
+      const makeApiCall = async (query: string, operationName: string) => {
+        await waitForRateLimit();
+        
+        return await retryWithBackoff(async () => {
+          console.log(`Making ${operationName} call for account ${account.id}`);
+          const response = await accountCustomer.query(query);
+          console.log(`${operationName} response: ${response?.length || 0} items`);
+          return response;
+        });
+      };
+      
       // Fetch active campaigns
       const activeCampaignQuery = buildActiveCampaignQuery(startDate, endDate);
-      console.log(`Account ${account.id} query: ${activeCampaignQuery}`);
-      
-      const activeCampaignResponse = await accountCustomer.query(activeCampaignQuery);
+      const activeCampaignResponse = await makeApiCall(activeCampaignQuery, 'Active Campaigns');
       if (activeCampaignResponse && activeCampaignResponse.length > 0) {
         const processedCampaigns = processCampaignData(activeCampaignResponse, account);
         data.campaigns.push(...processedCampaigns);
@@ -338,7 +533,7 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string): Pr
 
       // Fetch all campaigns
       const allCampaignsQuery = buildAllCampaignsQuery(startDate, endDate);
-      const allCampaignsResponse = await accountCustomer.query(allCampaignsQuery);
+      const allCampaignsResponse = await makeApiCall(allCampaignsQuery, 'All Campaigns');
       if (allCampaignsResponse && allCampaignsResponse.length > 0) {
         const allCampaigns = processCampaignData(allCampaignsResponse, account);
         
@@ -364,7 +559,7 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string): Pr
 
       // Fetch active ad group ads
       const activeAdQuery = buildActiveAdGroupAdQuery(startDate, endDate);
-      const activeAdResponse = await accountCustomer.query(activeAdQuery);
+      const activeAdResponse = await makeApiCall(activeAdQuery, 'Active Ads');
       if (activeAdResponse && activeAdResponse.length > 0) {
         const processedAds = processAdData(activeAdResponse, account);
         data.ads.push(...processedAds);
@@ -372,7 +567,7 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string): Pr
 
       // Fetch all ad group ads
       const allAdQuery = buildAllAdGroupAdQuery(startDate, endDate);
-      const allAdResponse = await accountCustomer.query(allAdQuery);
+      const allAdResponse = await makeApiCall(allAdQuery, 'All Ads');
       if (allAdResponse && allAdResponse.length > 0) {
         const allAds = processAdData(allAdResponse, account);
         
@@ -398,19 +593,50 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string): Pr
 
       // Fetch Performance Max asset groups
       const assetGroupQuery = buildAssetGroupQuery(startDate, endDate);
-      const assetGroupResponse = await accountCustomer.query(assetGroupQuery);
+      const assetGroupResponse = await makeApiCall(assetGroupQuery, 'Asset Groups');
       if (assetGroupResponse && assetGroupResponse.length > 0) {
         const assetGroupAds = processAssetGroupData(assetGroupResponse, account);
         
         // Add asset group ads to the list
         data.ads.push(...assetGroupAds);
       }
+
+      // Add delay between accounts to prevent overwhelming the API
+      if (i < TARGET_ACCOUNTS.length - 1) {
+        console.log(`Waiting ${RATE_LIMIT_CONFIG.delayBetweenAccounts}ms before next account...`);
+        await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_CONFIG.delayBetweenAccounts));
+      }
+      
     } catch (error) {
       console.error(`Error fetching data for account ${account.id}:`, error);
+      
+      // Continue with other accounts even if one fails
+      // This prevents one bad account from breaking the entire fetch
     }
   }
 
+  console.log(`Google Ads API fetch completed. Total: ${data.campaigns.length} campaigns, ${data.ads.length} ads`);
+  console.log(`Daily request count: ${dailyRequestCount}/${RATE_LIMIT_CONFIG.maxRequestsPerDay}`);
+  
   return data;
+}
+
+// Export quota status for monitoring
+export function getQuotaStatus() {
+  resetDailyCounter();
+  return {
+    dailyRequestCount,
+    maxRequestsPerDay: RATE_LIMIT_CONFIG.maxRequestsPerDay,
+    remainingRequests: RATE_LIMIT_CONFIG.maxRequestsPerDay - dailyRequestCount,
+    usagePercentage: Math.round((dailyRequestCount / RATE_LIMIT_CONFIG.maxRequestsPerDay) * 100),
+    lastRequestTime: lastRequestTime ? new Date(lastRequestTime).toISOString() : null,
+    resetTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+  };
+}
+
+// Export rate limit configuration for external monitoring
+export function getRateLimitConfig() {
+  return { ...RATE_LIMIT_CONFIG };
 }
 
 // Helper function to get base mock data
@@ -775,6 +1001,32 @@ export function getMockGoogleAdsData(startDate?: string, endDate?: string, custo
   if (customerId) {
     filteredAds = baseData.ads.filter((ad: GoogleAdsAd) => ad.customer_id === customerId);
     console.log(`Filtered ads by customer ID ${customerId}: ${filteredAds.length} of ${baseData.ads.length} ads remain`);
+  }
+  
+  // Filter out any Taboola data from mock data
+  if (filteredAds && filteredAds.length > 0) {
+    const originalCount = filteredAds.length;
+    
+    // Filter out any ads with 'taboola' in final_urls (case-insensitive)
+    filteredAds = filteredAds.filter((ad: GoogleAdsAd) => {
+      if (!ad.final_urls || !Array.isArray(ad.final_urls)) return true;
+      
+      // Check if any URL contains "taboola"
+      const hasTaboolaUrl = ad.final_urls.some(url => 
+        url.toLowerCase().includes('taboola')
+      );
+      
+      // Check if campaign or ad name contains "taboola"
+      const hasTaboolaName = 
+        (ad.campaign_name && ad.campaign_name.toLowerCase().includes('taboola')) ||
+        (ad.ad_name && ad.ad_name.toLowerCase().includes('taboola'));
+      
+      return !hasTaboolaUrl && !hasTaboolaName;
+    });
+    
+    if (originalCount !== filteredAds.length) {
+      console.log(`Filtered out Taboola ads from mock data: removed ${originalCount - filteredAds.length} ads`);
+    }
   }
   
   // Adjust data based on date range

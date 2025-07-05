@@ -461,6 +461,21 @@ export async function POST(request: NextRequest) {
           console.warn('[DEBUG] Failed to compute distinct subid_1 tags:', dbgErr);
         }
 
+        // Filter out Taboola data from all responses
+        if (successData.data && Array.isArray(successData.data)) {
+          const originalCount = successData.data.length;
+          
+          // Filter out any rows with 'taboola' in subid_1 (case-insensitive)
+          successData.data = successData.data.filter((row: any) => {
+            const subid = String(row.subid_1 || '').toLowerCase();
+            return !subid.includes('taboola');
+          });
+          
+          if (originalCount !== successData.data.length) {
+            console.log(`Filtered out Taboola data: removed ${originalCount - successData.data.length} rows`);
+          }
+        }
+
         // If a customerId is provided, filter raw data rows by subid_1 first
         if (customerId && successData.data && Array.isArray(successData.data)) {
           const customerSubidMap: { [key: string]: string[] } = {
