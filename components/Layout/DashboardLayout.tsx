@@ -1,5 +1,5 @@
 import React, { ReactNode, useState, useEffect } from 'react';
-import { Layout, Menu, Typography, Select, Divider, Space, Button, Tooltip, App } from 'antd';
+import { Layout, Menu, Typography, Select, Divider, Space, Button, Tooltip, App, Switch } from 'antd';
 import {
   DashboardOutlined,
   MenuFoldOutlined,
@@ -7,10 +7,13 @@ import {
   UserOutlined,
   TeamOutlined,
   LogoutOutlined,
-  LockOutlined
+  LockOutlined,
+  BulbOutlined,
+  BulbFilled
 } from '@ant-design/icons';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useTheme } from '../Providers/AntdProvider';
 
 const { Header, Sider, Content } = Layout;
 const { Title, Text } = Typography;
@@ -86,6 +89,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   const router = useRouter();
   const [isAdmin, setIsAdmin] = useState(false);
   const [userAccountId, setUserAccountId] = useState<string | null>(null);
+  const { theme, toggleTheme } = useTheme();
   
   // Helper function to get cookie value
   const getCookie = (name: string): string | null => {
@@ -156,7 +160,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
           collapsible 
           collapsed={collapsed} 
           onCollapse={(value) => setCollapsed(value)}
-          theme="light"
+          theme={theme === 'dark' ? 'dark' : 'light'}
           width={280}
         >
           <div style={{ 
@@ -248,7 +252,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         <Layout>
           <Header style={{ 
             padding: '0 16px', 
-            background: '#fff', 
+            background: theme === 'dark' ? '#1f2937' : '#fff', 
             display: 'flex', 
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -268,17 +272,27 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
               </Title>
             </div>
             
-            <Tooltip title="Logout">
-              <Button 
-                type="primary" 
-                icon={<LogoutOutlined />} 
-                onClick={handleLogout}
-                shape="round"
-                className="logout-button"
-              >
-                Logout
-              </Button>
-            </Tooltip>
+            <Space>
+              <Tooltip title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}>
+                <Button
+                  type="text"
+                  icon={theme === 'dark' ? <BulbFilled /> : <BulbOutlined />}
+                  onClick={toggleTheme}
+                  style={{ fontSize: '16px' }}
+                />
+              </Tooltip>
+              <Tooltip title="Logout">
+                <Button 
+                  type="primary" 
+                  icon={<LogoutOutlined />} 
+                  onClick={handleLogout}
+                  shape="round"
+                  className="logout-button"
+                >
+                  Logout
+                </Button>
+              </Tooltip>
+            </Space>
           </Header>
           <Content style={{ margin: '24px', overflow: 'initial' }}>
             {children}

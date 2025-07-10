@@ -1,16 +1,19 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
-import { Layout, Typography, DatePicker, Button, Skeleton, Row, Col, App } from 'antd';
-import { CalendarOutlined, ReloadOutlined, BarChartOutlined } from '@ant-design/icons';
+import React, { useState, useEffect, Suspense, useRef } from 'react';
+import { Layout, Typography, DatePicker, Button, Skeleton, Row, Col, App, Badge, Switch, Tooltip } from 'antd';
+import { CalendarOutlined, ReloadOutlined, BarChartOutlined, SyncOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import utc from 'dayjs/plugin/utc';
+import relativeTime from 'dayjs/plugin/relativeTime';
 dayjs.extend(utc);
+dayjs.extend(relativeTime);
 import { useSearchParams } from 'next/navigation';
 import SummaryCards from '../../components/Dashboard/SummaryCards';
 import DataTable from '../../components/Dashboard/DataTable';
 import { AdsComArticleData } from '../../lib/adscom-api';
 import { GoogleAdsAd } from '../../lib/google-ads-api';
+import styles from './dashboard.module.css';
 
 // Declare custom window property for TypeScript
 declare global {
@@ -87,6 +90,10 @@ function DashboardContent() {
   const [revenueData, setRevenueData] = useState<AdsComArticleData[]>([]);
   const [costData, setCostData] = useState<GoogleAdsAd[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [nextUpdateIn, setNextUpdateIn] = useState<number | null>(null);
+  const [autoRefresh, setAutoRefresh] = useState<boolean>(true);
+  const autoRefreshTimerRef = useRef<NodeJS.Timeout | null>(null);
   const searchParams = useSearchParams();
   
   // Default to today initially 
@@ -162,7 +169,49 @@ function DashboardContent() {
       setRevenueData(articleData);
       setCostData(adsData);
       
-      // Success toast (no persistent loading toast anymore)
+      // Store update time information
+      if (adscomData && adscomData.lastUpdated) {
+        console.log(`🔄 Received update info: Last updated at ${new Date(adscomData.lastUpdated).toLocaleTimeString()}, next update in ${adscomData.nextUpdateIn || 'unknown'} seconds`);
+        
+        setLastUpdated(adscomData.lastUpdated);
+        setNextUpdateIn(adscomData.nextUpdateIn || null);
+        
+        // Set up auto-refresh timer if enabled
+        if (autoRefresh && adscomData.nextUpdateIn && adscomData.nextUpdateIn > 0) {
+          console.log(`🔄 Setting up auto-refresh timer for ${adscomData.nextUpdateIn} seconds from now`);
+          scheduleNextRefresh(adscomData.nextUpdateIn);
+        } else if (autoRefresh && (!adscomData.nextUpdateIn || adscomData.nextUpdateIn <= 0)) {
+          // If nextUpdateIn is missing or zero, set a default refresh interval (5 minutes)
+          console.log('🔄 No valid nextUpdateIn received, setting default refresh interval (5 minutes)');
+          scheduleNextRefresh(300);
+        }
+      } else {
+        console.warn('🔄 No update time information received from API');
+        
+        // If no lastUpdated info is available, calculate based on current time
+        const now = new Date();
+        const minutes = now.getMinutes();
+        const lastUpdateMinute = Math.floor(minutes / 15) * 15;
+        
+        const lastUpdate = new Date(now);
+        lastUpdate.setMinutes(lastUpdateMinute);
+        lastUpdate.setSeconds(0);
+        lastUpdate.setMilliseconds(0);
+        
+        const nextUpdateIn = ((15 - (minutes % 15)) * 60) - now.getSeconds();
+        
+        console.log(`🔄 Calculated update times: Last updated at ${lastUpdate.toLocaleTimeString()}, next update in ${nextUpdateIn} seconds`);
+        
+        setLastUpdated(lastUpdate.toISOString());
+        setNextUpdateIn(nextUpdateIn);
+        
+        // Set up auto-refresh timer if enabled
+        if (autoRefresh) {
+          scheduleNextRefresh(nextUpdateIn);
+        }
+      }
+      
+      // Success toast
       if (customerId) {
         const customerName = getCustomerNameById(customerId);
         message.success({ key: messageKey, content: `Data for ${customerName} loaded successfully`, duration: 2 });
@@ -174,6 +223,59 @@ function DashboardContent() {
       message.error({ key: messageKey, content: 'Failed to load data', duration: 2 });
     } finally {
       setLoading(false);
+    }
+  };
+  
+  // Schedule the next auto-refresh
+  const scheduleNextRefresh = (seconds: number) => {
+    // Clear any existing timer
+    if (autoRefreshTimerRef.current) {
+      clearTimeout(autoRefreshTimerRef.current);
+      autoRefreshTimerRef.current = null;
+    }
+    
+    if (seconds <= 0) {
+      // If time is already up, refresh immediately
+      console.log('🔄 AUTO-REFRESH: Time is up, refreshing immediately');
+      handleRefresh();
+      return;
+    }
+    
+    // Add a small buffer (2 seconds) to ensure we get the fresh data
+    const refreshTime = (seconds + 2) * 1000;
+    
+    console.log(`🔄 AUTO-REFRESH: Scheduled next refresh in ${refreshTime/1000} seconds (${new Date(Date.now() + refreshTime).toLocaleTimeString()})`);
+    
+    // Set the new timer
+    autoRefreshTimerRef.current = setTimeout(() => {
+      console.log(`🔄 AUTO-REFRESH: Executing refresh at ${new Date().toLocaleTimeString()}`);
+      message.info({
+        content: 'Auto-refreshing data from Ads.com...',
+        duration: 2,
+        icon: <SyncOutlined spin />
+      });
+      handleRefresh();
+    }, refreshTime);
+  };
+  
+  // Toggle auto-refresh
+  const toggleAutoRefresh = (checked: boolean) => {
+    setAutoRefresh(checked);
+    console.log(`🔄 AUTO-REFRESH: ${checked ? 'Enabled' : 'Disabled'}`);
+    
+    if (!checked && autoRefreshTimerRef.current) {
+      // Clear the timer if auto-refresh is disabled
+      clearTimeout(autoRefreshTimerRef.current);
+      autoRefreshTimerRef.current = null;
+      console.log('🔄 AUTO-REFRESH: Timer cleared');
+    } else if (checked && nextUpdateIn && nextUpdateIn > 0) {
+      // Set up the timer if auto-refresh is enabled
+      console.log(`🔄 AUTO-REFRESH: Setting up timer with ${nextUpdateIn} seconds until next update`);
+      scheduleNextRefresh(nextUpdateIn);
+      message.success({
+        content: `Auto-refresh enabled. Next update in ${formatNextUpdate()}`,
+        duration: 3
+      });
     }
   };
 
@@ -255,11 +357,62 @@ function DashboardContent() {
     // Add event listener
     window.addEventListener('accountChanged', handleAccountChangedEvent as EventListener);
     
-    // Remove event listener on cleanup
+    // Clean up function
     return () => {
       window.removeEventListener('accountChanged', handleAccountChangedEvent as EventListener);
+      
+      // Clear any active auto-refresh timer
+      if (autoRefreshTimerRef.current) {
+        clearTimeout(autoRefreshTimerRef.current);
+      }
     };
   }, [searchParams]); // Add searchParams as dependency so the effect runs when URL changes
+
+  // Separate useEffect to handle auto-refresh setup and countdown
+  useEffect(() => {
+    // If we have nextUpdateIn data and auto-refresh is enabled, set up the timer
+    if (autoRefresh && nextUpdateIn !== null) {
+      console.log(`🔄 AUTO-REFRESH: Initial setup with ${nextUpdateIn} seconds until next update`);
+      scheduleNextRefresh(nextUpdateIn);
+      
+      // Set up a countdown timer to update the UI every second
+      const countdownInterval = setInterval(() => {
+        setNextUpdateIn(prev => {
+          if (prev === null) return null;
+          
+          const newValue = prev - 1;
+          // When countdown reaches 0, clear the interval (refresh will be handled by the timeout)
+          if (newValue <= 0) {
+            clearInterval(countdownInterval);
+            // Double-check that refresh happens
+            console.log('🔄 AUTO-REFRESH: Countdown reached zero, triggering refresh');
+            // Small delay to avoid race conditions
+            setTimeout(() => {
+              if (!autoRefreshTimerRef.current) {
+                console.log('🔄 AUTO-REFRESH: Backup refresh triggered');
+                handleRefresh();
+              }
+            }, 500);
+          }
+          return newValue;
+        });
+      }, 1000);
+      
+      // Clean up function
+      return () => {
+        clearInterval(countdownInterval);
+      };
+    }
+    
+    // Clean up function
+    return () => {
+      if (autoRefreshTimerRef.current) {
+        console.log('🔄 AUTO-REFRESH: Cleaning up timer on unmount');
+        clearTimeout(autoRefreshTimerRef.current);
+        autoRefreshTimerRef.current = null;
+      }
+    };
+  }, [nextUpdateIn, autoRefresh]); // Re-run when these values change
 
   const handleDateChange = (
     dates: [Dayjs | null, Dayjs | null] | null,
@@ -356,6 +509,15 @@ function DashboardContent() {
   const handleRefresh = () => {
     const startDate = dateRange[0].utc().format('YYYY-MM-DD');
     const endDate = dateRange[1].utc().format('YYYY-MM-DD');
+    
+    // Clear any existing auto-refresh timer
+    if (autoRefreshTimerRef.current) {
+      clearTimeout(autoRefreshTimerRef.current);
+      autoRefreshTimerRef.current = null;
+    }
+    
+    console.log('🔄 Manual refresh triggered at', new Date().toLocaleTimeString());
+    
     fetchData(startDate, endDate, selectedCustomerId);
   };
 
@@ -392,47 +554,77 @@ function DashboardContent() {
     handlePeriodSelect('last3days');
   };
 
+  // Format the last updated time in a human-readable format
+  const formatLastUpdated = () => {
+    if (!lastUpdated) return 'Unknown';
+    
+    const updateTime = dayjs(lastUpdated);
+    const now = dayjs();
+    
+    // If it's within the last hour, show "X minutes ago"
+    if (now.diff(updateTime, 'hour') < 1) {
+      return updateTime.fromNow();
+    }
+    
+    // Otherwise show the full date and time
+    return updateTime.format('MMM D, YYYY h:mm A');
+  };
+  
+  // Format the time until next update
+  const formatNextUpdate = () => {
+    if (nextUpdateIn === null) return 'Unknown';
+    
+    const minutes = Math.floor(nextUpdateIn / 60);
+    const seconds = nextUpdateIn % 60;
+    
+    if (minutes > 0) {
+      return `${minutes}m ${seconds}s`;
+    }
+    
+    return `${seconds}s`;
+  };
+
   return (
     <App>
-      <Layout className="dashboard-layout">
-        <Header className="dashboard-header">
-          <div className="header-content">
-            <div className="logo-container">
-              <div className="logo-icon">
+      <Layout className={styles.dashboardLayout}>
+        <Header className={styles.dashboardHeader}>
+          <div className={styles.headerContent}>
+            <div className={styles.logoContainer}>
+              <div className={styles.logoIcon}>
                 <BarChartOutlined />
               </div>
-              <div className="logo-text">AdSyntheX</div>
+              <div className={styles.logoText}>AdSyntheX</div>
             </div>
             
-            <div className="header-controls">
-              <div className="date-picker-wrapper">
-                <CalendarOutlined className="date-picker-icon" />
+            <div className={styles.headerControls}>
+              <div className={styles.datePickerWrapper}>
+                <CalendarOutlined className={styles.datePickerIcon} />
                 <RangePicker 
                   value={dateRange}
                   onChange={handleDateChange}
                   allowClear={false}
-                  className="date-range-picker"
+                  className={styles.dateRangePicker}
                 />
               </div>
-              <div className="quick-date-buttons">
+              <div className={styles.quickDateButtons}>
                 <Button 
                   size="small"
                   onClick={selectToday}
-                  className="quick-date-button"
+                  className={styles.quickDateButton}
                 >
                   Today
                 </Button>
                 <Button 
                   size="small"
                   onClick={selectYesterday}
-                  className="quick-date-button"
+                  className={styles.quickDateButton}
                 >
                   Yesterday
                 </Button>
                 <Button 
                   size="small"
                   onClick={selectLast3Days} 
-                  className="quick-date-button"
+                  className={styles.quickDateButton}
                 >
                   Last 3 Days
                 </Button>
@@ -442,7 +634,7 @@ function DashboardContent() {
                 icon={<ReloadOutlined />}
                 onClick={handleRefresh}
                 loading={loading}
-                className="refresh-button"
+                className={styles.refreshButton}
               >
                 Refresh Data
               </Button>
@@ -450,8 +642,8 @@ function DashboardContent() {
           </div>
         </Header>
         
-        <Content className="dashboard-content">
-          <div className="page-header">
+        <Content className={styles.dashboardContent}>
+          <div className={styles.pageHeader}>
             <div>
               <Title level={2}>
                 Performance Dashboard
@@ -465,15 +657,118 @@ function DashboardContent() {
                 Data from {dateRange[0].format('MMM D, YYYY')} to {dateRange[1].format('MMM D, YYYY')}
               </Text>
             </div>
+            
+            {/* Data Update Status */}
+            <div className={styles.dataUpdateStatus}>
+              <div className={styles.updateInfo}>
+                <Tooltip title="Last time Ads.com updated their data">
+                  <Badge 
+                    status={nextUpdateIn && nextUpdateIn < 60 ? "processing" : "success"} 
+                    text={
+                      <span>
+                        <ClockCircleOutlined style={{ marginRight: 5 }} />
+                        <strong>Last updated:</strong> {formatLastUpdated()}
+                      </span>
+                    } 
+                  />
+                </Tooltip>
+              </div>
+              
+              {nextUpdateIn !== null && (
+                <div className={styles.nextUpdateInfo}>
+                  <Tooltip title="Time until Ads.com's next data update">
+                    <Badge 
+                      status={nextUpdateIn < 60 ? "processing" : "default"} 
+                      text={
+                        <span className={nextUpdateIn < 60 ? styles.updateImminent : ""}>
+                          <SyncOutlined spin={nextUpdateIn < 60} style={{ marginRight: 5 }} />
+                          <strong>Next update in:</strong> {formatNextUpdate()}
+                        </span>
+                      } 
+                    />
+                  </Tooltip>
+                </div>
+              )}
+              
+              <div className={styles.autoRefreshToggle}>
+                <Tooltip title={autoRefresh ? "Auto-refresh enabled" : "Auto-refresh disabled"}>
+                  <Switch 
+                    size="small" 
+                    checked={autoRefresh} 
+                    onChange={toggleAutoRefresh} 
+                    checkedChildren="Auto" 
+                    unCheckedChildren="Manual" 
+                  />
+                </Tooltip>
+                <span className={styles.autoRefreshLabel}>Auto-refresh</span>
+                <Button 
+                  size="small" 
+                  type="text"
+                  icon={<ReloadOutlined />} 
+                  onClick={() => {
+                    console.log('🔄 Manual refresh of Ads.com data requested');
+                    message.loading({
+                      content: 'Refreshing Ads.com data...',
+                      key: 'adscomRefresh',
+                      duration: 0
+                    });
+                    
+                    // Make a targeted refresh of just the Ads.com data
+                    const startDate = dateRange[0].utc().format('YYYY-MM-DD');
+                    const endDate = dateRange[1].utc().format('YYYY-MM-DD');
+                    
+                    makeApiCall('/api/adscom', { 
+                      startDate, 
+                      endDate, 
+                      customerId: selectedCustomerId,
+                      forceRefresh: true // Add a flag to indicate this is a manual refresh
+                    })
+                    .then(adscomData => {
+                      // Handle null data safely
+                      const articleData = adscomData && adscomData.data ? adscomData.data : [];
+                      
+                      setRevenueData(articleData);
+                      
+                      // Store update time information
+                      if (adscomData && adscomData.lastUpdated) {
+                        setLastUpdated(adscomData.lastUpdated);
+                        setNextUpdateIn(adscomData.nextUpdateIn || null);
+                        
+                        // Set up auto-refresh timer if enabled
+                        if (autoRefresh && adscomData.nextUpdateIn && adscomData.nextUpdateIn > 0) {
+                          scheduleNextRefresh(adscomData.nextUpdateIn);
+                        }
+                      }
+                      
+                      message.success({
+                        content: 'Ads.com data refreshed',
+                        key: 'adscomRefresh',
+                        duration: 2
+                      });
+                    })
+                    .catch(error => {
+                      console.error('Error refreshing Ads.com data:', error);
+                      message.error({
+                        content: 'Failed to refresh Ads.com data',
+                        key: 'adscomRefresh',
+                        duration: 2
+                      });
+                    });
+                  }}
+                  className={styles.manualRefreshButton}
+                  title="Manually refresh Ads.com data"
+                />
+              </div>
+            </div>
           </div>
           
           {loading ? (
-            <div className="loading-container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px' }}>
-              <div className="modern-loader-wrapper">
-                <div className="modern-loader" aria-label="Loading indicator" role="status">
-                  <span className="dot" />
-                  <span className="dot" />
-                  <span className="dot" />
+            <div className={styles.loadingContainer}>
+              <div className={styles.modernLoaderWrapper}>
+                <div className={styles.modernLoader} aria-label="Loading indicator" role="status">
+                  <span className={styles.dot} />
+                  <span className={styles.dot} />
+                  <span className={styles.dot} />
                 </div>
                 <Title level={5} style={{ marginTop: 16, color: 'var(--text-secondary)' }}>Loading…</Title>
               </div>
@@ -491,249 +786,6 @@ function DashboardContent() {
             </>
           )}
         </Content>
-        
-        <style jsx global>{`
-          .dashboard-layout {
-            min-height: 100vh;
-            background-color: var(--background-color);
-          }
-          
-          .dashboard-header {
-            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-            padding: 0;
-            height: var(--header-height);
-            position: sticky;
-            top: 0;
-            z-index: 100;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-            display: flex;
-            align-items: center;
-          }
-          
-          .header-content {
-            max-width: var(--content-width);
-            width: 100%;
-            margin: 0 auto;
-            padding: 0 24px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-          }
-          
-          .logo-container {
-            display: flex;
-            align-items: center;
-            animation: floatLogo 2.5s ease-in-out infinite alternate;
-          }
-          
-          .logo-icon {
-            width: 36px;
-            height: 36px;
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.2);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-            color: white;
-            margin-right: 12px;
-            backdrop-filter: blur(4px);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-          }
-          
-          .logo-text {
-            font-size: 20px;
-            font-weight: 700;
-            color: white;
-            letter-spacing: 0.5px;
-          }
-          
-          .header-controls {
-            display: flex;
-            align-items: center;
-          }
-          
-          .date-picker-wrapper {
-            position: relative;
-            margin-right: 16px;
-          }
-          
-          .date-picker-icon {
-            position: absolute;
-            left: 12px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: rgba(255, 255, 255, 0.8);
-            z-index: 1;
-          }
-          
-          .date-range-picker {
-            background: rgba(255, 255, 255, 0.2);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: var(--border-radius-sm);
-            color: white;
-            padding-left: 36px;
-            backdrop-filter: blur(4px);
-          }
-          
-          .date-range-picker:hover {
-            background: rgba(255, 255, 255, 0.25);
-          }
-          
-          .date-range-picker .ant-picker-input > input {
-            color: white;
-          }
-          
-          .date-range-picker .ant-picker-separator,
-          .date-range-picker .ant-picker-suffix {
-            color: rgba(255, 255, 255, 0.8);
-          }
-          
-          .refresh-button {
-            background: rgba(255, 255, 255, 0.2);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            color: white;
-            backdrop-filter: blur(4px);
-          }
-          
-          .refresh-button:hover {
-            background: rgba(255, 255, 255, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.4);
-          }
-          
-          .dashboard-content {
-            max-width: var(--content-width);
-            margin: 0 auto;
-            padding: 32px 24px;
-            width: 100%;
-          }
-          
-          .page-header {
-            margin-bottom: 32px;
-          }
-          
-          .page-header h2 {
-            margin-bottom: 4px;
-            font-weight: 700;
-          }
-          
-          .loading-container {
-            width: 100%;
-          }
-          
-          .skeleton-card {
-            height: 140px;
-            border-radius: var(--border-radius);
-            overflow: hidden;
-            box-shadow: var(--card-shadow);
-            background: white;
-            padding: 24px;
-          }
-          
-          .skeleton-table {
-            margin-top: 32px;
-            border-radius: var(--border-radius);
-            overflow: hidden;
-            box-shadow: var(--card-shadow);
-            background: white;
-            padding: 24px;
-          }
-          
-          .quick-date-buttons {
-            display: flex;
-            gap: 8px;
-            margin-right: 16px;
-          }
-          
-          .quick-date-button {
-            border-radius: 4px;
-          }
-          
-          /* Responsive styles */
-          @media (max-width: 768px) {
-            .header-content {
-              flex-direction: column;
-              padding: 12px 24px;
-            }
-            
-            .dashboard-header {
-              height: auto;
-              padding: 12px 0;
-            }
-            
-            .logo-container {
-              margin-bottom: 12px;
-            }
-            
-            .header-controls {
-              width: 100%;
-              flex-direction: column;
-            }
-            
-            .date-picker-wrapper {
-              width: 100%;
-              margin-right: 0;
-              margin-bottom: 12px;
-            }
-            
-            .date-range-picker {
-              width: 100%;
-            }
-            
-            .quick-date-buttons {
-              margin-right: 0;
-              margin-bottom: 8px;
-            }
-            
-            .refresh-button {
-              width: 100%;
-            }
-          }
-          
-          /* Modern bouncing dots loader */
-          .modern-loader-wrapper {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-          }
-          
-          .modern-loader {
-            display: flex;
-            gap: 12px;
-          }
-          
-          .modern-loader .dot {
-            width: 14px;
-            height: 14px;
-            border-radius: 50%;
-            background: var(--primary-color);
-            animation: dotBounce 0.6s infinite ease-in-out alternate;
-          }
-          
-          .modern-loader .dot:nth-child(2) {
-            animation-delay: 0.2s;
-          }
-          
-          .modern-loader .dot:nth-child(3) {
-            animation-delay: 0.4s;
-          }
-          
-          @keyframes dotBounce {
-            0% {
-              transform: translateY(0);
-              opacity: 1;
-            }
-            100% {
-              transform: translateY(-10px);
-              opacity: 0.7;
-            }
-          }
-          
-          @keyframes floatLogo {
-            0% { transform: translateY(0); }
-            100% { transform: translateY(-10px) scale(1.04); }
-          }
-        `}</style>
       </Layout>
     </App>
   );

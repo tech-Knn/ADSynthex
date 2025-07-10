@@ -12,7 +12,9 @@ const transformApiData = (apiResponse: any): AdsComResponse => {
       totalClicks: 0,
       totalRevenue: 0,
       averageCtr: 0,
-      averageRpm: 0
+      averageRpm: 0,
+      lastUpdated: new Date().toISOString(),
+      nextUpdateIn: 0
     };
   }
   
@@ -175,6 +177,28 @@ const transformApiData = (apiResponse: any): AdsComResponse => {
     const averageCtr = totalVisits > 0 ? (totalClicks / totalVisits) * 100 : 0;
     const averageRpm = totalVisits > 0 ? (totalRevenue / totalVisits) * 1000 : 0;
     
+    // Extract update time information from the API response if available
+    let lastUpdated = apiResponse.lastUpdated;
+    let nextUpdateIn = apiResponse.nextUpdateIn || 0;
+    
+    // If no lastUpdated time is provided, calculate it based on Ads.com's update schedule
+    if (!lastUpdated) {
+      // Ads.com updates every 15 minutes, at :00, :15, :30, :45
+      const now = new Date();
+      const minutes = now.getMinutes();
+      const lastUpdateMinute = Math.floor(minutes / 15) * 15;
+      
+      const lastUpdate = new Date(now);
+      lastUpdate.setMinutes(lastUpdateMinute);
+      lastUpdate.setSeconds(0);
+      lastUpdate.setMilliseconds(0);
+      
+      lastUpdated = lastUpdate.toISOString();
+      nextUpdateIn = ((15 - (minutes % 15)) * 60) - now.getSeconds();
+      
+      console.log(`Calculated lastUpdated: ${lastUpdated}, nextUpdateIn: ${nextUpdateIn}s`);
+    }
+    
     return {
       data: articles,
       totalArticles,
@@ -182,7 +206,9 @@ const transformApiData = (apiResponse: any): AdsComResponse => {
       totalClicks,
       totalRevenue,
       averageCtr,
-      averageRpm
+      averageRpm,
+      lastUpdated,
+      nextUpdateIn
     };
   } catch (error) {
     console.error('Error transforming API data:', error);
@@ -193,16 +219,32 @@ const transformApiData = (apiResponse: any): AdsComResponse => {
       totalClicks: 0,
       totalRevenue: 0,
       averageCtr: 0,
-      averageRpm: 0
+      averageRpm: 0,
+      lastUpdated: new Date().toISOString(),
+      nextUpdateIn: 0
     };
   }
 };
 
 export async function POST(request: NextRequest) {
   try {
-    const { startDate, endDate, customerId } = await request.json();
-    console.log(`Ads.com API request for date range: ${startDate} to ${endDate}${customerId ? `, Customer ID: ${customerId}` : ''}`);
+    const { startDate, endDate, customerId, forceRefresh } = await request.json();
+    console.log(`Ads.com API request for date range: ${startDate} to ${endDate}${customerId ? `, Customer ID: ${customerId}` : ''}${forceRefresh ? ', Force Refresh: true' : ''}`);
     console.log('DEBUG: Current time', new Date().toISOString());
+    
+    // Calculate update time information
+    const now = new Date();
+    const minutes = now.getMinutes();
+    const lastUpdateMinute = Math.floor(minutes / 15) * 15;
+    
+    const lastUpdate = new Date(now);
+    lastUpdate.setMinutes(lastUpdateMinute);
+    lastUpdate.setSeconds(0);
+    lastUpdate.setMilliseconds(0);
+    
+    const nextUpdateIn = ((15 - (minutes % 15)) * 60) - now.getSeconds();
+    
+    console.log(`Calculated update times: Last updated at ${lastUpdate.toISOString()}, next update in ${nextUpdateIn} seconds`);
     
     // Debug: Print all environment variables
     console.log('Environment variables for Ads.com:');
@@ -295,11 +337,11 @@ export async function POST(request: NextRequest) {
               'X-API-KEY': process.env.ADSCOM_API_KEY || '',
               'Content-Type': 'application/json',
               'Accept': 'application/json',
-              'Cache-Control': 'no-cache, no-store, must-revalidate',
-              'Pragma': 'no-cache'
+              'Cache-Control': forceRefresh ? 'no-cache, no-store, must-revalidate' : 'max-age=60',
+              'Pragma': forceRefresh ? 'no-cache' : 'cache'
             },
             body: JSON.stringify(body),
-            cache: 'no-store',
+            cache: forceRefresh ? 'no-store' : 'default',
             signal: controller.signal
           });
           
@@ -516,6 +558,10 @@ export async function POST(request: NextRequest) {
           }
         }
         
+        // Add update time information to the API response
+        successData.lastUpdated = lastUpdate.toISOString();
+        successData.nextUpdateIn = nextUpdateIn;
+        
         // Transform API data to expected format
         const transformedData = transformApiData(successData);
         console.log(`Transformed data: ${transformedData.data.length} articles`);
@@ -547,6 +593,15 @@ export async function POST(request: NextRequest) {
       console.error('Ads.com API error, falling back to mock:', apiErr);
       const mockData = getMockArticleData(startDate, endDate);
       console.log(`DEBUG: Using mock data with ${mockData.data.length} articles for date range ${startDate} to ${endDate}`);
+      
+      // Ensure the mock data includes update time information
+      if (!mockData.lastUpdated) {
+        mockData.lastUpdated = lastUpdate.toISOString();
+      }
+      
+      if (!mockData.nextUpdateIn) {
+        mockData.nextUpdateIn = nextUpdateIn;
+      }
       
       // Filter mock data by customer ID if provided
       if (customerId) {
@@ -633,9 +688,32 @@ export async function GET(request: NextRequest) {
     
     console.log(`GET: Ads.com API request for date range: ${startDate} to ${endDate}${customerId ? `, Customer ID: ${customerId}` : ''}`);
     
+    // Calculate update time information
+    const now = new Date();
+    const minutes = now.getMinutes();
+    const lastUpdateMinute = Math.floor(minutes / 15) * 15;
+    
+    const lastUpdate = new Date(now);
+    lastUpdate.setMinutes(lastUpdateMinute);
+    lastUpdate.setSeconds(0);
+    lastUpdate.setMilliseconds(0);
+    
+    const nextUpdateIn = ((15 - (minutes % 15)) * 60) - now.getSeconds();
+    
+    console.log(`Calculated update times: Last updated at ${lastUpdate.toISOString()}, next update in ${nextUpdateIn} seconds`);
+    
     // For now, immediately use mock data while debugging
     console.log('Using mock Ads.com data for GET debugging');
     const mockData = getMockArticleData(startDate, endDate);
+    
+    // Ensure the mock data includes update time information
+    if (!mockData.lastUpdated) {
+      mockData.lastUpdated = lastUpdate.toISOString();
+    }
+    
+    if (!mockData.nextUpdateIn) {
+      mockData.nextUpdateIn = nextUpdateIn;
+    }
     
     // Filter by customer ID if provided
     if (customerId) {

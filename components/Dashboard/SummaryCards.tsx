@@ -33,6 +33,9 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ revenueData, costData }) =>
   const avgCTR = totalVisits > 0 ? (totalClicks / totalVisits) * 100 : 0;
   const avgRPM = totalVisits > 0 ? (totalRevenue / totalVisits) * 1000 : 0;
   
+  // Calculate average EPC (Earnings Per Click)
+  const avgEPC = totalClicks > 0 ? totalRevenue / totalClicks : 0;
+  
   // Display the actual count of articles rather than campaigns
   const articleCount = revenueData.length;
   
@@ -52,6 +55,11 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ revenueData, costData }) =>
       return (typeof value === 'number' && !isNaN(value))
         ? value.toFixed(2) + '%'
         : '0.00%';
+    },
+    epc: (value: any): string => {
+      return (typeof value === 'number' && !isNaN(value))
+        ? value.toFixed(3)
+        : '0.000';
     }
   };
 
@@ -127,17 +135,17 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ revenueData, costData }) =>
           <div className="tile tile-4">
             <div className="tile-content">
               <div className="tile-icon tile-icon-4">
-                <EyeOutlined />
+                <DollarOutlined />
               </div>
               <div className="tile-info">
-                <div className="tile-title">TOTAL TRAFFIC</div>
+                <div className="tile-title">AVERAGE EPC</div>
                 <div className="tile-value" style={{ color: 'var(--secondary-color)' }}>
-                  {safeFormat.number(totalVisits)}
+                  ${safeFormat.epc(avgEPC)}
                 </div>
                 <div className="tile-footer">
-                  <span className="metric-label">CTR:</span>
+                  <span className="metric-label">Clicks:</span>
                   <span className="metric-value" style={{ color: 'var(--secondary-color)' }}>
-                    {safeFormat.percentage(avgCTR)}
+                    {safeFormat.number(totalClicks)}
                   </span>
                 </div>
               </div>

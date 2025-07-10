@@ -45,6 +45,8 @@ export interface AdsComResponse {
   totalRevenue: number;
   averageCtr: number;
   averageRpm: number;
+  lastUpdated?: string;  // Timestamp of when the data was last updated by Ads.com
+  nextUpdateIn?: number; // Seconds until next update
 }
 
 // Fetch article performance data from Ads.com
@@ -74,10 +76,90 @@ export async function fetchRevenueData(startDate: string, endDate: string): Prom
       }
     });
     
-    return response.data;
+    // Get the last update time information
+    const updateInfo = await getLastUpdateTime();
+    
+    // Merge the update info with the response data
+    const enrichedData = {
+      ...response.data,
+      lastUpdated: updateInfo.lastUpdated,
+      nextUpdateIn: updateInfo.nextUpdateIn
+    };
+    
+    return enrichedData;
   } catch (error) {
     console.error('Error fetching Ads.com revenue data:', error);
     throw error;
+  }
+}
+
+// Get the last update time from Ads.com API
+export async function getLastUpdateTime(): Promise<{ lastUpdated: string, nextUpdateIn: number }> {
+  try {
+    // Try to fetch the update status from the API
+    const response = await adsComClient.get('/update-status', {
+      timeout: 5000 // 5 second timeout to avoid hanging
+    });
+    
+    if (response.data && response.data.lastUpdated) {
+      return {
+        lastUpdated: response.data.lastUpdated,
+        nextUpdateIn: response.data.nextUpdateIn || 0
+      };
+    }
+    
+    // If the API doesn't provide this info, calculate an estimate based on current time
+    // Ads.com updates every 15 minutes, at :00, :15, :30, :45
+    const now = new Date();
+    const minutes = now.getMinutes();
+    const seconds = now.getSeconds();
+    
+    // Calculate which 15-minute interval we're in
+    const currentInterval = Math.floor(minutes / 15);
+    const lastUpdateMinute = currentInterval * 15;
+    
+    // Create the last update timestamp
+    const lastUpdate = new Date(now);
+    lastUpdate.setMinutes(lastUpdateMinute);
+    lastUpdate.setSeconds(0);
+    lastUpdate.setMilliseconds(0);
+    
+    // Calculate seconds until next update
+    const nextInterval = (currentInterval + 1) % 4; // 0, 1, 2, or 3 (representing :00, :15, :30, :45)
+    const nextUpdateMinute = nextInterval * 15;
+    
+    // If we're going from :45 to :00, we need to add an hour
+    const nextUpdate = new Date(now);
+    if (nextInterval === 0) {
+      nextUpdate.setHours(nextUpdate.getHours() + 1);
+    }
+    nextUpdate.setMinutes(nextUpdateMinute);
+    nextUpdate.setSeconds(0);
+    nextUpdate.setMilliseconds(0);
+    
+    const secondsUntilNextUpdate = Math.floor((nextUpdate.getTime() - now.getTime()) / 1000);
+    
+    return {
+      lastUpdated: lastUpdate.toISOString(),
+      nextUpdateIn: secondsUntilNextUpdate
+    };
+  } catch (error) {
+    console.error('Error fetching update status:', error);
+    
+    // Fallback to estimated update time
+    const now = new Date();
+    const minutes = now.getMinutes();
+    const lastUpdateMinute = Math.floor(minutes / 15) * 15;
+    
+    const lastUpdate = new Date(now);
+    lastUpdate.setMinutes(lastUpdateMinute);
+    lastUpdate.setSeconds(0);
+    lastUpdate.setMilliseconds(0);
+    
+    return {
+      lastUpdated: lastUpdate.toISOString(),
+      nextUpdateIn: ((15 - (minutes % 15)) * 60) - now.getSeconds()
+    };
   }
 }
 
@@ -88,6 +170,18 @@ export function getMockArticleData(startDate?: string, endDate?: string): AdsCom
   // Generate a consistent target count of 553 articles
   const targetArticleCount = 553;
   console.log(`Ensuring consistent count of ${targetArticleCount} mock articles`);
+  
+  // Calculate mock update time information
+  const now = new Date();
+  const minutes = now.getMinutes();
+  const lastUpdateMinute = Math.floor(minutes / 15) * 15;
+  
+  const lastUpdate = new Date(now);
+  lastUpdate.setMinutes(lastUpdateMinute);
+  lastUpdate.setSeconds(0);
+  lastUpdate.setMilliseconds(0);
+  
+  const nextUpdateIn = ((15 - (minutes % 15)) * 60) - now.getSeconds();
   
   // If we have specific dates, adjust the mock data
   if (startDate && endDate) {
@@ -100,7 +194,13 @@ export function getMockArticleData(startDate?: string, endDate?: string): AdsCom
     // For single day requests, provide a day-specific variation
     if (daysDiff === 1) {
       console.log(`Generating single-day mock data for: ${startDate}`);
-      return generateSingleDayMockData(startDate, targetArticleCount);
+      const mockData = generateSingleDayMockData(startDate, targetArticleCount);
+      
+      // Add update time information
+      mockData.lastUpdated = lastUpdate.toISOString();
+      mockData.nextUpdateIn = nextUpdateIn;
+      
+      return mockData;
     }
     
     // For multi-day ranges but not the standard 3 days
@@ -299,7 +399,9 @@ export function getMockArticleData(startDate?: string, endDate?: string): AdsCom
     totalClicks,
     totalRevenue,
     averageCtr,
-    averageRpm
+    averageRpm,
+    lastUpdated: lastUpdate.toISOString(),
+    nextUpdateIn: nextUpdateIn
   };
 }
 
@@ -322,6 +424,18 @@ function generateSingleDayMockData(dateString: string, targetArticleCount: numbe
   const adjustedFactor = isToday ? factor * 1.2 : (isYesterday ? factor * 0.9 : factor);
   
   console.log(`Mock data for ${dateString} using factor: ${adjustedFactor.toFixed(2)}`);
+  
+  // Calculate mock update time information
+  const now = new Date();
+  const minutes = now.getMinutes();
+  const lastUpdateMinute = Math.floor(minutes / 15) * 15;
+  
+  const lastUpdate = new Date(now);
+  lastUpdate.setMinutes(lastUpdateMinute);
+  lastUpdate.setSeconds(0);
+  lastUpdate.setMilliseconds(0);
+  
+  const nextUpdateIn = ((15 - (minutes % 15)) * 60) - now.getSeconds();
   
   // Base articles with day-specific adjustments
   const baseArticles = [
@@ -500,7 +614,9 @@ function generateSingleDayMockData(dateString: string, targetArticleCount: numbe
     totalClicks,
     totalRevenue,
     averageCtr,
-    averageRpm
+    averageRpm,
+    lastUpdated: lastUpdate.toISOString(),
+    nextUpdateIn: nextUpdateIn
   };
 }
 
