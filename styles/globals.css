@@ -643,3 +643,8 @@ a:hover {
 .country-tag {
   margin-top: 4px;
 } 
+
+/* Note textarea padding to accommodate Grammarly badge*/
+.ant-input textarea, textarea.ant-input {
+  padding-right: 36px;
+} 

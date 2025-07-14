@@ -14,6 +14,7 @@ import DataTable from '../../components/Dashboard/DataTable';
 import { AdsComArticleData } from '../../lib/adscom-api';
 import { GoogleAdsAd } from '../../lib/google-ads-api';
 import styles from './dashboard.module.css';
+import NotesProvider from '../../components/Providers/NotesProvider';
 
 // Declare custom window property for TypeScript
 declare global {
@@ -96,10 +97,10 @@ function DashboardContent() {
   const autoRefreshTimerRef = useRef<NodeJS.Timeout | null>(null);
   const searchParams = useSearchParams();
   
-  // Default to today initially 
+  // Default to today initially using local timezone (avoid UTC shift)
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>([
-    dayjs.utc(),
-    dayjs.utc()
+    dayjs(),
+    dayjs()
   ]);
   
   // Track selected period for date filters
@@ -293,8 +294,8 @@ function DashboardContent() {
     setSelectedCustomerId(customerId);
     
     // Refresh data with new customer ID filter
-    const startDate = dateRange[0].utc().format('YYYY-MM-DD');
-    const endDate = dateRange[1].utc().format('YYYY-MM-DD');
+    const startDate = dateRange[0].format('YYYY-MM-DD');
+    const endDate = dateRange[1].format('YYYY-MM-DD');
     
     // Direct call with the customerId parameter
     fetchData(startDate, endDate, customerId);
@@ -302,7 +303,8 @@ function DashboardContent() {
 
   useEffect(() => {
     // Always start with Today's data
-    const today = dayjs.utc();
+    // Use local date to respect user-selected calendar values
+    const today = dayjs();
     console.log('Initial load - forcing Today:', today.format('YYYY-MM-DD'));
     setDateRange([today, today]);
     
@@ -336,7 +338,7 @@ function DashboardContent() {
     }
     
     // Use the customer ID when fetching data initially
-    fetchData(today.utc().format('YYYY-MM-DD'), today.utc().format('YYYY-MM-DD'), customerId);
+    fetchData(today.format('YYYY-MM-DD'), today.format('YYYY-MM-DD'), customerId);
     
     // Listen for account changes from the layout component
     const handleAccountChangedEvent = (event: CustomEvent) => {
@@ -347,8 +349,8 @@ function DashboardContent() {
       setSelectedCustomerId(newCustomerId);
       
       // Refresh data with new customer ID filter
-      const startDate = dateRange[0].utc().format('YYYY-MM-DD');
-      const endDate = dateRange[1].utc().format('YYYY-MM-DD');
+      const startDate = dateRange[0].format('YYYY-MM-DD');
+      const endDate = dateRange[1].format('YYYY-MM-DD');
       
       // Directly call fetchData with the new customerId to avoid state update delays
       fetchData(startDate, endDate, newCustomerId);
@@ -429,7 +431,7 @@ function DashboardContent() {
       
       setDateRange([dates[0], dates[1]]);
       // Fetch data whenever date range changes
-      setTimeout(() => fetchData(dates[0]!.utc().format('YYYY-MM-DD'), dates[1]!.utc().format('YYYY-MM-DD'), selectedCustomerId), 100);
+      setTimeout(() => fetchData(dates[0]!.format('YYYY-MM-DD'), dates[1]!.format('YYYY-MM-DD'), selectedCustomerId), 100);
     }
   };
 
@@ -492,23 +494,23 @@ function DashboardContent() {
     if (selectedPeriod === period) {
       // Same period selected, force refresh
       const { start, end } = getDateRangeForPeriod(period);
-      const startDate = start.utc().format('YYYY-MM-DD');
-      const endDate = end.utc().format('YYYY-MM-DD');
+      const startDate = start.format('YYYY-MM-DD');
+      const endDate = end.format('YYYY-MM-DD');
       fetchData(startDate, endDate, selectedCustomerId);
       return;
     }
     
     setSelectedPeriod(period);
     const { start, end } = getDateRangeForPeriod(period);
-    const startDate = start.utc().format('YYYY-MM-DD');
-    const endDate = end.utc().format('YYYY-MM-DD');
+    const startDate = start.format('YYYY-MM-DD');
+    const endDate = end.format('YYYY-MM-DD');
     setDateRange([start, end]);
     fetchData(startDate, endDate, selectedCustomerId);
   };
 
   const handleRefresh = () => {
-    const startDate = dateRange[0].utc().format('YYYY-MM-DD');
-    const endDate = dateRange[1].utc().format('YYYY-MM-DD');
+    const startDate = dateRange[0].format('YYYY-MM-DD');
+    const endDate = dateRange[1].format('YYYY-MM-DD');
     
     // Clear any existing auto-refresh timer
     if (autoRefreshTimerRef.current) {
@@ -523,7 +525,7 @@ function DashboardContent() {
 
   // Helper to get date ranges for different periods
   const getDateRangeForPeriod = (period: string): { start: Dayjs; end: Dayjs } => {
-    const today = dayjs.utc();
+    const today = dayjs();
     
     switch (period) {
       case 'today':
@@ -714,8 +716,8 @@ function DashboardContent() {
                     });
                     
                     // Make a targeted refresh of just the Ads.com data
-                    const startDate = dateRange[0].utc().format('YYYY-MM-DD');
-                    const endDate = dateRange[1].utc().format('YYYY-MM-DD');
+                    const startDate = dateRange[0].format('YYYY-MM-DD');
+                    const endDate = dateRange[1].format('YYYY-MM-DD');
                     
                     makeApiCall('/api/adscom', { 
                       startDate, 
@@ -775,14 +777,16 @@ function DashboardContent() {
             </div>
           ) : (
             <>
-              <SummaryCards 
-                revenueData={revenueData} 
-                costData={costData} 
-              />
-              <DataTable 
-                revenueData={revenueData}
-                costData={costData}
-              />
+              <NotesProvider>
+                <SummaryCards 
+                  revenueData={revenueData} 
+                  costData={costData} 
+                />
+                <DataTable 
+                  revenueData={revenueData}
+                  costData={costData}
+                />
+              </NotesProvider>
             </>
           )}
         </Content>

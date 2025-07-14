@@ -95,12 +95,44 @@ const transformApiResponse = (response: any, startDate?: string, endDate?: strin
   }
 };
 
+// ──────────────────────────────────────────
+// Simple in-process cache to avoid hammering
+// the Google Ads API when the dashboard makes
+// multiple identical requests in quick
+// succession (auto-refresh, React re-renders).
+// ──────────────────────────────────────────
+interface CachedGAData {
+  timestamp: number;
+  payload: any;
+}
+
+const GA_CACHE: Record<string, CachedGAData> = (globalThis as any).__GA_CACHE__ || {};
+(globalThis as any).__GA_CACHE__ = GA_CACHE;
+
+const CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+
+// Helper to build cache key
+const buildCacheKey = (start: string, end: string, cid: string | null) => `${start}|${end}|${cid ?? 'all'}`;
+
 export async function POST(request: NextRequest) {
   try {
     const { startDate, endDate, customerId } = await request.json();
     console.log(`Google Ads API request for date range: ${startDate} to ${endDate}, Customer ID: ${customerId || 'All'}`);
     console.log('DEBUG: Current time', new Date().toISOString());
     
+    // ⏳ 1) Return cached response if still fresh
+    const cacheKey = buildCacheKey(startDate, endDate, customerId);
+    const cached = GA_CACHE[cacheKey];
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+      console.log(`[CACHE] GoogleAds ${cacheKey} → served from cache (${((Date.now()-cached.timestamp)/1000).toFixed(1)}s old)`);
+      return NextResponse.json(cached.payload, {
+        headers: {
+          'X-Cache': 'HIT',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+        },
+      });
+    }
+
     // Debug: Print all environment variables
     console.log('Environment variables:');
     console.log('GOOGLE_ADS_CLIENT_ID:', process.env.GOOGLE_ADS_CLIENT_ID ? 'Set (length: ' + process.env.GOOGLE_ADS_CLIENT_ID.length + ')' : 'Not set');
@@ -164,11 +196,16 @@ export async function POST(request: NextRequest) {
         // Add quota status to response
         const updatedQuotaStatus = getQuotaStatus();
         
-        return NextResponse.json({
+        const responsePayload = {
           ...transformedData,
           _quotaStatus: updatedQuotaStatus,
           _message: 'Real data fetched successfully'
-        }, {
+        };
+
+        // ✅ 2) Store in cache
+        GA_CACHE[cacheKey] = { timestamp: Date.now(), payload: responsePayload };
+
+        return NextResponse.json(responsePayload, {
           headers: {
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache',

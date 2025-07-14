@@ -9,11 +9,15 @@ import {
   PercentageOutlined,
   EyeOutlined,
   RiseOutlined,
-  FallOutlined
+  FallOutlined,
+  FileTextOutlined,
+  PlusCircleOutlined
 } from '@ant-design/icons';
 import { AdsComArticleData, AdsComCountryData } from '../../lib/adscom-api';
 import { GoogleAdsAd } from '../../lib/google-ads-api';
 import Flag from 'react-world-flags';
+import { useNotes } from '../Providers/NotesProvider';
+import NoteModal from '../Notes/NoteModal';
 
 const { Panel } = Collapse;
 const { Title, Text } = Typography;
@@ -94,6 +98,7 @@ interface CombinedRowData {
     cpa: number;
   };
   countryBreakdown?: AdsComCountryData[];
+  notes?: string; // Added for notes column
 }
 
 const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
@@ -116,6 +121,24 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
     columnKey: 'visits',
     order: 'descend',
   });
+  const { notesMap, saveNote, deleteNote } = useNotes();
+  const [noteModalVisible, setNoteModalVisible] = useState<boolean>(false);
+  const [currentSlug, setCurrentSlug] = useState<string>('');
+
+  const openNoteModal = (slug: string) => {
+    setCurrentSlug(slug);
+    setNoteModalVisible(true);
+  };
+
+  const handleSaveNote = async (text: string) => {
+    await saveNote(currentSlug, text);
+    setNoteModalVisible(false);
+  };
+
+  const handleDeleteNote = async () => {
+    await deleteNote(currentSlug);
+    setNoteModalVisible(false);
+  };
 
   // Helper to normalize slugs (lowercase, trim slash, remove extension)
   const normalizeSlug = (raw: string): string => {
@@ -261,8 +284,30 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
     );
   };
 
+  // Helper to ensure numeric sort consistency
+  const numericSort = (getter: (row: CombinedRowData) => number) => {
+    return (a: CombinedRowData, b: CombinedRowData) => {
+      const aVal = getter(a);
+      const bVal = getter(b);
+      return aVal - bVal;
+    };
+  };
+
+  // Helper to recursively inject default sortDirections so every sortable column toggles consistently
+  const addSortDirections = (cols: any[]): any[] =>
+    cols.map(col => {
+      const newCol = { ...col };
+      if (newCol.children) {
+        newCol.children = addSortDirections(newCol.children);
+      }
+      if (newCol.sorter) {
+        if (!newCol.sortDirections) newCol.sortDirections = ['ascend', 'descend'];
+      }
+      return newCol;
+    });
+
   // Define table columns
-  const columns = [
+  const baseColumns = [
     {
       title: 'Article',
       dataIndex: 'article',
@@ -448,9 +493,37 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           width: '5%',
           sorter: (a: CombinedRowData, b: CombinedRowData) => a.roi - b.roi,
         },
+        {
+          title: 'Notes',
+          dataIndex: 'notes',
+          key: 'notes',
+          width: '5%',
+          render: (_: any, record: CombinedRowData) => {
+            const note = notesMap[record.slug];
+            return (
+              <Tooltip title={note ? note.text : 'Add note'}>
+                <span
+                  style={{ cursor: 'pointer', display: 'flex', justifyContent: 'center' }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openNoteModal(record.slug);
+                  }}
+                >
+                  {note ? (
+                    <FileTextOutlined style={{ color: '#4f46e5' }} />
+                  ) : (
+                    <PlusCircleOutlined style={{ color: '#9ca3af' }} />
+                  )}
+                </span>
+              </Tooltip>
+            );
+          },
+        },
       ],
     }
   ];
+
+  const columns = addSortDirections(baseColumns);
 
   // Process and combine data
   const combinedData = useMemo(() => {
@@ -488,6 +561,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
         finalized: article.finalized,
         conversions: 0,
         countryBreakdown: article.countryBreakdown,
+        notes: notesMap[slug]?.text || '', // Initialize notes
       };
       combined.push(row);
       slugMap[slug] = row;
@@ -590,6 +664,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           }
           
           targetRow.finalUrls = Array.from(new Set([...targetRow.finalUrls, url]));
+          targetRow.notes = notesMap[targetRow.slug]?.text || ''; // Update notes
         } else {
           // Skip ads that we've already matched to articles
           if (hasProcessedUrls.some(url => ad.final_urls?.includes(url))) return;
@@ -640,7 +715,8 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
                 apiMetrics: {
                   conversionRate: apiConversionRate,
                   cpa: apiCpa
-                }
+                },
+                notes: '', // No notes for new rows
               };
               combined.push(newRow);
             }
@@ -665,7 +741,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
 
     // Sort by profit (highest first)
     return filteredCombined.sort((a, b) => b.profit - a.profit);
-  }, [revenueData, costData]);
+  }, [revenueData, costData, notesMap]);
 
   // Filter data based on search text
   const filteredData = useMemo(() => {
@@ -939,14 +1015,8 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
       </div>
       
       <Table
-        dataSource={filteredData}
         columns={columns}
-        rowKey="key"
-        expandable={{
-          expandedRowRender,
-          expandedRowKeys: expandedItems,
-          onExpand: (expanded, record) => toggleExpand(record.key)
-        }}
+        dataSource={filteredData}
         pagination={{
           pageSize: pageSize,
           current: currentPage,
@@ -960,19 +1030,25 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           },
           onShowSizeChange: (current, size) => {
             setPageSize(size);
-            setCurrentPage(1); // Reset to first page when changing page size
+            setCurrentPage(1);
           }
         }}
         onChange={(pagination, filters, sorter: any) => {
-          setSortedInfo({
-            columnKey: sorter.columnKey,
-            order: sorter.order,
-          });
+          setSortedInfo({ columnKey: sorter.columnKey, order: sorter.order });
         }}
         size="small"
         bordered
         className="performance-table"
         rowClassName={() => 'performance-row-3d'}
+        expandable={{ expandedRowRender, expandedRowKeys: expandedItems, onExpand: (expanded, record) => toggleExpand(record.key) }}
+      />
+      <NoteModal
+        open={noteModalVisible}
+        slug={currentSlug}
+        initialText={notesMap[currentSlug]?.text || ''}
+        onSave={handleSaveNote}
+        onDelete={notesMap[currentSlug] ? handleDeleteNote : undefined}
+        onCancel={() => setNoteModalVisible(false)}
       />
       
       <style jsx global>{`
