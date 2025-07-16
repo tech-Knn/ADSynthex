@@ -27,14 +27,9 @@ const CUSTOMER_ACCOUNTS = [
     value: null
   },
   {
-    id: 'CID_3146253756',
-    name: 'Ads.com - RSOC - UTC - 04',
-    value: '3146253756'
-  },
-  {
-    id: 'CID_5723554317',
-    name: 'Ads.com - RSOC - UTC - 03',
-    value: '5723554317'
+    id: 'CID_8677814915',
+    name: 'Ads.com - RSOC - IST',
+    value: '8677814915'
   },
   {
     id: 'CID_9071440966',
@@ -42,9 +37,14 @@ const CUSTOMER_ACCOUNTS = [
     value: '9071440966'
   },
   {
-    id: 'CID_8677814915',
-    name: 'Ads.com - RSOC - IST',
-    value: '8677814915'
+    id: 'CID_5723554317',
+    name: 'Ads.com - RSOC - UTC - 03',
+    value: '5723554317'
+  },
+  {
+    id: 'CID_3146253756',
+    name: 'Ads.com - RSOC - UTC - 04',
+    value: '3146253756'
   },
   {
     id: 'CID_5857090949',
@@ -97,6 +97,35 @@ const CUSTOMER_ACCOUNTS = [
     value: '4277350349'
   }
 ];
+
+// Helper to sort accounts
+const sortAccounts = (accounts: typeof CUSTOMER_ACCOUNTS) => {
+  return accounts.slice().sort((a, b) => {
+    // Move IST account to the very end
+    if (a.id === 'CID_8677814915') return 1;
+    if (b.id === 'CID_8677814915') return -1;
+
+    // Extract UTC number if present
+    const getUtcNum = (name: string): number | null => {
+      const match = name.match(/UTC\s*-\s*(\d+)/);
+      return match ? parseInt(match[1], 10) : null;
+    };
+
+    const numA = getUtcNum(a.name);
+    const numB = getUtcNum(b.name);
+
+    // If both have numbers, compare numerically
+    if (numA !== null && numB !== null) {
+      return numA - numB;
+    }
+
+    // Keep original order if numbers not found
+    return 0;
+  });
+};
+
+// Pre-sorted list for rendering
+const DISPLAY_ACCOUNTS = sortAccounts(CUSTOMER_ACCOUNTS);
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -229,7 +258,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                   popupMatchSelectWidth={false}
                   dropdownStyle={{ width: 280 }}
                 >
-                  {CUSTOMER_ACCOUNTS.map(account => (
+                  {DISPLAY_ACCOUNTS.map(account => (
                     <Option key={account.id} value={account.id} label={account.id === 'all' ? 'All Accounts' : account.name}>
                       <div style={{ display: 'flex', alignItems: 'center' }}>
                         <TeamOutlined style={{ marginRight: 8, fontSize: 16, color: '#1890ff' }} />
