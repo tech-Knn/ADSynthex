@@ -528,11 +528,16 @@ export async function POST(request: NextRequest) {
             '6201189752': ['utc06'],
             '4071621621': ['utc07'],
             '7579121709': ['utc08'],
+            '1918795911': ['utc09'],
+            '2849704713': ['utc10'],
+            '7605096292': ['utc11'],
+            '5719842337': ['utc12'],
+            '9341614254': ['utc13'],
             '4277350349': ['siddhi']
             // The IST customer (8677814915) will be handled as the fallback below
           };
 
-          const excludeSubidsForIst = ['utc04', 'utc03', 'utc02', 'utc05', 'utc06', 'utc07', 'utc08', 'siddhi'];
+          const excludeSubidsForIst = ['utc04', 'utc03', 'utc02', 'utc05', 'utc06', 'utc07', 'utc08', 'utc09', 'utc10', 'utc11', 'utc12', 'utc13', 'siddhi'];
 
           if (customerSubidMap[customerId]) {
             const allowedSubids = customerSubidMap[customerId];
@@ -603,7 +608,7 @@ export async function POST(request: NextRequest) {
         mockData.nextUpdateIn = nextUpdateIn;
       }
       
-      // Filter mock data by customer ID if provided
+      // Filter by customer ID if provided
       if (customerId) {
         console.log(`Filtering mock data by Customer ID: ${customerId}`);
         
@@ -613,7 +618,12 @@ export async function POST(request: NextRequest) {
           '5723554317': 'techinsightsweekly.com',
           '9071440966': 'innovationspotlight.net',
           '8677814915': 'futuretechtoday.com',
-          '4277350349': 'emergingtrendsreport.org'
+          '4277350349': 'emergingtrendsreport.org',
+          '1918795911': 'digitaltrendstoday.com',
+          '2849704713': 'techreviewcentral.net',
+          '7605096292': 'futuristinsights.org',
+          '5719842337': 'innovationdigest.com',
+          '9341614254': 'emergingtechreview.com'
         };
         
         const domain = customerDomainMap[customerId];
@@ -722,7 +732,12 @@ export async function GET(request: NextRequest) {
         '5723554317': 'techinsightsweekly.com',
         '9071440966': 'innovationspotlight.net',
         '8677814915': 'futuretechtoday.com',
-        '4277350349': 'emergingtrendsreport.org'
+        '4277350349': 'emergingtrendsreport.org',
+        '1918795911': 'digitaltrendstoday.com',
+        '2849704713': 'techreviewcentral.net',
+        '7605096292': 'futuristinsights.org',
+        '5719842337': 'innovationdigest.com',
+        '9341614254': 'emergingtechreview.com'
       };
       
       const domain = customerDomainMap[customerId];

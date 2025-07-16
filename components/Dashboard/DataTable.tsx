@@ -501,7 +501,10 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           render: (_: any, record: CombinedRowData) => {
             const note = notesMap[record.slug];
             return (
-              <Tooltip title={note ? note.text : 'Add note'}>
+              <Tooltip 
+                title={note ? <div style={{ whiteSpace: 'pre-line' }}>{note.text}</div> : 'Add note'}
+                overlayStyle={{ maxWidth: '400px' }}
+              >
                 <span
                   style={{ cursor: 'pointer', display: 'flex', justifyContent: 'center' }}
                   onClick={(e) => {
@@ -1079,7 +1082,7 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
         
         /* Tooltip styling */
         .ant-tooltip {
-          max-width: 300px;
+          max-width: 400px;
         }
         
         .ant-tooltip-inner {
@@ -1088,6 +1091,8 @@ const DataTable: React.FC<DataTableProps> = ({ revenueData, costData }) => {
           line-height: 1.5;
           border-radius: 4px;
           box-shadow: 0 3px 6px -4px rgba(0,0,0,0.12), 0 6px 16px 0 rgba(0,0,0,0.08);
+          white-space: pre-line;
+          text-align: left;
         }
         
         .table-header {

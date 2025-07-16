@@ -486,6 +486,31 @@ function DashboardContent() {
       id: 'CID_7579121709',
       name: 'Ads.com - RSOC - UTC - 08',
       value: '7579121709'
+    },
+    {
+      id: 'CID_1918795911',
+      name: 'Ads.com - RSOC - UTC - 09',
+      value: '1918795911'
+    },
+    {
+      id: 'CID_2849704713',
+      name: 'Ads.com - RSOC - UTC - 10',
+      value: '2849704713'
+    },
+    {
+      id: 'CID_7605096292',
+      name: 'Ads.com - RSOC - UTC - 11',
+      value: '7605096292'
+    },
+    {
+      id: 'CID_5719842337',
+      name: 'Ads.com - RSOC - UTC - 12',
+      value: '5719842337'
+    },
+    {
+      id: 'CID_9341614254',
+      name: 'Ads.com - RSOC - UTC - 13',
+      value: '9341614254'
     }
   ];
 
