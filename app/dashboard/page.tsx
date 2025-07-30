@@ -154,22 +154,31 @@ function DashboardContent() {
         makeApiCall('/api/adscom', { startDate, endDate, customerId }),
         makeApiCall('/api/google-ads', { startDate, endDate, customerId })
       ]);
-      
+
+      // Check for API errors (cost side)
+      if (googleAdsData && googleAdsData._apiError) {
+        throw new Error(googleAdsData.error || 'Failed to load Google Ads cost data');
+      }
+      // Check for API errors (revenue side, if any similar flag is used)
+      if (adscomData && adscomData._apiError) {
+        throw new Error(adscomData.error || 'Failed to load Ads.com revenue data');
+      }
+
       // Handle null data safely
       const articleData = adscomData && adscomData.data ? adscomData.data : [];
       const adsData = googleAdsData && googleAdsData.ads ? googleAdsData.ads : [];
-      
+
       if (articleData.length === 0) {
         message.warning('No revenue data found for the selected date range.');
       }
-      
+
       if (adsData.length === 0) {
         message.warning('No cost data found for the selected date range.');
       }
-      
+
       setRevenueData(articleData);
       setCostData(adsData);
-      
+
       // Store update time information
       if (adscomData && adscomData.lastUpdated) {
         console.log(`🔄 Received update info: Last updated at ${new Date(adscomData.lastUpdated).toLocaleTimeString()}, next update in ${adscomData.nextUpdateIn || 'unknown'} seconds`);
@@ -221,7 +230,9 @@ function DashboardContent() {
       }
     } catch (error) {
       console.error('Error fetching data:', error);
-      message.error({ key: messageKey, content: 'Failed to load data', duration: 2 });
+      message.error({ key: messageKey, content: (error as Error).message || 'Failed to load data', duration: 2 });
+      setRevenueData([]);
+      setCostData([]);
     } finally {
       setLoading(false);
     }
@@ -443,14 +454,9 @@ function DashboardContent() {
       value: null
     },
     {
-      id: 'CID_3146253756',
-      name: 'Ads.com - RSOC - UTC - 04',
-      value: '3146253756'
-    },
-    {
-      id: 'CID_5723554317',
-      name: 'Ads.com - RSOC - UTC - 03',
-      value: '5723554317'
+      id: 'CID_8677814915',
+      name: 'Ads.com - RSOC - IST',
+      value: '8677814915'
     },
     {
       id: 'CID_9071440966',
@@ -458,14 +464,14 @@ function DashboardContent() {
       value: '9071440966'
     },
     {
-      id: 'CID_8677814915',
-      name: 'Ads.com - RSOC - IST',
-      value: '8677814915'
+      id: 'CID_5723554317',
+      name: 'Ads.com - RSOC - UTC - 03',
+      value: '5723554317'
     },
     {
-      id: 'CID_4277350349',
-      name: 'RSOC - UTC - Ads.com',
-      value: '4277350349'
+      id: 'CID_3146253756',
+      name: 'Ads.com - RSOC - UTC - 04',
+      value: '3146253756'
     },
     {
       id: 'CID_5857090949',
@@ -511,6 +517,11 @@ function DashboardContent() {
       id: 'CID_9341614254',
       name: 'Ads.com - RSOC - UTC - 13',
       value: '9341614254'
+    },
+    {
+      id: 'CID_4277350349',
+      name: 'RSOC - UTC - Ads.com',
+      value: '4277350349'
     }
   ];
 

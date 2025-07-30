@@ -7,14 +7,9 @@ const ADMIN_FALLBACK_KEY = "admin@2024#secure";
 // Customer accounts list to validate against
 const CUSTOMER_ACCOUNTS = [
   {
-    id: 'CID_3146253756',
-    name: 'Ads.com - RSOC - UTC - 04',
-    value: '3146253756'
-  },
-  {
-    id: 'CID_5723554317', 
-    name: 'Ads.com - RSOC - UTC - 03',
-    value: '5723554317'
+    id: 'CID_8677814915',
+    name: 'Ads.com - RSOC - IST',
+    value: '8677814915'
   },
   {
     id: 'CID_9071440966',
@@ -22,9 +17,14 @@ const CUSTOMER_ACCOUNTS = [
     value: '9071440966'
   },
   {
-    id: 'CID_8677814915',
-    name: 'Ads.com - RSOC - IST',
-    value: '8677814915'
+    id: 'CID_5723554317', 
+    name: 'Ads.com - RSOC - UTC - 03',
+    value: '5723554317'
+  },
+  {
+    id: 'CID_3146253756',
+    name: 'Ads.com - RSOC - UTC - 04',
+    value: '3146253756'
   },
   {
     id: 'CID_5857090949',

@@ -226,6 +226,34 @@ const transformApiData = (apiResponse: any): AdsComResponse => {
   }
 };
 
+const ADSCOM_CACHE_TTL_MS = 1 * 60 * 1000; // 1 minute
+const ADSCOM_CACHE = (globalThis as any).__ADSCOM_CACHE__ || {};
+(globalThis as any).__ADSCOM_CACHE__ = ADSCOM_CACHE;
+const ACTIVE_ADSCOM_KEYS = new Set<string>();
+
+// Helper to build cache key
+const buildAdscomCacheKey = (start: string, end: string, cid: string | null) => `${start}|${end}|${cid ?? 'all'}`;
+
+// Background refresh every minute
+setInterval(async () => {
+  for (const cacheKey of ACTIVE_ADSCOM_KEYS) {
+    const [startDate, endDate, customerId] = cacheKey.split('|');
+    try {
+      const apiResponse = await fetchArticlePerformance({ startDate, endDate, customerId });
+      // Validate response is JSON and has expected structure
+      if (!apiResponse || typeof apiResponse !== 'object' || !Array.isArray(apiResponse.data)) {
+        throw new Error('Invalid Ads.com API response during background refresh');
+      }
+      const transformed = transformApiData(apiResponse);
+      ADSCOM_CACHE[cacheKey] = { timestamp: Date.now(), payload: transformed };
+      console.log(`[BG REFRESH] Updated Ads.com cache for ${cacheKey}`);
+    } catch (err) {
+      console.error(`[BG REFRESH] Failed to refresh Ads.com cache for ${cacheKey}:`, err);
+      // Do not update cache on error
+    }
+  }
+}, ADSCOM_CACHE_TTL_MS);
+
 export async function POST(request: NextRequest) {
   try {
     const { startDate, endDate, customerId, forceRefresh } = await request.json();
@@ -521,9 +549,10 @@ export async function POST(request: NextRequest) {
         // If a customerId is provided, filter raw data rows by subid_1 first
         if (customerId && successData.data && Array.isArray(successData.data)) {
           const customerSubidMap: { [key: string]: string[] } = {
-            '3146253756': ['utc04'],
-            '5723554317': ['utc03'],
+            '8677814915': [], // IST account handled separately below
             '9071440966': ['utc02'],
+            '5723554317': ['utc03'],
+            '3146253756': ['utc04'],
             '5857090949': ['utc05'],
             '6201189752': ['utc06'],
             '4071621621': ['utc07'],
@@ -537,7 +566,7 @@ export async function POST(request: NextRequest) {
             // The IST customer (8677814915) will be handled as the fallback below
           };
 
-          const excludeSubidsForIst = ['utc04', 'utc03', 'utc02', 'utc05', 'utc06', 'utc07', 'utc08', 'utc09', 'utc10', 'utc11', 'utc12', 'utc13', 'siddhi'];
+          const excludeSubidsForIst = ['utc02', 'utc03', 'utc04', 'utc05', 'utc06', 'utc07', 'utc08', 'utc09', 'utc10', 'utc11', 'utc12', 'utc13', 'siddhi'];
 
           if (customerSubidMap[customerId]) {
             const allowedSubids = customerSubidMap[customerId];
@@ -581,6 +610,10 @@ export async function POST(request: NextRequest) {
           console.warn('Customer ID filtering for real API data not fully implemented yet');
         }
         
+        const cacheKey = buildAdscomCacheKey(startDate, endDate, customerId);
+        ADSCOM_CACHE[cacheKey] = { timestamp: Date.now(), payload: transformedData };
+        ACTIVE_ADSCOM_KEYS.add(cacheKey);
+        
         return NextResponse.json(transformedData, {
           headers: {
             'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -614,16 +647,20 @@ export async function POST(request: NextRequest) {
         
         // Map customer IDs to domains for filtering
         const customerDomainMap: { [key: string]: string } = {
-          '3146253756': 'freshcuesdaily.com',
-          '5723554317': 'techinsightsweekly.com',
-          '9071440966': 'innovationspotlight.net',
-          '8677814915': 'futuretechtoday.com',
-          '4277350349': 'emergingtrendsreport.org',
-          '1918795911': 'digitaltrendstoday.com',
-          '2849704713': 'techreviewcentral.net',
-          '7605096292': 'futuristinsights.org',
-          '5719842337': 'innovationdigest.com',
-          '9341614254': 'emergingtechreview.com'
+          '8677814915': 'futuretechtoday.com', // IST account
+          '9071440966': 'innovationspotlight.net', // UTC-02
+          '5723554317': 'techinsightsweekly.com', // UTC-03
+          '3146253756': 'freshcuesdaily.com', // UTC-04
+          '5857090949': 'freshcuesdaily.com', // UTC-05
+          '6201189752': 'techinsightsweekly.com', // UTC-06
+          '4071621621': 'innovationspotlight.net', // UTC-07
+          '7579121709': 'futuretechtoday.com', // UTC-08
+          '1918795911': 'digitaltrendstoday.com', // UTC-09
+          '2849704713': 'techreviewcentral.net', // UTC-10
+          '7605096292': 'futuristinsights.org', // UTC-11
+          '5719842337': 'innovationdigest.com', // UTC-12
+          '9341614254': 'emergingtechreview.com', // UTC-13
+          '4277350349': 'emergingtrendsreport.org' // Siddhi
         };
         
         const domain = customerDomainMap[customerId];
@@ -675,17 +712,15 @@ export async function POST(request: NextRequest) {
     
   } catch (error) {
     console.error('Error processing Ads.com request:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch Ads.com data' }, 
-      { 
-        status: 500,
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0'
-        }
-      }
-    );
+    return NextResponse.json({
+      error: 'Failed to fetch Ads.com data and no cached data available.',
+      _errorDetails: (error as Error).message
+    }, {
+      status: 500,
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+      },
+    });
   }
 }
 
@@ -728,16 +763,20 @@ export async function GET(request: NextRequest) {
     // Filter by customer ID if provided
     if (customerId) {
       const customerDomainMap: { [key: string]: string } = {
-        '3146253756': 'freshcuesdaily.com',
-        '5723554317': 'techinsightsweekly.com',
-        '9071440966': 'innovationspotlight.net',
-        '8677814915': 'futuretechtoday.com',
-        '4277350349': 'emergingtrendsreport.org',
-        '1918795911': 'digitaltrendstoday.com',
-        '2849704713': 'techreviewcentral.net',
-        '7605096292': 'futuristinsights.org',
-        '5719842337': 'innovationdigest.com',
-        '9341614254': 'emergingtechreview.com'
+        '8677814915': 'futuretechtoday.com', // IST account
+        '9071440966': 'innovationspotlight.net', // UTC-02
+        '5723554317': 'techinsightsweekly.com', // UTC-03
+        '3146253756': 'freshcuesdaily.com', // UTC-04
+        '5857090949': 'freshcuesdaily.com', // UTC-05
+        '6201189752': 'techinsightsweekly.com', // UTC-06
+        '4071621621': 'innovationspotlight.net', // UTC-07
+        '7579121709': 'futuretechtoday.com', // UTC-08
+        '1918795911': 'digitaltrendstoday.com', // UTC-09
+        '2849704713': 'techreviewcentral.net', // UTC-10
+        '7605096292': 'futuristinsights.org', // UTC-11
+        '5719842337': 'innovationdigest.com', // UTC-12
+        '9341614254': 'emergingtechreview.com', // UTC-13
+        '4277350349': 'emergingtrendsreport.org' // Siddhi
       };
       
       const domain = customerDomainMap[customerId];

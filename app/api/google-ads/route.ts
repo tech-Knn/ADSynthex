@@ -109,7 +109,29 @@ interface CachedGAData {
 const GA_CACHE: Record<string, CachedGAData> = (globalThis as any).__GA_CACHE__ || {};
 (globalThis as any).__GA_CACHE__ = GA_CACHE;
 
-const CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+const CACHE_TTL_MS = 20 * 60 * 1000; // 20 minutes
+
+// Track active cache keys for background refresh
+const ACTIVE_KEYS = new Set<string>();
+
+// Background refresh every minute
+setInterval(async () => {
+  for (const cacheKey of ACTIVE_KEYS) {
+    const [startDate, endDate, customerId] = cacheKey.split('|');
+    try {
+      const realData = await fetchGoogleAdsData(startDate, endDate);
+      if (!realData || typeof realData !== 'object' || !Array.isArray(realData.ads)) {
+        throw new Error('Invalid Google Ads API response during background refresh');
+      }
+      const transformedData = transformApiResponse(realData, startDate, endDate, customerId !== 'all' ? customerId : null);
+      GA_CACHE[cacheKey] = { timestamp: Date.now(), payload: transformedData };
+      console.log(`[BG REFRESH] Updated GoogleAds cache for ${cacheKey}`);
+    } catch (err) {
+      console.error(`[BG REFRESH] Failed to refresh GoogleAds cache for ${cacheKey}:`, err);
+      // Do not update cache on error
+    }
+  }
+}, CACHE_TTL_MS);
 
 // Helper to build cache key
 const buildCacheKey = (start: string, end: string, cid: string | null) => `${start}|${end}|${cid ?? 'all'}`;
@@ -122,12 +144,29 @@ export async function POST(request: NextRequest) {
     
     // ⏳ 1) Return cached response if still fresh
     const cacheKey = buildCacheKey(startDate, endDate, customerId);
+    ACTIVE_KEYS.add(cacheKey);
     const cached = GA_CACHE[cacheKey];
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-      console.log(`[CACHE] GoogleAds ${cacheKey} → served from cache (${((Date.now()-cached.timestamp)/1000).toFixed(1)}s old)`);
+
+    // Serve cached data immediately if available, even if expired
+    if (cached) {
+      // Trigger background refresh if cache is expired
+      if (Date.now() - cached.timestamp >= CACHE_TTL_MS) {
+        (async () => {
+          try {
+            const realData = await fetchGoogleAdsData(startDate, endDate);
+            if (realData && typeof realData === 'object' && Array.isArray(realData.ads)) {
+              const transformedData = transformApiResponse(realData, startDate, endDate, customerId !== 'all' ? customerId : null);
+              GA_CACHE[cacheKey] = { timestamp: Date.now(), payload: transformedData };
+              console.log(`[BG REFRESH] Updated GoogleAds cache for ${cacheKey}`);
+            }
+          } catch (err) {
+            console.error(`[BG REFRESH] Failed to refresh GoogleAds cache for ${cacheKey}:`, err);
+          }
+        })();
+      }
       return NextResponse.json(cached.payload, {
         headers: {
-          'X-Cache': 'HIT',
+          'X-Cache': Date.now() - cached.timestamp < CACHE_TTL_MS ? 'HIT' : 'STALE',
           'Cache-Control': 'no-cache, no-store, must-revalidate',
         },
       });
@@ -186,62 +225,27 @@ export async function POST(request: NextRequest) {
       const realData = await fetchGoogleAdsData(startDate, endDate);
       
       // Check if we got meaningful data
-      if (realData && realData.ads && realData.ads.length > 0) {
-        console.log(`Successfully fetched ${realData.ads.length} ads from Google Ads API`);
-        
-        // Transform the API data
-        const transformedData = transformApiResponse(realData, startDate, endDate, customerId);
-        console.log(`Transformed data has ${transformedData.ads.length} ads`);
-        
-        // Add quota status to response
-        const updatedQuotaStatus = getQuotaStatus();
-        
-        const responsePayload = {
-          ...transformedData,
-          _quotaStatus: updatedQuotaStatus,
-          _message: 'Real data fetched successfully'
-        };
-
-        // ✅ 2) Store in cache
-        GA_CACHE[cacheKey] = { timestamp: Date.now(), payload: responsePayload };
-
-        return NextResponse.json(responsePayload, {
-          headers: {
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
-            'Expires': '0'
-          }
-        });
+      if (!realData || typeof realData !== 'object' || !Array.isArray(realData.ads)) {
+        throw new Error('Invalid Google Ads API response');
       }
-      
-      throw new Error('Empty or invalid response from Google Ads API');
-    } catch (apiErr) {
-      console.error('Google Ads API error, falling back to mock:', apiErr);
-      
-      // Get updated quota status
-      const quotaStatus = getQuotaStatus();
-      
-      // Use mock data but adjust based on date range to make it more realistic
-      const mockData = getMockGoogleAdsData(startDate, endDate, customerId);
-      console.log(`DEBUG: Using mock Google Ads data: ${mockData.campaigns.length} campaigns, ${mockData.ads.length} ads`);
-      console.log(`DEBUG: Using mock data with date range ${startDate} to ${endDate}`);
-      
-      if (customerId) {
-        console.log(`DEBUG: Filtered mock data by customer ID ${customerId}`);
-      }
-      
+      const transformedData = transformApiResponse(realData, startDate, endDate, customerId !== 'all' ? customerId : null);
+      GA_CACHE[cacheKey] = { timestamp: Date.now(), payload: transformedData };
+      return NextResponse.json(transformedData, {
+        headers: {
+          'X-Cache': 'MISS',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+        },
+      });
+    } catch (err) {
+      console.error('Google Ads API fetch failed:', err);
       return NextResponse.json({
-        ...mockData,
-        _apiError: true,
-        _errorMessage: (apiErr as Error).message || 'Unknown API error',
-        _quotaStatus: quotaStatus,
-        _message: 'API error occurred. Using mock data as fallback.'
+        error: 'Failed to fetch Google Ads cost data and no cached data available.',
+        _errorDetails: (err as Error).message
       }, {
+        status: 500,
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0'
-        }
+        },
       });
     }
   } catch (error) {
