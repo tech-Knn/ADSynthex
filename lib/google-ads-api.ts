@@ -11,7 +11,7 @@ const TARGET_ACCOUNTS = config.TARGET_ACCOUNTS;
 const RATE_LIMIT_CONFIG = {
   maxRequestsPerMinute: 60, // Conservative limit
   maxRequestsPerDay: 8000,  // Leave buffer for other operations
-  delayBetweenAccounts: 1000, // 1 second between accounts
+  delayBetweenAccounts: 2000, // 2 seconds between accounts (increased for safety)
   delayBetweenRequests: 200,  // 200ms between requests
   maxRetries: 3,
   backoffMultiplier: 2,
@@ -23,6 +23,20 @@ let requestCount = 0;
 let lastRequestTime = 0;
 let dailyRequestCount = 0;
 let lastDailyReset = new Date().toDateString();
+
+// Add a per-account queue and staggered request logic
+const accountRequestQueue: Record<string, Promise<any>> = {};
+
+async function queueAccountRequest(accountId: string, fn: () => Promise<any>): Promise<any> {
+  if (!accountRequestQueue[accountId]) {
+    accountRequestQueue[accountId] = Promise.resolve();
+  }
+  // Chain the new request onto the previous one
+  accountRequestQueue[accountId] = accountRequestQueue[accountId].then(async () => {
+    return await fn();
+  });
+  return accountRequestQueue[accountId];
+}
 
 // Helper function to reset daily counter
 function resetDailyCounter() {
@@ -67,9 +81,21 @@ async function waitForRateLimit(): Promise<void> {
 }
 
 // Helper function to check API quotas and provide detailed error information
-function analyzeApiError(error: any): { shouldRetry: boolean; errorType: string; message: string } {
+function analyzeApiError(error: any): { shouldRetry: boolean; errorType: string; message: string; retryAfter?: number } {
   const errorMessage = error.message || error.toString();
   
+  // Google short-term rate limit: "Too many requests. Retry in X seconds."
+  const retryMatch = errorMessage.match(/Retry in (\d+) seconds/);
+  if (retryMatch) {
+    const retryAfter = parseInt(retryMatch[1], 10) * 1000;
+    return {
+      shouldRetry: true,
+      errorType: 'SHORT_TERM_RATE_LIMIT',
+      message: `Short-term rate limit hit. Retry in ${retryAfter / 1000}s`,
+      retryAfter
+    };
+  }
+
   // Rate limit errors
   if (errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
     return {
@@ -142,11 +168,15 @@ async function retryWithBackoff<T>(
       
       const errorAnalysis = analyzeApiError(error);
       
+      // If Google tells us exactly how long to wait, use that
       if (attempt < maxRetries && errorAnalysis.shouldRetry) {
-        const delay = Math.min(
+        let delay = Math.min(
           baseDelay * Math.pow(RATE_LIMIT_CONFIG.backoffMultiplier, attempt),
           RATE_LIMIT_CONFIG.maxBackoffDelay
         );
+        if (errorAnalysis.retryAfter) {
+          delay = errorAnalysis.retryAfter;
+        }
         
         console.log(`Google Ads API attempt ${attempt + 1} failed: ${errorAnalysis.errorType} - ${errorAnalysis.message}`);
         console.log(`Retrying in ${delay}ms...`);
@@ -494,125 +524,126 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string): Pr
 
   for (let i = 0; i < TARGET_ACCOUNTS.length; i++) {
     const account = TARGET_ACCOUNTS[i];
-    
-    try {
-      // Check rate limits before processing each account
-      if (!checkRateLimits()) {
-        console.warn(`Rate limit reached, skipping account ${account.id}`);
-        continue;
-      }
+    await queueAccountRequest(account.id, async () => {
+      try {
+        // Check rate limits before processing each account
+        // if (!checkRateLimits()) { // This line is now handled by queueAccountRequest and waitForRateLimit
+        //   console.warn(`Rate limit reached, skipping account ${account.id}`);
+        //   return; // Skip the account if rate limit is hit
+        // }
 
-      console.log(`Processing account ${i + 1}/${TARGET_ACCOUNTS.length}: ${account.id} (${account.name})`);
-      
-      // Create account-specific customer
-      const accountCustomer = client.Customer({
-        customer_id: account.id,
-        refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN || '',
-        login_customer_id: process.env.GOOGLE_ADS_MANAGER_ID || ''
-      });
-      
-      // Helper function to make API calls with retry and rate limiting
-      const makeApiCall = async (query: string, operationName: string) => {
-        await waitForRateLimit();
+        console.log(`Processing account ${i + 1}/${TARGET_ACCOUNTS.length}: ${account.id} (${account.name})`);
         
-        return await retryWithBackoff(async () => {
-          console.log(`Making ${operationName} call for account ${account.id}`);
-          const response = await accountCustomer.query(query);
-          console.log(`${operationName} response: ${response?.length || 0} items`);
-          return response;
+        // Create account-specific customer
+        const accountCustomer = client.Customer({
+          customer_id: account.id,
+          refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN || '',
+          login_customer_id: process.env.GOOGLE_ADS_MANAGER_ID || ''
         });
-      };
-      
-      // Fetch active campaigns
-      const activeCampaignQuery = buildActiveCampaignQuery(startDate, endDate);
-      const activeCampaignResponse = await makeApiCall(activeCampaignQuery, 'Active Campaigns');
-      if (activeCampaignResponse && activeCampaignResponse.length > 0) {
-        const processedCampaigns = processCampaignData(activeCampaignResponse, account);
-        data.campaigns.push(...processedCampaigns);
-      }
-
-      // Fetch all campaigns
-      const allCampaignsQuery = buildAllCampaignsQuery(startDate, endDate);
-      const allCampaignsResponse = await makeApiCall(allCampaignsQuery, 'All Campaigns');
-      if (allCampaignsResponse && allCampaignsResponse.length > 0) {
-        const allCampaigns = processCampaignData(allCampaignsResponse, account);
         
-        // Merge campaign lists, prioritizing active campaigns
-        const campaignMap = new Map();
+        // Helper function to make API calls with retry and rate limiting
+        const makeApiCall = async (query: string, operationName: string) => {
+          await waitForRateLimit();
+          
+          return await retryWithBackoff(async () => {
+            console.log(`Making ${operationName} call for account ${account.id}`);
+            const response = await accountCustomer.query(query);
+            console.log(`${operationName} response: ${response?.length || 0} items`);
+            return response;
+          });
+        };
         
-        // First add all campaigns
-        for (const campaign of allCampaigns) {
-          campaignMap.set(campaign.campaign_id, campaign);
+        // Fetch active campaigns
+        const activeCampaignQuery = buildActiveCampaignQuery(startDate, endDate);
+        const activeCampaignResponse = await makeApiCall(activeCampaignQuery, 'Active Campaigns');
+        if (activeCampaignResponse && activeCampaignResponse.length > 0) {
+          const processedCampaigns = processCampaignData(activeCampaignResponse, account);
+          data.campaigns.push(...processedCampaigns);
         }
-        
-        // Then override with active campaigns
-        for (const campaign of data.campaigns) {
-          if (campaign.customer_id === account.id) {
+
+        // Fetch all campaigns
+        const allCampaignsQuery = buildAllCampaignsQuery(startDate, endDate);
+        const allCampaignsResponse = await makeApiCall(allCampaignsQuery, 'All Campaigns');
+        if (allCampaignsResponse && allCampaignsResponse.length > 0) {
+          const allCampaigns = processCampaignData(allCampaignsResponse, account);
+          
+          // Merge campaign lists, prioritizing active campaigns
+          const campaignMap = new Map();
+          
+          // First add all campaigns
+          for (const campaign of allCampaigns) {
             campaignMap.set(campaign.campaign_id, campaign);
           }
+          
+          // Then override with active campaigns
+          for (const campaign of data.campaigns) {
+            if (campaign.customer_id === account.id) {
+              campaignMap.set(campaign.campaign_id, campaign);
+            }
+          }
+          
+          // Update campaigns list
+          data.campaigns = data.campaigns.filter(c => c.customer_id !== account.id);
+          data.campaigns.push(...Array.from(campaignMap.values()));
         }
-        
-        // Update campaigns list
-        data.campaigns = data.campaigns.filter(c => c.customer_id !== account.id);
-        data.campaigns.push(...Array.from(campaignMap.values()));
-      }
 
-      // Fetch active ad group ads
-      const activeAdQuery = buildActiveAdGroupAdQuery(startDate, endDate);
-      const activeAdResponse = await makeApiCall(activeAdQuery, 'Active Ads');
-      if (activeAdResponse && activeAdResponse.length > 0) {
-        const processedAds = processAdData(activeAdResponse, account);
-        data.ads.push(...processedAds);
-      }
-
-      // Fetch all ad group ads
-      const allAdQuery = buildAllAdGroupAdQuery(startDate, endDate);
-      const allAdResponse = await makeApiCall(allAdQuery, 'All Ads');
-      if (allAdResponse && allAdResponse.length > 0) {
-        const allAds = processAdData(allAdResponse, account);
-        
-        // Merge ad lists, prioritizing active ads
-        const adMap = new Map();
-        
-        // First add all ads
-        for (const ad of allAds) {
-          adMap.set(ad.ad_id, ad);
+        // Fetch active ad group ads
+        const activeAdQuery = buildActiveAdGroupAdQuery(startDate, endDate);
+        const activeAdResponse = await makeApiCall(activeAdQuery, 'Active Ads');
+        if (activeAdResponse && activeAdResponse.length > 0) {
+          const processedAds = processAdData(activeAdResponse, account);
+          data.ads.push(...processedAds);
         }
-        
-        // Then override with active ads
-        for (const ad of data.ads) {
-          if (ad.customer_id === account.id) {
+
+        // Fetch all ad group ads
+        const allAdQuery = buildAllAdGroupAdQuery(startDate, endDate);
+        const allAdResponse = await makeApiCall(allAdQuery, 'All Ads');
+        if (allAdResponse && allAdResponse.length > 0) {
+          const allAds = processAdData(allAdResponse, account);
+          
+          // Merge ad lists, prioritizing active ads
+          const adMap = new Map();
+          
+          // First add all ads
+          for (const ad of allAds) {
             adMap.set(ad.ad_id, ad);
           }
+          
+          // Then override with active ads
+          for (const ad of data.ads) {
+            if (ad.customer_id === account.id) {
+              adMap.set(ad.ad_id, ad);
+            }
+          }
+          
+          // Update ads list
+          data.ads = data.ads.filter(a => a.customer_id !== account.id);
+          data.ads.push(...Array.from(adMap.values()));
+        }
+
+        // Fetch Performance Max asset groups
+        const assetGroupQuery = buildAssetGroupQuery(startDate, endDate);
+        const assetGroupResponse = await makeApiCall(assetGroupQuery, 'Asset Groups');
+        if (assetGroupResponse && assetGroupResponse.length > 0) {
+          const assetGroupAds = processAssetGroupData(assetGroupResponse, account);
+          
+          // Add asset group ads to the list
+          data.ads.push(...assetGroupAds);
+        }
+
+        // Add delay between accounts to prevent overwhelming the API
+        if (i < TARGET_ACCOUNTS.length - 1) {
+          console.log(`Waiting ${RATE_LIMIT_CONFIG.delayBetweenAccounts}ms before next account...`);
+          await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_CONFIG.delayBetweenAccounts));
         }
         
-        // Update ads list
-        data.ads = data.ads.filter(a => a.customer_id !== account.id);
-        data.ads.push(...Array.from(adMap.values()));
-      }
-
-      // Fetch Performance Max asset groups
-      const assetGroupQuery = buildAssetGroupQuery(startDate, endDate);
-      const assetGroupResponse = await makeApiCall(assetGroupQuery, 'Asset Groups');
-      if (assetGroupResponse && assetGroupResponse.length > 0) {
-        const assetGroupAds = processAssetGroupData(assetGroupResponse, account);
+      } catch (error) {
+        console.error(`Error fetching data for account ${account.id}:`, error);
         
-        // Add asset group ads to the list
-        data.ads.push(...assetGroupAds);
+        // Continue with other accounts even if one fails
+        // This prevents one bad account from breaking the entire fetch
       }
-
-      // Add delay between accounts to prevent overwhelming the API
-      if (i < TARGET_ACCOUNTS.length - 1) {
-        console.log(`Waiting ${RATE_LIMIT_CONFIG.delayBetweenAccounts}ms before next account...`);
-        await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_CONFIG.delayBetweenAccounts));
-      }
-      
-    } catch (error) {
-      console.error(`Error fetching data for account ${account.id}:`, error);
-      
-      // Continue with other accounts even if one fails
-      // This prevents one bad account from breaking the entire fetch
-    }
+    });
   }
 
   console.log(`Google Ads API fetch completed. Total: ${data.campaigns.length} campaigns, ${data.ads.length} ads`);
