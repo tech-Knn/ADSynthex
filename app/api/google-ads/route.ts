@@ -109,7 +109,7 @@ interface CachedGAData {
 const GA_CACHE: Record<string, CachedGAData> = (globalThis as any).__GA_CACHE__ || {};
 (globalThis as any).__GA_CACHE__ = GA_CACHE;
 
-const CACHE_TTL_MS = 20 * 60 * 1000; // 20 minutes
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 // Track active cache keys for background refresh
 const ACTIVE_KEYS = new Set<string>();

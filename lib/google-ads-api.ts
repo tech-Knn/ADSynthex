@@ -11,7 +11,7 @@ const TARGET_ACCOUNTS = config.TARGET_ACCOUNTS;
 const RATE_LIMIT_CONFIG = {
   maxRequestsPerMinute: 60, // Conservative limit
   maxRequestsPerDay: 8000,  // Leave buffer for other operations
-  delayBetweenAccounts: 2000, // 2 seconds between accounts (increased for safety)
+  delayBetweenAccounts: 30000, // 30 seconds between accounts (increased for safety)
   delayBetweenRequests: 200,  // 200ms between requests
   maxRetries: 3,
   backoffMultiplier: 2,
