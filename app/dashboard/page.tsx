@@ -132,11 +132,35 @@ function DashboardContent() {
         cache: 'no-store'
       });
       
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+      const data = await response.json();
+      
+      // Handle circuit breaker or service unavailable responses
+      if (response.status === 503) {
+        const retryAfter = response.headers.get('Retry-After');
+        const nextAttempt = data._nextAttempt ? new Date(data._nextAttempt).toLocaleTimeString() : 'soon';
+        throw new Error(`${endpoint === '/api/google-ads' ? 'Google Ads API' : 'API'} is temporarily unavailable. Please try again at ${nextAttempt}`);
       }
       
-      const data = await response.json();
+      if (!response.ok) {
+        // Enhanced error message with circuit breaker info
+        let errorMessage = data.error || `API error: ${response.status}`;
+        if (data._circuitState === 'OPEN') {
+          errorMessage += ` (Circuit breaker is open due to repeated failures. Retry in ${data._retryAfter || 60} seconds)`;
+        }
+        throw new Error(errorMessage);
+      }
+      
+      // Log cache performance for monitoring (Google Ads only)
+      if (endpoint === '/api/google-ads') {
+        const cacheHeader = response.headers.get('X-Cache');
+        const cacheAge = response.headers.get('X-Cache-Age');
+        const circuitState = response.headers.get('X-Circuit-State');
+        
+        if (cacheHeader) {
+          console.log(`[DASHBOARD] Google Ads data: ${cacheHeader}${cacheAge ? ` (age: ${cacheAge}s)` : ''}, circuit: ${circuitState || 'unknown'}`);
+        }
+      }
+      
       return data;
     } catch (error) {
       console.error(`Error calling ${endpoint}:`, error);
