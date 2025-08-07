@@ -161,22 +161,13 @@ function DashboardContent() {
           console.log(`[DASHBOARD] Google Ads data: ${cacheHeader}${cacheAge ? ` (age: ${cacheAge}s)` : ''}, circuit: ${circuitState || 'unknown'}`);
         }
         
-        // Show background loading message if data is loading
+        // Only log cache status, don't show multiple toast messages
         if (messageHeader && (cacheHeader === 'LOADING' || cacheHeader === 'STALE-ACCOUNT')) {
-          message.info({
-            content: messageHeader,
-            key: 'background-loading',
-            duration: 2,
-          });
+          console.log('Cache status:', messageHeader);
         }
         
-        // Show success message for aggregated data
         if (cacheHeader === 'AGGREGATED') {
-          message.success({
-            content: 'Data loaded instantly from cache',
-            key: 'cache-success',
-            duration: 1,
-          });
+          console.log('Data loaded instantly from cache');
         }
       }
       
@@ -265,12 +256,7 @@ function DashboardContent() {
       }
       
       // Success toast
-      if (customerId) {
-        const customerName = getCustomerNameById(customerId);
-        message.success({ key: messageKey, content: `Data for ${customerName} loaded successfully`, duration: 2 });
-      } else {
-        message.success({ key: messageKey, content: 'Data loaded successfully for all accounts', duration: 2 });
-      }
+      message.success({ key: messageKey, content: 'Data loaded successfully', duration: 2 });
     } catch (error) {
       console.error('Error fetching data:', error);
       message.error({ key: messageKey, content: (error as Error).message || 'Failed to load data', duration: 2 });
@@ -304,11 +290,6 @@ function DashboardContent() {
     // Set the new timer
     autoRefreshTimerRef.current = setTimeout(() => {
       console.log(`🔄 AUTO-REFRESH: Executing refresh at ${new Date().toLocaleTimeString()}`);
-      message.info({
-        content: 'Auto-refreshing data from Ads.com...',
-        duration: 2,
-        icon: <SyncOutlined spin />
-      });
       handleRefresh();
     }, refreshTime);
   };
@@ -327,10 +308,6 @@ function DashboardContent() {
       // Set up the timer if auto-refresh is enabled
       console.log(`🔄 AUTO-REFRESH: Setting up timer with ${nextUpdateIn} seconds until next update`);
       scheduleNextRefresh(nextUpdateIn);
-      message.success({
-        content: `Auto-refresh enabled. Next update in ${formatNextUpdate()}`,
-        duration: 3
-      });
     }
   };
 
@@ -821,11 +798,7 @@ function DashboardContent() {
                         }
                       }
                       
-                      message.success({
-                        content: 'Ads.com data refreshed',
-                        key: 'adscomRefresh',
-                        duration: 2
-                      });
+                      // Success handled by main fetchData function
                     })
                     .catch(error => {
                       console.error('Error refreshing Ads.com data:', error);
