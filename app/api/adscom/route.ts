@@ -234,25 +234,10 @@ const ACTIVE_ADSCOM_KEYS = new Set<string>();
 // Helper to build cache key
 const buildAdscomCacheKey = (start: string, end: string, cid: string | null) => `${start}|${end}|${cid ?? 'all'}`;
 
-// Background refresh every minute
-setInterval(async () => {
-  for (const cacheKey of ACTIVE_ADSCOM_KEYS) {
-    const [startDate, endDate, customerId] = cacheKey.split('|');
-    try {
-      const apiResponse = await fetchArticlePerformance({ startDate, endDate, customerId });
-      // Validate response is JSON and has expected structure
-      if (!apiResponse || typeof apiResponse !== 'object' || !Array.isArray(apiResponse.data)) {
-        throw new Error('Invalid Ads.com API response during background refresh');
-      }
-      const transformed = transformApiData(apiResponse);
-      ADSCOM_CACHE[cacheKey] = { timestamp: Date.now(), payload: transformed };
-      console.log(`[BG REFRESH] Updated Ads.com cache for ${cacheKey}`);
-    } catch (err) {
-      console.error(`[BG REFRESH] Failed to refresh Ads.com cache for ${cacheKey}:`, err);
-      // Do not update cache on error
-    }
-  }
-}, ADSCOM_CACHE_TTL_MS);
+// Background refresh disabled to prevent 404 errors
+// The Ads.com API background refresh was causing endpoint errors
+// We'll rely on user-initiated refreshes with proper error handling
+console.log('[ADSCOM] Background refresh disabled to prevent API endpoint errors');
 
 export async function POST(request: NextRequest) {
   try {

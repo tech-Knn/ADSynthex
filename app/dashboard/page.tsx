@@ -155,9 +155,28 @@ function DashboardContent() {
         const cacheHeader = response.headers.get('X-Cache');
         const cacheAge = response.headers.get('X-Cache-Age');
         const circuitState = response.headers.get('X-Circuit-State');
+        const messageHeader = response.headers.get('X-Message');
         
         if (cacheHeader) {
           console.log(`[DASHBOARD] Google Ads data: ${cacheHeader}${cacheAge ? ` (age: ${cacheAge}s)` : ''}, circuit: ${circuitState || 'unknown'}`);
+        }
+        
+        // Show background loading message if data is loading
+        if (messageHeader && (cacheHeader === 'LOADING' || cacheHeader === 'STALE-ACCOUNT')) {
+          message.info({
+            content: messageHeader,
+            key: 'background-loading',
+            duration: 2,
+          });
+        }
+        
+        // Show success message for aggregated data
+        if (cacheHeader === 'AGGREGATED') {
+          message.success({
+            content: 'Data loaded instantly from cache',
+            key: 'cache-success',
+            duration: 1,
+          });
         }
       }
       

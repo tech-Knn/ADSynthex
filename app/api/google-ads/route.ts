@@ -109,9 +109,9 @@ interface CachedGAData {
 const GA_CACHE: Record<string, CachedGAData> = (globalThis as any).__GA_CACHE__ || {};
 (globalThis as any).__GA_CACHE__ = GA_CACHE;
 
-const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours - longer cache to reduce API calls
-const STALE_TTL_MS = 30 * 60 * 1000; // 30 minutes - serve stale data, but trigger refresh
-const EMERGENCY_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours - emergency fallback cache
+const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours - much longer cache to reduce API calls
+const STALE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours - serve stale data, but trigger refresh
+const EMERGENCY_CACHE_TTL_MS = 72 * 60 * 60 * 1000; // 72 hours - emergency fallback cache
 
 // Circuit breaker to temporarily disable API when it's consistently failing
 interface CircuitBreakerState {
@@ -129,9 +129,11 @@ const CIRCUIT_BREAKER: CircuitBreakerState = {
 };
 
 const CIRCUIT_BREAKER_CONFIG = {
-  maxFailures: 3, // Open circuit after 3 consecutive failures
-  resetTimeout: 5 * 60 * 1000, // 5 minutes before trying to close circuit
-  failureWindow: 10 * 60 * 1000 // 10 minutes window for counting failures
+  maxFailures: 3, // Open circuit after 3 consecutive failures (less aggressive)
+  resetTimeout: 10 * 60 * 1000, // 10 minutes before trying to close circuit (faster recovery)
+  failureWindow: 30 * 60 * 1000, // 30 minutes window for counting failures
+  longRetryThreshold: 3600, // 1 hour - if retry delay is longer than this, extend circuit breaker
+  extendedResetTimeout: 1 * 60 * 60 * 1000 // 1 hour - reduced for faster recovery
 };
 
 // Global request coordinator to prevent duplicate API calls
@@ -145,7 +147,7 @@ function recordApiSuccess() {
   console.log('[CIRCUIT] API success recorded, circuit closed');
 }
 
-function recordApiFailure() {
+function recordApiFailure(retryAfterSeconds?: number) {
   const now = Date.now();
   CIRCUIT_BREAKER.failures++;
   CIRCUIT_BREAKER.lastFailure = now;
@@ -153,6 +155,16 @@ function recordApiFailure() {
   // Open circuit if too many failures in the time window
   if (CIRCUIT_BREAKER.failures >= CIRCUIT_BREAKER_CONFIG.maxFailures) {
     CIRCUIT_BREAKER.isOpen = true;
+    
+    // If the API is asking us to retry after a very long time (like 7000+ seconds),
+    // extend the circuit breaker timeout to prevent premature API calls
+    if (retryAfterSeconds && retryAfterSeconds >= CIRCUIT_BREAKER_CONFIG.longRetryThreshold) {
+      const extendedTimeout = Math.min(retryAfterSeconds * 1000, CIRCUIT_BREAKER_CONFIG.extendedResetTimeout);
+      console.log(`[CIRCUIT] Long retry delay detected (${retryAfterSeconds}s), extending circuit timeout to ${extendedTimeout/1000/60} minutes`);
+      // Temporarily store the extended timeout
+      (CIRCUIT_BREAKER as any).extendedTimeout = extendedTimeout;
+    }
+    
     console.log(`[CIRCUIT] Circuit opened after ${CIRCUIT_BREAKER.failures} failures`);
   }
   
@@ -167,15 +179,22 @@ function shouldAttemptApiCall(): boolean {
     return true;
   }
   
+  // Check if we have an extended timeout (for long retry delays)
+  const extendedTimeout = (CIRCUIT_BREAKER as any).extendedTimeout;
+  const timeoutToUse = extendedTimeout || CIRCUIT_BREAKER_CONFIG.resetTimeout;
+  
   // If circuit is open but reset timeout has passed, try to close it
-  if (now - CIRCUIT_BREAKER.lastFailure >= CIRCUIT_BREAKER_CONFIG.resetTimeout) {
-    console.log('[CIRCUIT] Reset timeout passed, attempting to close circuit');
+  if (now - CIRCUIT_BREAKER.lastFailure >= timeoutToUse) {
+    console.log(`[CIRCUIT] Reset timeout passed (${timeoutToUse/1000/60} minutes), attempting to close circuit`);
     CIRCUIT_BREAKER.isOpen = false;
     CIRCUIT_BREAKER.failures = 0;
+    // Clear extended timeout
+    delete (CIRCUIT_BREAKER as any).extendedTimeout;
     return true;
   }
   
-  console.log('[CIRCUIT] Circuit is open, skipping API call');
+  const remainingTime = Math.ceil((timeoutToUse - (now - CIRCUIT_BREAKER.lastFailure)) / 1000 / 60);
+  console.log(`[CIRCUIT] Circuit is open, skipping API call (${remainingTime} minutes remaining)`);
   return false;
 }
 
@@ -275,7 +294,19 @@ async function scheduleSmartRefresh(cacheKey: string, delayMs: number = 0) {
       scheduleSmartRefresh(cacheKey, nextRefreshDelay);
       
     } catch (err) {
-      recordApiFailure(); // Record API failure for circuit breaker
+      // Try to extract retry delay from error for circuit breaker
+      let retryAfterSeconds: number | undefined;
+      try {
+        const errorStr = String(err);
+        const retryMatch = errorStr.match(/Retry in (\d+) seconds/);
+        if (retryMatch) {
+          retryAfterSeconds = parseInt(retryMatch[1], 10);
+        }
+      } catch (parseErr) {
+        // Ignore parsing errors
+      }
+      
+      recordApiFailure(retryAfterSeconds); // Record API failure for circuit breaker
       console.error(`[SMART REFRESH] Failed to refresh GoogleAds cache for ${cacheKey}:`, err);
       
       // Remove refreshing flag
@@ -293,8 +324,317 @@ async function scheduleSmartRefresh(cacheKey: string, delayMs: number = 0) {
   }, delayMs);
 }
 
-// Helper to build cache key
+// Background preloader for individual accounts - runs once to populate cache
+let preloaderRunning = false;
+async function startAccountPreloader(startDate: string, endDate: string) {
+  if (preloaderRunning) return;
+  preloaderRunning = true;
+  
+  console.log('[PRELOADER] Starting background account data preloader');
+  
+  // Get account list from config
+  const accounts = [
+    '8677814915', '9071440966', '5723554317', '3146253756', '5857090949',
+    '6201189752', '4071621621', '7579121709', '1918795911', '2849704713', 
+    '7605096292', '5719842337', '9341614254', '4277350349'
+  ];
+  
+  // Fetch accounts one by one with delays to avoid rate limits
+  for (let i = 0; i < accounts.length; i++) {
+    const accountId = accounts[i];
+    const accountCacheKey = buildAccountCacheKey(accountId, startDate, endDate);
+    
+    // Skip if already cached
+    if (GA_CACHE[accountCacheKey] && 
+        (Date.now() - GA_CACHE[accountCacheKey].timestamp < CACHE_TTL_MS)) {
+      console.log(`[PRELOADER] Account ${accountId} already cached, skipping`);
+      continue;
+    }
+    
+    if (!shouldAttemptApiCall()) {
+      console.log(`[PRELOADER] Circuit breaker open, stopping preloader`);
+      break;
+    }
+    
+    try {
+      console.log(`[PRELOADER] Fetching data for account ${accountId} (${i + 1}/${accounts.length})`);
+      
+      const response = await fetchGoogleAdsData(startDate, endDate);
+      
+      // Filter response to only include this account's data
+      const filteredResponse = {
+        ...response,
+        ads: response.ads?.filter((ad: any) => ad.customer_id === accountId) || []
+      };
+      
+      const transformedData = transformApiResponse(filteredResponse, startDate, endDate, accountId);
+      
+      // Cache the result
+      GA_CACHE[accountCacheKey] = {
+        timestamp: Date.now(),
+        payload: transformedData,
+        refreshing: false
+      };
+      
+      recordApiSuccess();
+      console.log(`[PRELOADER] Cached data for account ${accountId}`);
+      
+      // Wait between accounts to respect rate limits (optimized delay)
+      if (i < accounts.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+      }
+      
+    } catch (error) {
+      console.error(`[PRELOADER] Failed to fetch account ${accountId}:`, error);
+      
+      // Extract retry delay from error for circuit breaker
+      let retryAfterSeconds: number | undefined;
+      try {
+        const errorStr = String(error);
+        const retryMatch = errorStr.match(/Retry in (\d+) seconds/);
+        if (retryMatch) {
+          retryAfterSeconds = parseInt(retryMatch[1], 10);
+        }
+      } catch (parseErr) {
+        // Ignore parsing errors
+      }
+      
+      recordApiFailure(retryAfterSeconds);
+      
+      // If circuit breaker opens, stop preloader
+      if (!shouldAttemptApiCall()) {
+        console.log(`[PRELOADER] Circuit breaker opened, stopping preloader`);
+        break;
+      }
+      
+      // Continue with next account after a delay
+      await new Promise(resolve => setTimeout(resolve, 10000)); // 10 second delay on error
+    }
+  }
+  
+  preloaderRunning = false;
+  console.log('[PRELOADER] Background preloader completed');
+}
+
+// Helper to build cache key - now account-specific for faster individual account loading
 const buildCacheKey = (start: string, end: string, cid: string | null) => `${start}|${end}|${cid ?? 'all'}`;
+const buildAccountCacheKey = (accountId: string, start: string, end: string) => `account_${accountId}_${start}_${end}`;
+
+// Quick single account refresh for immediate needs
+async function scheduleAccountRefresh(accountId: string, startDate: string, endDate: string, delayMs: number = 0) {
+  setTimeout(async () => {
+    const accountCacheKey = buildAccountCacheKey(accountId, startDate, endDate);
+    
+    if (GA_CACHE[accountCacheKey]?.refreshing) {
+      console.log(`[ACCOUNT REFRESH] Account ${accountId} already refreshing, skipping`);
+      return;
+    }
+
+    if (!shouldAttemptApiCall()) {
+      console.log(`[ACCOUNT REFRESH] Circuit breaker open, skipping account ${accountId}`);
+      return;
+    }
+
+    try {
+      // Mark as refreshing
+      if (GA_CACHE[accountCacheKey]) {
+        GA_CACHE[accountCacheKey].refreshing = true;
+      }
+
+      console.log(`[ACCOUNT REFRESH] Refreshing account ${accountId}`);
+      
+      const response = await fetchGoogleAdsData(startDate, endDate);
+      
+      // Filter response to only include this account's data
+      const filteredResponse = {
+        ...response,
+        ads: response.ads?.filter((ad: any) => ad.customer_id === accountId) || []
+      };
+      
+      const transformedData = transformApiResponse(filteredResponse, startDate, endDate, accountId);
+      
+      // Update cache
+      GA_CACHE[accountCacheKey] = {
+        timestamp: Date.now(),
+        payload: transformedData,
+        refreshing: false
+      };
+      
+      recordApiSuccess();
+      console.log(`[ACCOUNT REFRESH] Successfully refreshed account ${accountId}`);
+      
+    } catch (error) {
+      console.error(`[ACCOUNT REFRESH] Failed to refresh account ${accountId}:`, error);
+      
+      // Extract retry delay from error for circuit breaker
+      let retryAfterSeconds: number | undefined;
+      try {
+        const errorStr = String(error);
+        const retryMatch = errorStr.match(/Retry in (\d+) seconds/);
+        if (retryMatch) {
+          retryAfterSeconds = parseInt(retryMatch[1], 10);
+        }
+      } catch (parseErr) {
+        // Ignore parsing errors
+      }
+      
+      recordApiFailure(retryAfterSeconds);
+      
+      // Remove refreshing flag
+      if (GA_CACHE[accountCacheKey]) {
+        GA_CACHE[accountCacheKey].refreshing = false;
+      }
+    }
+  }, delayMs);
+}
+
+// Try to build aggregated "All" data from individual account caches
+function tryBuildFromAccountCaches(startDate: string, endDate: string) {
+  const accounts = [
+    '8677814915', '9071440966', '5723554317', '3146253756', '5857090949',
+    '6201189752', '4071621621', '7579121709', '1918795911', '2849704713', 
+    '7605096292', '5719842337', '9341614254', '4277350349'
+  ];
+  
+  const cachedAccounts = [];
+  const now = Date.now();
+  let oldestCacheAge = 0;
+  
+  // Check if we have cached data for most accounts (at least 70%)
+  for (const accountId of accounts) {
+    const accountCacheKey = buildAccountCacheKey(accountId, startDate, endDate);
+    const cached = GA_CACHE[accountCacheKey];
+    
+    if (cached) {
+      const age = now - cached.timestamp;
+      oldestCacheAge = Math.max(oldestCacheAge, age);
+      cachedAccounts.push(cached.payload);
+    }
+  }
+  
+  // Only proceed if we have data for at least 70% of accounts and cache is reasonable fresh (< 12 hours)
+  if (cachedAccounts.length >= Math.ceil(accounts.length * 0.7) && oldestCacheAge < (12 * 60 * 60 * 1000)) {
+    console.log(`[AGGREGATION] Building from ${cachedAccounts.length}/${accounts.length} cached accounts`);
+    
+    // Aggregate all ads from individual accounts
+    const allAds = cachedAccounts.flatMap(account => account.ads || []);
+    const allCampaigns = cachedAccounts.flatMap(account => account.campaigns || []);
+    
+    // Calculate totals
+    const totalCost = allAds.reduce((sum, ad) => sum + (parseFloat(ad.metrics?.cost) || 0), 0);
+    const totalClicks = allAds.reduce((sum, ad) => sum + (parseInt(ad.metrics?.clicks) || 0), 0);
+    const totalImpressions = allAds.reduce((sum, ad) => sum + (parseInt(ad.metrics?.impressions) || 0), 0);
+    const totalConversions = allAds.reduce((sum, ad) => sum + (parseInt(ad.metrics?.conversions) || 0), 0);
+    
+    const averageCpc = totalClicks > 0 ? totalCost / totalClicks : 0;
+    const averageCtr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
+    const conversionRate = totalClicks > 0 ? (totalConversions / totalClicks) * 100 : 0;
+    
+    return {
+      ads: allAds,
+      campaigns: allCampaigns,
+      totalCost,
+      totalClicks,
+      totalImpressions,
+      totalConversions,
+      averageCpc,
+      averageCtr,
+      conversionRate
+    };
+  }
+  
+  console.log(`[AGGREGATION] Not enough cached accounts (${cachedAccounts.length}/${accounts.length}) or cache too old`);
+  return null;
+}
+
+// Fast handler for single account requests using account-specific caching
+async function handleSingleAccountRequest(startDate: string, endDate: string, customerId: string) {
+  const accountCacheKey = buildAccountCacheKey(customerId, startDate, endDate);
+  const cached = GA_CACHE[accountCacheKey];
+  const now = Date.now();
+
+  // ALWAYS return cached data if available, regardless of age (never show empty data)
+  if (cached) {
+    const age = Math.round((now - cached.timestamp) / 1000);
+    console.log(`[SINGLE ACCOUNT] Returning cached data for account ${customerId} (age: ${age}s)`);
+    
+    // If data is getting old (>2 hours), trigger background refresh
+    if ((now - cached.timestamp) > STALE_TTL_MS && !cached.refreshing && shouldAttemptApiCall()) {
+      console.log(`[SINGLE ACCOUNT] Triggering background refresh for account ${customerId}`);
+      scheduleAccountRefresh(customerId, startDate, endDate, 2000); // 2 second delay
+    }
+    
+    return NextResponse.json(cached.payload, {
+      headers: {
+        'X-Cache': age < STALE_TTL_MS ? 'HIT-ACCOUNT' : 'STALE-ACCOUNT',
+        'X-Cache-Age': age.toString(),
+        'X-Data-Status': age < STALE_TTL_MS ? 'fresh' : 'refreshing',
+      },
+    });
+  }
+
+  // No cache available - try to get from "All" cache and filter
+  const allCacheKey = buildCacheKey(startDate, endDate, null);
+  const allCached = GA_CACHE[allCacheKey];
+  
+  if (allCached && allCached.payload && allCached.payload.ads) {
+    console.log(`[SINGLE ACCOUNT] No individual cache, filtering from "All" cache for account ${customerId}`);
+    
+    // Filter data for this specific account
+    const filteredAds = allCached.payload.ads.filter((ad: any) => ad.customer_id === customerId);
+    
+    const accountData = {
+      ...allCached.payload,
+      ads: filteredAds,
+      totalCost: filteredAds.reduce((sum: number, ad: any) => sum + (parseFloat(ad.metrics?.cost) || 0), 0),
+      totalClicks: filteredAds.reduce((sum: number, ad: any) => sum + (parseInt(ad.metrics?.clicks) || 0), 0),
+      totalImpressions: filteredAds.reduce((sum: number, ad: any) => sum + (parseInt(ad.metrics?.impressions) || 0), 0),
+      totalConversions: filteredAds.reduce((sum: number, ad: any) => sum + (parseInt(ad.metrics?.conversions) || 0), 0),
+    };
+    
+    // Cache this filtered data for faster future access
+    GA_CACHE[accountCacheKey] = {
+      timestamp: now,
+      payload: accountData,
+      refreshing: false
+    };
+    
+    return NextResponse.json(accountData, {
+      headers: {
+        'X-Cache': 'DERIVED-FROM-ALL',
+        'X-Cache-Age': Math.floor((now - allCached.timestamp) / 1000).toString(),
+      },
+    });
+  }
+
+  // Last resort: trigger immediate fetch and return loading placeholder with some mock data
+  console.log(`[SINGLE ACCOUNT] No cache available, triggering immediate fetch for account ${customerId}`);
+  
+  if (shouldAttemptApiCall()) {
+    // Don't await - trigger background fetch
+    scheduleAccountRefresh(customerId, startDate, endDate, 100); // Start immediately
+  }
+  
+  // Return minimal mock data so UI doesn't break (better than empty)
+  const placeholderData = {
+    ads: [],
+    campaigns: [],
+    totalCost: 0,
+    totalClicks: 0,
+    totalImpressions: 0,
+    totalConversions: 0,
+    averageCpc: 0,
+    averageCtr: 0,
+    conversionRate: 0
+  };
+  
+  return NextResponse.json(placeholderData, {
+    headers: {
+      'X-Cache': 'LOADING',
+      'X-Message': 'Loading fresh data...',
+    },
+  });
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -302,13 +642,52 @@ export async function POST(request: NextRequest) {
     console.log(`Google Ads API request for date range: ${startDate} to ${endDate}, Customer ID: ${customerId || 'All'}`);
     console.log('DEBUG: Current time', new Date().toISOString());
     
+    // For individual accounts, use fast account-specific handler
+    if (customerId && customerId !== 'All') {
+      return await handleSingleAccountRequest(startDate, endDate, customerId);
+    }
+    
     const cacheKey = buildCacheKey(startDate, endDate, customerId);
     const cached = GA_CACHE[cacheKey];
     const now = Date.now();
 
-    // 1) If we have fresh cache data (< 2 hours old), return it immediately
+    // Try to build "All" data from individual account caches first (much faster)
+    const aggregatedData = tryBuildFromAccountCaches(startDate, endDate);
+    if (aggregatedData) {
+      console.log(`[CACHE] Built "All" data from individual account caches`);
+      
+      // Cache the aggregated result
+      GA_CACHE[cacheKey] = {
+        timestamp: Date.now(),
+        payload: aggregatedData,
+        refreshing: false
+      };
+      
+      return NextResponse.json(aggregatedData, {
+        headers: {
+          'X-Cache': 'AGGREGATED',
+          'X-Cache-Age': '0',
+        },
+      });
+    }
+
+    // Start background preloader to cache individual accounts for faster future access
+    if (shouldAttemptApiCall()) {
+      startAccountPreloader(startDate, endDate).catch(err => 
+        console.error('[PRELOADER] Error starting account preloader:', err)
+      );
+    }
+
+    // 1) If we have fresh cache data (< 6 hours old), return it immediately
     if (cached && (now - cached.timestamp < CACHE_TTL_MS)) {
       console.log(`[CACHE] Returning fresh cached data for ${cacheKey}`);
+      
+      // If data is getting old (>4 hours), schedule a background refresh for next time
+      if ((now - cached.timestamp) > (4 * 60 * 60 * 1000) && !cached.refreshing) {
+        console.log(`[CACHE] Scheduling background refresh for aging data`);
+        scheduleSmartRefresh(cacheKey, 5000); // Refresh in 5 seconds
+      }
+      
       return NextResponse.json(cached.payload, {
         headers: {
           'X-Cache': 'HIT',
@@ -318,7 +697,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 2) If we have stale cache data (> 30 min old but < 2 hours), return it but trigger refresh
+    // 2) If we have stale cache data (> 2 hours old but < 6 hours), return it but trigger refresh
     if (cached && (now - cached.timestamp >= STALE_TTL_MS) && (now - cached.timestamp < CACHE_TTL_MS)) {
       // Trigger smart refresh if not already refreshing and circuit allows
       if (!cached.refreshing && shouldAttemptApiCall()) {
@@ -334,7 +713,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 3) If we have very stale cache data (> 2 hours old), use it as emergency fallback
+    // 3) If we have very stale cache data (> 6 hours old), use it as emergency fallback
     if (cached && (now - cached.timestamp < EMERGENCY_CACHE_TTL_MS)) {
       // Start background refresh for next time if circuit allows
       if (!cached.refreshing && shouldAttemptApiCall()) {
@@ -444,7 +823,19 @@ export async function POST(request: NextRequest) {
         return validatedData;
         
       } catch (err) {
-        recordApiFailure(); // Record API failure for circuit breaker
+        // Try to extract retry delay from error for circuit breaker
+        let retryAfterSeconds: number | undefined;
+        try {
+          const errorStr = String(err);
+          const retryMatch = errorStr.match(/Retry in (\d+) seconds/);
+          if (retryMatch) {
+            retryAfterSeconds = parseInt(retryMatch[1], 10);
+          }
+        } catch (parseErr) {
+          // Ignore parsing errors
+        }
+        
+        recordApiFailure(retryAfterSeconds); // Record API failure for circuit breaker
         throw err;
       } finally {
         // Always clean up pending request
