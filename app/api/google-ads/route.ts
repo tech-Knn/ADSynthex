@@ -352,10 +352,53 @@ function validateAndCorrectCostData(data: any): any {
     return ad;
   }).filter(Boolean); // Remove null entries
   
-  // Recalculate total cost to ensure accuracy
-  data.total_cost = data.ads.reduce((sum: number, ad: any) => sum + (ad.metrics.cost || 0), 0);
+  // BULLETPROOF cost calculation with precision handling
+  let totalCost = 0;
+  let costBreakdown = { count: 0, nonZeroCount: 0, maxCost: 0, totalCostMicros: 0 };
   
-  console.log(`[VALIDATE] Validated ${data.ads.length} ads with total cost: $${data.total_cost.toFixed(2)}`);
+  data.ads.forEach((ad: any, index: number) => {
+    const cost = ad.metrics.cost || 0;
+    const costMicros = ad.metrics.cost_micros || 0;
+    
+    // Verify cost_micros consistency
+    if (costMicros > 0) {
+      const expectedCost = costMicros / 1000000;
+      if (Math.abs(cost - expectedCost) > 0.01) {
+        console.warn(`[VALIDATE] Cost inconsistency in ad ${index}: cost=${cost}, expected=${expectedCost.toFixed(4)}`);
+        ad.metrics.cost = expectedCost; // Use micros as source of truth
+      }
+    }
+    
+    totalCost += ad.metrics.cost;
+    costBreakdown.count++;
+    if (ad.metrics.cost > 0) {
+      costBreakdown.nonZeroCount++;
+      costBreakdown.maxCost = Math.max(costBreakdown.maxCost, ad.metrics.cost);
+    }
+    costBreakdown.totalCostMicros += (ad.metrics.cost_micros || 0);
+  });
+  
+  // Precision-safe total cost calculation
+  data.total_cost = Math.round(totalCost * 100) / 100; // Round to 2 decimal places
+  
+  // Cross-validation with micros
+  const totalFromMicros = Math.round(costBreakdown.totalCostMicros / 10000) / 100; // Convert micros to dollars
+  
+  console.log(`[COST VALIDATION] ✅ Complete validation summary:`);
+  console.log(`  📊 Total ads: ${costBreakdown.count}`);
+  console.log(`  💰 Ads with cost: ${costBreakdown.nonZeroCount}`);
+  console.log(`  💵 Total cost: $${data.total_cost.toFixed(2)}`);
+  console.log(`  🔍 Total from micros: $${totalFromMicros.toFixed(2)}`);
+  console.log(`  📈 Max single ad cost: $${costBreakdown.maxCost.toFixed(2)}`);
+  
+  // Alert for potential cost mismatches
+  if (Math.abs(data.total_cost - totalFromMicros) > 0.10) {
+    console.error(`[COST VALIDATION] ❌ MAJOR COST MISMATCH DETECTED!`);
+    console.error(`  Calculated: $${data.total_cost.toFixed(2)}`);
+    console.error(`  From micros: $${totalFromMicros.toFixed(2)}`);
+    console.error(`  Difference: $${Math.abs(data.total_cost - totalFromMicros).toFixed(2)}`);
+  }
+  
   return data;
 }
 
