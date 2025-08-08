@@ -226,13 +226,75 @@ const transformApiData = (apiResponse: any): AdsComResponse => {
   }
 };
 
-const ADSCOM_CACHE_TTL_MS = 1 * 60 * 1000; // 1 minute
+const ADSCOM_CACHE_TTL_MS = 12 * 60 * 1000; // 12 minutes - SYNCHRONIZED with Google Ads cache
 const ADSCOM_CACHE = (globalThis as any).__ADSCOM_CACHE__ || {};
 (globalThis as any).__ADSCOM_CACHE__ = ADSCOM_CACHE;
 const ACTIVE_ADSCOM_KEYS = new Set<string>();
 
 // Helper to build cache key
 const buildAdscomCacheKey = (start: string, end: string, cid: string | null) => `${start}|${end}|${cid ?? 'all'}`;
+
+// REVENUE DATA VALIDATION - Similar to cost validation for consistency
+function validateRevenueData(data: any): any {
+  if (!data || typeof data !== 'object') {
+    console.warn('[REVENUE VALIDATION] Invalid data structure, using fallback');
+    return { data: [], totalRevenue: 0, totalArticles: 0 };
+  }
+  
+  // Ensure data array exists and is valid
+  if (!Array.isArray(data.data)) {
+    console.warn('[REVENUE VALIDATION] Invalid data array, correcting...');
+    data.data = [];
+  }
+  
+  let totalRevenue = 0;
+  let totalVisits = 0;
+  let totalClicks = 0;
+  
+  // Validate and correct each article's revenue metrics
+  data.data = data.data.map((article: any, index: number) => {
+    if (!article || typeof article !== 'object') {
+      console.warn(`[REVENUE VALIDATION] Invalid article at index ${index}, skipping`);
+      return null;
+    }
+    
+    // Ensure all numeric fields are valid numbers
+    const numericFields = ['revenue', 'visits', 'clicks', 'epc', 'ctr'];
+    numericFields.forEach(field => {
+      const value = parseFloat(article[field]);
+      article[field] = isNaN(value) || value < 0 ? 0 : value;
+    });
+    
+    // Recalculate EPC to ensure accuracy
+    if (article.clicks > 0) {
+      article.epc = article.revenue / article.clicks;
+    } else {
+      article.epc = 0;
+    }
+    
+    // Recalculate CTR to ensure accuracy  
+    if (article.visits > 0) {
+      article.ctr = (article.clicks / article.visits) * 100;
+    } else {
+      article.ctr = 0;
+    }
+    
+    totalRevenue += article.revenue;
+    totalVisits += article.visits; 
+    totalClicks += article.clicks;
+    
+    return article;
+  }).filter(Boolean); // Remove null entries
+  
+  // Update totals with validated values
+  data.totalRevenue = Math.round(totalRevenue * 100) / 100; // Round to 2 decimal places
+  data.totalVisits = totalVisits;
+  data.totalClicks = totalClicks;
+  data.totalArticles = data.data.length;
+  
+  console.log(`[REVENUE VALIDATION] ✅ Validated ${data.data.length} articles with total revenue: $${data.totalRevenue.toFixed(2)}`);
+  return data;
+}
 
 // Background refresh disabled to prevent 404 errors
 // The Ads.com API background refresh was causing endpoint errors
@@ -258,6 +320,26 @@ export async function POST(request: NextRequest) {
     const nextUpdateIn = ((15 - (minutes % 15)) * 60) - now.getSeconds();
     
     console.log(`Calculated update times: Last updated at ${lastUpdate.toISOString()}, next update in ${nextUpdateIn} seconds`);
+    
+    // SYNCHRONIZED CACHE CHECK - Check if we have fresh cached data (aligned with Google Ads cache)
+    const cacheKey = buildAdscomCacheKey(startDate, endDate, customerId);
+    const cachedData = ADSCOM_CACHE[cacheKey];
+    const cacheTimestamp = Date.now();
+    
+    if (!forceRefresh && cachedData && (cacheTimestamp - cachedData.timestamp) < ADSCOM_CACHE_TTL_MS) {
+      const ageSeconds = Math.round((cacheTimestamp - cachedData.timestamp) / 1000);
+      console.log(`[REVENUE CACHE] 🚀 Returning cached Ads.com data (age: ${ageSeconds}s, TTL: ${ADSCOM_CACHE_TTL_MS/1000/60}min)`);
+      return NextResponse.json(cachedData.payload, {
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'X-Revenue-Cache': 'HIT',
+          'X-Revenue-Cache-Age': ageSeconds.toString(),
+          'X-Revenue-TTL': (ADSCOM_CACHE_TTL_MS/1000/60).toString() + 'min',
+        },
+      });
+    }
+    
+    console.log(`[REVENUE CACHE] Cache ${cachedData ? 'stale' : 'miss'}, fetching fresh data...`);
     
     // Debug: Print all environment variables
     console.log('Environment variables for Ads.com:');
@@ -595,9 +677,14 @@ export async function POST(request: NextRequest) {
           console.warn('Customer ID filtering for real API data not fully implemented yet');
         }
         
+        // REVENUE DATA VALIDATION - ensure data consistency
+        const validatedData = validateRevenueData(transformedData);
+        
         const cacheKey = buildAdscomCacheKey(startDate, endDate, customerId);
-        ADSCOM_CACHE[cacheKey] = { timestamp: Date.now(), payload: transformedData };
+        ADSCOM_CACHE[cacheKey] = { timestamp: Date.now(), payload: validatedData };
         ACTIVE_ADSCOM_KEYS.add(cacheKey);
+        
+        console.log(`[REVENUE CACHE] 💾 Stored fresh Ads.com data (${validatedData.data?.length || 0} articles)`);
         
         return NextResponse.json(transformedData, {
           headers: {
@@ -625,6 +712,14 @@ export async function POST(request: NextRequest) {
       if (!mockData.nextUpdateIn) {
         mockData.nextUpdateIn = nextUpdateIn;
       }
+      
+      // VALIDATE MOCK DATA for consistency
+      const validatedMockData = validateRevenueData(mockData);
+      
+      // Cache the validated mock data
+      const cacheKey = buildAdscomCacheKey(startDate, endDate, customerId);
+      ADSCOM_CACHE[cacheKey] = { timestamp: Date.now(), payload: validatedMockData };
+      console.log(`[REVENUE CACHE] 💾 Stored validated mock data (${validatedMockData.data?.length || 0} articles)`);
       
       // Filter by customer ID if provided
       if (customerId) {
@@ -686,11 +781,13 @@ export async function POST(request: NextRequest) {
       console.log('DEBUG: Mock data first article revenue:', mockData.data[0]?.revenue);
       console.log('DEBUG: Mock data for industrial packaging article:', 
         mockData.data.find(a => a.article.includes('revolutionizing-industrial-packaging')));
-      return NextResponse.json(mockData, {
+      return NextResponse.json(validatedMockData, {
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache',
-          'Expires': '0'
+          'Expires': '0',
+          'X-Revenue-Cache': 'MOCK',
+          'X-Revenue-Source': 'mock-validated',
         }
       });
     }
