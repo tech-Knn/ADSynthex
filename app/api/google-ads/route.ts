@@ -140,6 +140,10 @@ const CIRCUIT_BREAKER_CONFIG = {
 // Global request coordinator to prevent duplicate API calls
 const PENDING_REQUESTS: Record<string, Promise<any>> = {};
 
+// Global throttling to prevent QPS exceedance
+let activeRefreshCount = 0;
+const MAX_CONCURRENT_REFRESHES = 2; // Never have more than 2 cache refreshes running simultaneously
+
 // Automatic periodic refresh system for fresh financial data
 const PERIODIC_REFRESH_INTERVAL = 10 * 60 * 1000; // 10 minutes - check for stale data
 let periodicRefreshTimer: NodeJS.Timeout | null = null;
@@ -168,9 +172,13 @@ function startPeriodicRefreshSystem() {
     
     console.log(`[PERIODIC REFRESH] Found ${staleCacheKeys.length} stale cache entries, scheduling refreshes`);
     
+    // Limit to prevent QPS exceedance - only refresh the most critical ones
+    const maxRefreshesPerCycle = Math.max(1, MAX_CONCURRENT_REFRESHES - activeRefreshCount);
+    const priorityStaleCacheKeys = staleCacheKeys.slice(0, maxRefreshesPerCycle);
+    
     // Refresh stale entries with staggered timing to respect QPS limits
-    staleCacheKeys.forEach((cacheKey, index) => {
-      const delay = index * 5000; // 5 second delays between refreshes
+    priorityStaleCacheKeys.forEach((cacheKey, index) => {
+      const delay = index * 10000; // 10 second delays between refreshes (safer)
       scheduleSmartRefresh(cacheKey, delay);
     });
     
@@ -215,8 +223,8 @@ async function warmCacheForCommonDateRanges() {
     if (!cached || (Date.now() - cached.timestamp) > CACHE_TTL_MS) {
       console.log(`[CACHE WARMING] Warming cache for range ${range.startDate} to ${range.endDate}`);
       
-      // Schedule with delays to respect rate limits
-      scheduleSmartRefresh(cacheKey, i * 10000); // 10 second delays between warm-ups
+      // Schedule with longer delays to respect rate limits during warm-up
+      scheduleSmartRefresh(cacheKey, i * 20000); // 20 second delays between warm-ups (very safe)
     }
   }
 }
@@ -342,6 +350,13 @@ async function scheduleSmartRefresh(cacheKey: string, delayMs: number = 0) {
       return;
     }
 
+    // Check if we have too many concurrent refreshes (prevent QPS exceedance)
+    if (activeRefreshCount >= MAX_CONCURRENT_REFRESHES) {
+      console.log(`[SMART REFRESH] Max concurrent refreshes (${MAX_CONCURRENT_REFRESHES}) reached, delaying ${cacheKey}`);
+      scheduleSmartRefresh(cacheKey, 30000); // Retry in 30 seconds
+      return;
+    }
+
     // Check circuit breaker before attempting API call
     if (!shouldAttemptApiCall()) {
       console.log(`[SMART REFRESH] Circuit breaker open, skipping refresh for ${cacheKey}`);
@@ -350,8 +365,9 @@ async function scheduleSmartRefresh(cacheKey: string, delayMs: number = 0) {
       return;
     }
 
-    // Mark as refreshing
+    // Mark as refreshing and increment active count
     cached.refreshing = true;
+    activeRefreshCount++;
     
     try {
       const [startDate, endDate, customerId] = cacheKey.split('|');
@@ -405,6 +421,10 @@ async function scheduleSmartRefresh(cacheKey: string, delayMs: number = 0) {
         10 * 60 * 1000; // 10 minutes if circuit is closed
       
       scheduleSmartRefresh(cacheKey, retryDelay);
+    } finally {
+      // Always decrement active count to prevent deadlock
+      activeRefreshCount = Math.max(0, activeRefreshCount - 1);
+      console.log(`[SMART REFRESH] Active refresh count: ${activeRefreshCount}`);
     }
   }, delayMs);
 }

@@ -7,15 +7,16 @@ import * as utils from './google-ads-utils';
 // Target accounts configuration
 const TARGET_ACCOUNTS = config.TARGET_ACCOUNTS;
 
-// Rate limiting configuration - Optimized for fast loading while staying within QPS limits
+// Rate limiting configuration - MATHEMATICALLY SAFE to never exceed Google Ads API limits
 const RATE_LIMIT_CONFIG = {
-  maxRequestsPerMinute: 50, // Increased for faster loading
+  maxRequestsPerMinute: 40, // Safe buffer under Google's 60/minute limit
   maxRequestsPerDay: 6000,  // Large buffer for other operations
-  delayBetweenAccounts: 3000, // 3 seconds between accounts (faster, still safe)
-  delayBetweenRequests: 600,  // 600ms between requests (faster)
+  delayBetweenAccounts: 4000, // 4 seconds between accounts (safer)
+  delayBetweenRequests: 1500,  // 1.5 seconds between requests (40/min = 1500ms)
   maxRetries: 3,
   backoffMultiplier: 2,
-  maxBackoffDelay: 60000  // 1 minute max backoff delay
+  maxBackoffDelay: 60000,  // 1 minute max backoff delay
+  maxConcurrentRefreshes: 2 // Limit concurrent cache refreshes
 };
 
 // Rate limiting state
