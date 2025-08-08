@@ -409,13 +409,22 @@ async function scheduleSmartRefresh(cacheKey: string, delayMs: number = 0, costP
       const transformedData = transformApiResponse(realData, startDate, endDate, customerId !== 'all' ? customerId : null);
       const validatedData = validateAndCorrectCostData(transformedData);
       
+      // Store fresh data in cache
+      const newTimestamp = Date.now();
       GA_CACHE[cacheKey] = { 
-        timestamp: Date.now(), 
+        timestamp: newTimestamp, 
         payload: validatedData,
         refreshing: false,
         costPriority: costPriority,
-        lastCostUpdate: costPriority ? Date.now() : cached.lastCostUpdate
+        lastCostUpdate: costPriority ? newTimestamp : cached.lastCostUpdate
       };
+      
+      // CRITICAL: Invalidate any stale aggregated "All" cache that might be built from old account data
+      const allCacheKey = buildCacheKey(startDate, endDate, null);
+      if (GA_CACHE[allCacheKey]) {
+        console.log(`[CACHE INVALIDATION] Clearing stale "All" cache after individual account refresh`);
+        delete GA_CACHE[allCacheKey];
+      }
       
       recordApiSuccess(); // Record successful API call
       console.log(`[SMART REFRESH] Successfully updated GoogleAds cache for ${cacheKey}`);
@@ -575,6 +584,33 @@ function isCacheStaleButUsable(cached: CachedGAData): boolean {
   return age < EMERGENCY_CACHE_TTL_MS; // Can still use if not too old
 }
 
+// Get the age of the oldest account cache to prevent stale aggregations
+function getOldestAccountCacheAge(startDate: string, endDate: string): number {
+  const accounts = [
+    '8677814915', '9071440966', '5723554317', '3146253756', '5857090949',
+    '6201189752', '4071621621', '7579121709', '1918795911', '2849704713', 
+    '7605096292', '5719842337', '9341614254', '4277350349'
+  ];
+  
+  const now = Date.now();
+  let oldestAge = 0;
+  
+  for (const accountId of accounts) {
+    const accountCacheKey = buildAccountCacheKey(accountId, startDate, endDate);
+    const cached = GA_CACHE[accountCacheKey];
+    
+    if (cached) {
+      const age = now - cached.timestamp;
+      oldestAge = Math.max(oldestAge, age);
+    } else {
+      // If any account has no cache, consider it infinitely old
+      return Infinity;
+    }
+  }
+  
+  return oldestAge;
+}
+
 // Quick single account refresh for immediate needs
 async function scheduleAccountRefresh(accountId: string, startDate: string, endDate: string, delayMs: number = 0) {
   setTimeout(async () => {
@@ -608,12 +644,22 @@ async function scheduleAccountRefresh(accountId: string, startDate: string, endD
       
       const transformedData = transformApiResponse(filteredResponse, startDate, endDate, accountId);
       
-      // Update cache
+      // Update cache with cost-priority flags
+      const newTimestamp = Date.now();
       GA_CACHE[accountCacheKey] = {
-        timestamp: Date.now(),
+        timestamp: newTimestamp,
         payload: transformedData,
-        refreshing: false
+        refreshing: false,
+        costPriority: true,
+        lastCostUpdate: newTimestamp
       };
+      
+      // CRITICAL: Invalidate any stale aggregated "All" cache
+      const allCacheKey = buildCacheKey(startDate, endDate, null);
+      if (GA_CACHE[allCacheKey]) {
+        console.log(`[CACHE INVALIDATION] Clearing stale "All" cache after account ${accountId} refresh`);
+        delete GA_CACHE[allCacheKey];
+      }
       
       recordApiSuccess();
       console.log(`[ACCOUNT REFRESH] Successfully refreshed account ${accountId}`);
@@ -816,24 +862,37 @@ export async function POST(request: NextRequest) {
     const cached = GA_CACHE[cacheKey];
     const now = Date.now();
 
-    // Try to build "All" data from individual account caches first (much faster)
+    // COST-PRIORITY: Try to build "All" data from individual account caches ONLY if they're fresh
     const aggregatedData = tryBuildFromAccountCaches(startDate, endDate);
     if (aggregatedData) {
-      console.log(`[CACHE] Built "All" data from individual account caches`);
+      // Verify the aggregated data is fresh enough for cost purposes
+      const oldestAccountAge = getOldestAccountCacheAge(startDate, endDate);
+      const isFreshForCost = oldestAccountAge < COST_PRIORITY_TTL_MS;
       
-      // Cache the aggregated result
-      GA_CACHE[cacheKey] = {
-        timestamp: Date.now(),
-        payload: aggregatedData,
-        refreshing: false
-      };
+      console.log(`[COST-PRIORITY CACHE] Built "All" from accounts, oldest cache: ${Math.round(oldestAccountAge/1000)}s, fresh: ${isFreshForCost}`);
       
-      return NextResponse.json(aggregatedData, {
-        headers: {
-          'X-Cache': 'AGGREGATED',
-          'X-Cache-Age': '0',
-        },
-      });
+      // Only use aggregated data if it's fresh enough for cost purposes
+      if (isFreshForCost) {
+        GA_CACHE[cacheKey] = {
+          timestamp: Date.now(),
+          payload: aggregatedData,
+          refreshing: false,
+          costPriority: true,
+          lastCostUpdate: Date.now()
+        };
+        
+        return NextResponse.json(aggregatedData, {
+          headers: {
+            'X-Cache': 'AGGREGATED-FRESH',
+            'X-Cache-Age': '0',
+            'X-Cost-Priority': 'true',
+            'X-Data-Status': 'fresh',
+          },
+        });
+      } else {
+        console.log(`[COST-PRIORITY CACHE] Aggregated data too stale for cost (${Math.round(oldestAccountAge/1000)}s), forcing fresh API call`);
+        // Don't use stale aggregated data - force fresh API call instead
+      }
     }
 
     // Start background preloader to cache individual accounts for faster future access
@@ -872,23 +931,27 @@ export async function POST(request: NextRequest) {
     }
 
     // Emergency fallback - serve very old cache if available
-    if (cached && (now - cached.timestamp < EMERGENCY_CACHE_TTL_MS)) {
-      // Start immediate cost-priority refresh
-      if (!cached.refreshing && shouldAttemptApiCall()) {
-        console.log(`[EMERGENCY CACHE] Starting immediate cost-priority refresh for very stale data: ${cacheKey}`);
-        scheduleSmartRefresh(cacheKey, 100, true); // Immediate cost-priority refresh
+    if (cached && typeof cached === 'object' && 'timestamp' in cached && 'payload' in cached) {
+      const cachedData = cached as CachedGAData;
+      const cacheAge = now - cachedData.timestamp;
+      if (cacheAge < EMERGENCY_CACHE_TTL_MS) {
+        // Start immediate cost-priority refresh
+        if (!cachedData.refreshing && shouldAttemptApiCall()) {
+          console.log(`[EMERGENCY CACHE] Starting immediate cost-priority refresh for very stale data: ${cacheKey}`);
+          scheduleSmartRefresh(cacheKey, 100, true); // Immediate cost-priority refresh
+        }
+        
+        console.log(`[EMERGENCY CACHE] Returning very stale data (age: ${Math.round(cacheAge/60000)}min)`);
+        return NextResponse.json(cachedData.payload, {
+          headers: {
+            'X-Cache': 'EMERGENCY',
+            'X-Cache-Age': Math.floor(cacheAge / 1000).toString(),
+            'X-Cost-Priority': 'true',
+            'X-Data-Status': 'refreshing',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+          },
+        });
       }
-      
-      console.log(`[EMERGENCY CACHE] Returning very stale data (age: ${Math.round((now - cached.timestamp)/60000)}min)`);
-      return NextResponse.json(cached.payload, {
-        headers: {
-          'X-Cache': 'EMERGENCY',
-          'X-Cache-Age': Math.floor((now - cached.timestamp) / 1000).toString(),
-          'X-Cost-Priority': 'true',
-          'X-Data-Status': 'refreshing',
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-        },
-      });
     }
 
     // 4) No cache data - check if someone else is already fetching this
@@ -968,12 +1031,49 @@ export async function POST(request: NextRequest) {
         const transformedData = transformApiResponse(realData, startDate, endDate, customerId !== 'all' ? customerId : null);
         const validatedData = validateAndCorrectCostData(transformedData);
         
-        // Cache the result with refreshing flag set to false
+        // Cache the fresh "All" result with cost-priority flags
+        const newTimestamp = Date.now();
         GA_CACHE[cacheKey] = { 
-          timestamp: Date.now(), 
+          timestamp: newTimestamp, 
           payload: validatedData, 
-          refreshing: false 
+          refreshing: false,
+          costPriority: true,
+          lastCostUpdate: newTimestamp
         };
+        
+        // CRITICAL: When we get fresh "All" data, mark all individual account caches as potentially stale
+        // This prevents using old individual account data to build aggregated results
+        if (customerId === 'all' || !customerId) {
+          const accounts = [
+            '8677814915', '9071440966', '5723554317', '3146253756', '5857090949',
+            '6201189752', '4071621621', '7579121709', '1918795911', '2849704713', 
+            '7605096292', '5719842337', '9341614254', '4277350349'
+          ];
+          
+          console.log(`[CACHE INVALIDATION] Fresh "All" data received, updating individual account caches`);
+          
+          // Update individual account caches with filtered data from the fresh "All" response
+          accounts.forEach(accountId => {
+            const accountCacheKey = buildAccountCacheKey(accountId, startDate, endDate);
+            const accountAds = validatedData.ads?.filter((ad: any) => ad.customer_id === accountId) || [];
+            
+            if (accountAds.length > 0) {
+              const accountData = {
+                ...validatedData,
+                ads: accountAds,
+                totalCost: accountAds.reduce((sum: number, ad: any) => sum + (ad.metrics?.cost || 0), 0)
+              };
+              
+              GA_CACHE[accountCacheKey] = {
+                timestamp: newTimestamp,
+                payload: accountData,
+                refreshing: false,
+                costPriority: true,
+                lastCostUpdate: newTimestamp
+              };
+            }
+          });
+        }
         
         recordApiSuccess(); // Record successful API call
         
