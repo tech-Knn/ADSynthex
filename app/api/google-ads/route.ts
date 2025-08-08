@@ -843,52 +843,49 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 1) If we have fresh cache data (< 6 hours old), return it immediately
-    if (cached && (now - cached.timestamp < CACHE_TTL_MS)) {
-      console.log(`[CACHE] Returning fresh cached data for ${cacheKey}`);
+    // COST-PRIORITY cache evaluation
+    if (cached) {
+      const age = now - cached.timestamp;
+      const isFreshForCost = age < COST_PRIORITY_TTL_MS; // 2 minutes for cost data
+      const isRecentlyFresh = age < CACHE_TTL_MS; // 8 minutes general fresh
       
-      // If data is getting old (>20 minutes), schedule a background refresh for next time
-      if ((now - cached.timestamp) > (20 * 60 * 1000) && !cached.refreshing) {
-        console.log(`[CACHE] Scheduling background refresh for aging data`);
-        scheduleSmartRefresh(cacheKey, 5000); // Refresh in 5 seconds
+      console.log(`[COST-PRIORITY CACHE] Data age: ${Math.round(age/1000)}s, isFresh: ${isFreshForCost}, isRecent: ${isRecentlyFresh}`);
+      
+      // If data is getting old for cost purposes, trigger priority refresh
+      if (age > COST_PRIORITY_TTL_MS && !cached.refreshing && shouldAttemptApiCall()) {
+        console.log(`[COST-PRIORITY CACHE] Triggering cost-priority refresh (age: ${Math.round(age/1000)}s)`);
+        scheduleSmartRefresh(cacheKey, 500, true); // Fast cost-priority refresh
       }
+      
+      // Always serve cached data (never empty) with appropriate cache headers
+      const cacheStatus = isFreshForCost ? 'COST-FRESH' : (isRecentlyFresh ? 'FRESH' : 'STALE');
       
       return NextResponse.json(cached.payload, {
         headers: {
-          'X-Cache': 'HIT',
-          'X-Cache-Age': Math.floor((now - cached.timestamp) / 1000).toString(),
+          'X-Cache': cacheStatus,
+          'X-Cache-Age': Math.floor(age / 1000).toString(),
+          'X-Cost-Priority': 'true',
+          'X-Data-Status': isFreshForCost ? 'fresh' : 'refreshing',
           'Cache-Control': 'no-cache, no-store, must-revalidate',
         },
       });
     }
 
-    // 2) If we have stale cache data (> 2 hours old but < 6 hours), return it but trigger refresh
-    if (cached && (now - cached.timestamp >= STALE_TTL_MS) && (now - cached.timestamp < CACHE_TTL_MS)) {
-      // Trigger smart refresh if not already refreshing and circuit allows
-      if (!cached.refreshing && shouldAttemptApiCall()) {
-        scheduleSmartRefresh(cacheKey, Math.random() * 5000); // 0-5 second jitter
-      }
-      console.log(`[CACHE] Returning stale cached data for ${cacheKey}`);
-      return NextResponse.json(cached.payload, {
-        headers: {
-          'X-Cache': 'STALE',
-          'X-Cache-Age': Math.floor((now - cached.timestamp) / 1000).toString(),
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-        },
-      });
-    }
-
-    // 3) If we have very stale cache data (> 6 hours old), use it as emergency fallback
+    // Emergency fallback - serve very old cache if available
     if (cached && (now - cached.timestamp < EMERGENCY_CACHE_TTL_MS)) {
-      // Start background refresh for next time if circuit allows
+      // Start immediate cost-priority refresh
       if (!cached.refreshing && shouldAttemptApiCall()) {
-        scheduleSmartRefresh(cacheKey, Math.random() * 10000); // 0-10 second jitter
+        console.log(`[EMERGENCY CACHE] Starting immediate cost-priority refresh for very stale data: ${cacheKey}`);
+        scheduleSmartRefresh(cacheKey, 100, true); // Immediate cost-priority refresh
       }
-      console.log(`[CACHE] Returning very stale cached data as emergency fallback for ${cacheKey}`);
+      
+      console.log(`[EMERGENCY CACHE] Returning very stale data (age: ${Math.round((now - cached.timestamp)/60000)}min)`);
       return NextResponse.json(cached.payload, {
         headers: {
-          'X-Cache': 'EMERGENCY_FALLBACK',
+          'X-Cache': 'EMERGENCY',
           'X-Cache-Age': Math.floor((now - cached.timestamp) / 1000).toString(),
+          'X-Cost-Priority': 'true',
+          'X-Data-Status': 'refreshing',
           'Cache-Control': 'no-cache, no-store, must-revalidate',
         },
       });
