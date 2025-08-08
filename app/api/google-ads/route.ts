@@ -153,9 +153,11 @@ const CIRCUIT_BREAKER_CONFIG = {
 // Global request coordinator to prevent duplicate API calls
 const PENDING_REQUESTS: Record<string, Promise<any>> = {};
 
-// Global throttling to prevent QPS exceedance
+// Global throttling to prevent QPS exceedance - ENHANCED PROTECTION
 let activeRefreshCount = 0;
 const MAX_CONCURRENT_REFRESHES = 2; // Never have more than 2 cache refreshes running simultaneously
+let lastApiCallTime = 0;
+const MIN_API_CALL_INTERVAL = 1500; // 1.5 seconds minimum between API calls (safe for 40/min limit)
 
 // Automatic periodic refresh system for fresh financial data
 const PERIODIC_REFRESH_INTERVAL = 10 * 60 * 1000; // 10 minutes - check for stale data
@@ -422,10 +424,19 @@ async function scheduleSmartRefresh(cacheKey: string, delayMs: number = 0, costP
       return;
     }
 
-    // Check if we have too many concurrent refreshes (prevent QPS exceedance)
+    // ENHANCED QPS PROTECTION - Check both concurrent count AND time-based throttling
     if (activeRefreshCount >= MAX_CONCURRENT_REFRESHES) {
       console.log(`[SMART REFRESH] Max concurrent refreshes (${MAX_CONCURRENT_REFRESHES}) reached, delaying ${cacheKey}`);
       scheduleSmartRefresh(cacheKey, 30000); // Retry in 30 seconds
+      return;
+    }
+
+    // Enforce minimum time between API calls to respect QPS limits
+    const timeSinceLastCall = Date.now() - lastApiCallTime;
+    if (timeSinceLastCall < MIN_API_CALL_INTERVAL) {
+      const additionalDelay = MIN_API_CALL_INTERVAL - timeSinceLastCall;
+      console.log(`[QPS PROTECTION] Enforcing ${additionalDelay}ms delay for QPS safety`);
+      scheduleSmartRefresh(cacheKey, additionalDelay, costPriority);
       return;
     }
 
@@ -440,6 +451,7 @@ async function scheduleSmartRefresh(cacheKey: string, delayMs: number = 0, costP
     // Mark as refreshing and increment active count
     cached.refreshing = true;
     activeRefreshCount++;
+    lastApiCallTime = Date.now(); // Record API call time for QPS tracking
     
     try {
       const [startDate, endDate, customerId] = cacheKey.split('|');
@@ -815,7 +827,7 @@ async function handleSingleAccountRequest(startDate: string, endDate: string, cu
         : age > STALE_TTL_MS;
       
       if (shouldRefresh && !cached.refreshing && shouldAttemptApiCall()) {
-        const refreshDelay = costPriority ? 100 : 1000; // Very fast refresh
+        const refreshDelay = costPriority ? 3000 : 5000; // QPS-safe refresh delays (3-5 seconds)
         console.log(`[SINGLE ACCOUNT INSTANT] 🚀 Serving instantly + background refresh for ${customerId}`);
         scheduleAccountRefresh(customerId, startDate, endDate, refreshDelay);
       }
@@ -972,7 +984,7 @@ export async function POST(request: NextRequest) {
         // Trigger background refresh if data is getting stale (but serve immediately)
         if (age > COST_PRIORITY_TTL_MS && !cached.refreshing && shouldAttemptApiCall()) {
           console.log(`[INSTANT LOADING] 🚀 Serving instantly + triggering background refresh (age: ${ageSeconds}s)`);
-          scheduleSmartRefresh(cacheKey, 100, true); // Very fast background refresh
+          scheduleSmartRefresh(cacheKey, 2000, true); // QPS-safe background refresh (2 seconds)
         }
         
         const cacheStatus = isFreshForCost ? 'INSTANT-FRESH' : (isGenerallyFresh ? 'INSTANT-GOOD' : 'INSTANT-STALE');
