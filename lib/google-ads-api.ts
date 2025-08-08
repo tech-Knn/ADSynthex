@@ -632,6 +632,62 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string): Pr
           data.ads.push(...assetGroupAds);
         }
 
+        // COMPREHENSIVE CAMPAIGN COST DEBUGGING - Get ALL campaign types with cost
+        try {
+          const comprehensiveCampaignQuery = `
+            SELECT
+              campaign.id,
+              campaign.name,
+              campaign.status,
+              campaign.advertising_channel_type,
+              campaign.advertising_channel_sub_type,
+              metrics.cost_micros,
+              metrics.impressions,
+              metrics.clicks,
+              metrics.conversions
+            FROM campaign
+            WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+          `;
+          
+          console.log(`[COST DEBUG] Fetching comprehensive campaign cost data for account ${account.id}`);
+          const comprehensiveResponse = await makeApiCall(comprehensiveCampaignQuery, 'Comprehensive Campaign Cost');
+          
+          if (comprehensiveResponse && comprehensiveResponse.length > 0) {
+            let totalAccountCost = 0;
+            const campaignTypes: Record<string, { cost: number; count: number }> = {};
+            
+            console.log(`[COST DEBUG] Account ${account.id} (${account.name}) campaign breakdown:`);
+            
+            comprehensiveResponse.forEach((campaign: any) => {
+              const costMicros = Number(campaign.metrics?.cost_micros || 0);
+              const cost = costMicros / 1000000;
+              const channelType = campaign.campaign?.advertising_channel_type || 'UNKNOWN';
+              const status = campaign.campaign?.status || 'UNKNOWN';
+              
+              totalAccountCost += cost;
+              
+              if (!campaignTypes[channelType]) {
+                campaignTypes[channelType] = { cost: 0, count: 0 };
+              }
+              campaignTypes[channelType].cost += cost;
+              campaignTypes[channelType].count += 1;
+              
+              if (cost > 0) {
+                console.log(`  ${campaign.campaign?.name || 'Unknown'} | ${channelType} | ${status} | $${cost.toFixed(2)}`);
+              }
+            });
+            
+            console.log(`[COST DEBUG] Account ${account.id} campaign type breakdown:`);
+            Object.entries(campaignTypes).forEach(([type, data]) => {
+              console.log(`  ${type}: ${data.count} campaigns, $${data.cost.toFixed(2)} total cost`);
+            });
+            
+            console.log(`[COST DEBUG] Account ${account.id} TOTAL COST FROM CAMPAIGNS: $${totalAccountCost.toFixed(2)}`);
+          }
+        } catch (debugError) {
+          console.error(`[COST DEBUG] Error fetching comprehensive cost data for account ${account.id}:`, debugError);
+        }
+
         // Add delay between accounts to prevent overwhelming the API
         if (i < TARGET_ACCOUNTS.length - 1) {
           console.log(`Waiting ${RATE_LIMIT_CONFIG.delayBetweenAccounts}ms before next account...`);
@@ -647,8 +703,39 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string): Pr
     });
   }
 
+  // Calculate comprehensive cost tracking
+  const totalCostFromAds = data.ads.reduce((sum, ad) => sum + (ad.metrics?.cost || 0), 0);
+  const totalCostFromCampaigns = data.campaigns.reduce((sum, campaign) => sum + (campaign.metrics?.cost || 0), 0);
+  
+  // Log detailed cost breakdown for debugging
+  console.log(`\n=== COST DEBUGGING BREAKDOWN ===`);
+  console.log(`Total cost from ${data.ads.length} ads: $${totalCostFromAds.toFixed(2)}`);
+  console.log(`Total cost from ${data.campaigns.length} campaigns: $${totalCostFromCampaigns.toFixed(2)}`);
+  
+  // Account-by-account cost breakdown
+  const accountCosts: Record<string, { name: string; cost: number; adCount: number }> = {};
+  data.ads.forEach(ad => {
+    const accountId = ad.customer_id;
+    const accountName = ad.customer_name;
+    if (!accountCosts[accountId]) {
+      accountCosts[accountId] = { name: accountName, cost: 0, adCount: 0 };
+    }
+    accountCosts[accountId].cost += ad.metrics?.cost || 0;
+    accountCosts[accountId].adCount += 1;
+  });
+  
+  console.log(`\n=== ACCOUNT-BY-ACCOUNT COST BREAKDOWN ===`);
+  Object.entries(accountCosts).forEach(([accountId, data]) => {
+    console.log(`Account ${accountId} (${data.name}): $${data.cost.toFixed(2)} from ${data.adCount} ads`);
+  });
+  
+  console.log(`\n=== API FETCH SUMMARY ===`);
   console.log(`Google Ads API fetch completed. Total: ${data.campaigns.length} campaigns, ${data.ads.length} ads`);
   console.log(`Daily request count: ${dailyRequestCount}/${RATE_LIMIT_CONFIG.maxRequestsPerDay}`);
+  console.log(`================================\n`);
+  
+  // Use the higher cost value for final result (usually ads-level is more accurate)
+  data.total_cost = Math.max(totalCostFromAds, totalCostFromCampaigns);
   
   return data;
 }

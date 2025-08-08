@@ -60,12 +60,13 @@ const transformApiResponse = (response: any, startDate?: string, endDate?: strin
       console.log(`After filtering: ${filteredAds.length} ads remain`);
     }
     
-    // Filter out Taboola data
+    // Filter out Taboola data with cost tracking
     if (filteredAds && filteredAds.length > 0) {
       const originalCount = filteredAds.length;
+      const originalCost = filteredAds.reduce((sum: number, ad: any) => sum + (ad.metrics?.cost || 0), 0);
       
       // Filter out any ads with 'taboola' in final_urls (case-insensitive)
-      filteredAds = filteredAds.filter((ad: any) => {
+      const taboolaFilteredAds = filteredAds.filter((ad: any) => {
         if (!ad.final_urls || !Array.isArray(ad.final_urls)) return true;
         
         // Check if any URL contains "taboola"
@@ -76,9 +77,17 @@ const transformApiResponse = (response: any, startDate?: string, endDate?: strin
         return !hasTaboolaUrl;
       });
       
-      if (originalCount !== filteredAds.length) {
-        console.log(`Filtered out Taboola ads: removed ${originalCount - filteredAds.length} ads`);
+      const filteredCost = taboolaFilteredAds.reduce((sum: number, ad: any) => sum + (ad.metrics?.cost || 0), 0);
+      const costDifference = originalCost - filteredCost;
+      
+      console.log(`[TABOOLA FILTER] Before: ${originalCount} ads, $${originalCost.toFixed(2)} cost`);
+      console.log(`[TABOOLA FILTER] After: ${taboolaFilteredAds.length} ads, $${filteredCost.toFixed(2)} cost`);
+      
+      if (originalCount !== taboolaFilteredAds.length) {
+        console.log(`[TABOOLA FILTER] Removed ${originalCount - taboolaFilteredAds.length} ads with $${costDifference.toFixed(2)} cost`);
       }
+      
+      filteredAds = taboolaFilteredAds;
     }
     
     // Calculate total cost after filtering
@@ -104,15 +113,18 @@ interface CachedGAData {
   timestamp: number;
   payload: any;
   refreshing?: boolean; // Track if currently being refreshed
+  costPriority?: boolean; // Flag for cost-critical requests
+  lastCostUpdate?: number; // Track when cost data was last updated
 }
 
 const GA_CACHE: Record<string, CachedGAData> = (globalThis as any).__GA_CACHE__ || {};
 (globalThis as any).__GA_CACHE__ = GA_CACHE;
 
-// Optimized cache timing for fresh financial data while respecting QPS limits
-const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes - fresh data for accurate financials
-const STALE_TTL_MS = 15 * 60 * 1000; // 15 minutes - serve stale data, but trigger refresh
-const EMERGENCY_CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours - emergency fallback cache
+// REAL-TIME COST DATA optimization - aggressive refresh for accurate financial data
+const CACHE_TTL_MS = 8 * 60 * 1000; // 8 minutes - fresh cost data (more frequent)
+const STALE_TTL_MS = 4 * 60 * 1000; // 4 minutes - trigger refresh faster for cost accuracy
+const COST_PRIORITY_TTL_MS = 2 * 60 * 1000; // 2 minutes - high priority for cost requests
+const EMERGENCY_CACHE_TTL_MS = 1 * 60 * 60 * 1000; // 1 hour - reduced emergency cache
 
 // Circuit breaker to temporarily disable API when it's consistently failing
 interface CircuitBreakerState {
@@ -192,39 +204,45 @@ startPeriodicRefreshSystem();
 
 // Cache warming function for frequently used date ranges
 async function warmCacheForCommonDateRanges() {
-  console.log(`[CACHE WARMING] Starting cache warm-up for common date ranges`);
+  console.log(`[COST-PRIORITY WARMING] Starting cost-priority cache warm-up for common date ranges`);
   
   const today = new Date();
   const commonRanges = [
-    // Today
+    // Today - HIGHEST PRIORITY for real-time cost data
     { 
       startDate: today.toISOString().split('T')[0], 
-      endDate: today.toISOString().split('T')[0] 
+      endDate: today.toISOString().split('T')[0],
+      priority: 'HIGH'
     },
-    // Yesterday
+    // Yesterday - HIGH PRIORITY for recent cost comparison
     {
       startDate: new Date(today.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      endDate: new Date(today.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      endDate: new Date(today.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      priority: 'HIGH'
     },
-    // Last 3 days
+    // Last 3 days - MEDIUM PRIORITY
     {
       startDate: new Date(today.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      endDate: today.toISOString().split('T')[0]
+      endDate: today.toISOString().split('T')[0],
+      priority: 'MEDIUM'
     }
   ];
   
-  // Warm cache for "All" accounts for each common range
+  // Cost-priority cache warming
   for (let i = 0; i < commonRanges.length; i++) {
     const range = commonRanges[i];
     const cacheKey = buildCacheKey(range.startDate, range.endDate, null);
     
-    // Only warm if not already cached or very stale
+    // Check if needs warming based on cost priority
     const cached = GA_CACHE[cacheKey];
-    if (!cached || (Date.now() - cached.timestamp) > CACHE_TTL_MS) {
-      console.log(`[CACHE WARMING] Warming cache for range ${range.startDate} to ${range.endDate}`);
+    const isCostPriority = range.priority === 'HIGH' || range.priority === 'MEDIUM';
+    const ttlToUse = isCostPriority ? COST_PRIORITY_TTL_MS : CACHE_TTL_MS;
+    
+    if (!cached || (Date.now() - cached.timestamp) > ttlToUse) {
+      const delay = range.priority === 'HIGH' ? i * 8000 : i * 15000; // Faster for high priority cost data
       
-      // Schedule with longer delays to respect rate limits during warm-up
-      scheduleSmartRefresh(cacheKey, i * 20000); // 20 second delays between warm-ups (very safe)
+      console.log(`[COST-PRIORITY WARMING] Warming ${range.priority} priority cache for ${range.startDate} to ${range.endDate}`);
+      scheduleSmartRefresh(cacheKey, delay, isCostPriority);
     }
   }
 }
@@ -342,11 +360,21 @@ function validateAndCorrectCostData(data: any): any {
 }
 
 // Smart background refresh - spread out over time
-async function scheduleSmartRefresh(cacheKey: string, delayMs: number = 0) {
+async function scheduleSmartRefresh(cacheKey: string, delayMs: number = 0, costPriority: boolean = false) {
   setTimeout(async () => {
-    // Skip if already refreshing or recently refreshed
+    // Skip if already refreshing
     const cached = GA_CACHE[cacheKey];
-    if (!cached || cached.refreshing || Date.now() - cached.timestamp < STALE_TTL_MS) {
+    if (!cached || cached.refreshing) {
+      return;
+    }
+    
+    // Cost-priority evaluation: refresh more aggressively for cost data
+    const age = Date.now() - cached.timestamp;
+    const needsRefresh = costPriority 
+      ? age > COST_PRIORITY_TTL_MS 
+      : age > STALE_TTL_MS;
+      
+    if (!needsRefresh) {
       return;
     }
 
@@ -371,7 +399,7 @@ async function scheduleSmartRefresh(cacheKey: string, delayMs: number = 0) {
     
     try {
       const [startDate, endDate, customerId] = cacheKey.split('|');
-      console.log(`[SMART REFRESH] Starting refresh for ${cacheKey}`);
+      console.log(`[SMART REFRESH] Starting ${costPriority ? 'COST-PRIORITY' : 'regular'} refresh for ${cacheKey}`);
       
       const realData = await fetchGoogleAdsData(startDate, endDate);
       if (!realData || typeof realData !== 'object' || !Array.isArray(realData.ads)) {
@@ -384,7 +412,9 @@ async function scheduleSmartRefresh(cacheKey: string, delayMs: number = 0) {
       GA_CACHE[cacheKey] = { 
         timestamp: Date.now(), 
         payload: validatedData,
-        refreshing: false 
+        refreshing: false,
+        costPriority: costPriority,
+        lastCostUpdate: costPriority ? Date.now() : cached.lastCostUpdate
       };
       
       recordApiSuccess(); // Record successful API call
@@ -525,6 +555,26 @@ async function startAccountPreloader(startDate: string, endDate: string) {
 const buildCacheKey = (start: string, end: string, cid: string | null) => `${start}|${end}|${cid ?? 'all'}`;
 const buildAccountCacheKey = (accountId: string, start: string, end: string) => `account_${accountId}_${start}_${end}`;
 
+// Smart cache evaluation for cost-priority requests
+function isCacheValidForCostData(cached: CachedGAData, isCostPriorityRequest: boolean = true): boolean {
+  const now = Date.now();
+  const age = now - cached.timestamp;
+  
+  if (isCostPriorityRequest) {
+    // For cost-critical requests, use stricter TTL
+    return age < COST_PRIORITY_TTL_MS;
+  }
+  
+  // For regular requests, use standard TTL
+  return age < CACHE_TTL_MS;
+}
+
+function isCacheStaleButUsable(cached: CachedGAData): boolean {
+  const now = Date.now();
+  const age = now - cached.timestamp;
+  return age < EMERGENCY_CACHE_TTL_MS; // Can still use if not too old
+}
+
 // Quick single account refresh for immediate needs
 async function scheduleAccountRefresh(accountId: string, startDate: string, endDate: string, delayMs: number = 0) {
   setTimeout(async () => {
@@ -653,27 +703,37 @@ function tryBuildFromAccountCaches(startDate: string, endDate: string) {
 }
 
 // Fast handler for single account requests using account-specific caching
-async function handleSingleAccountRequest(startDate: string, endDate: string, customerId: string) {
+async function handleSingleAccountRequest(startDate: string, endDate: string, customerId: string, costPriority: boolean = false) {
   const accountCacheKey = buildAccountCacheKey(customerId, startDate, endDate);
   const cached = GA_CACHE[accountCacheKey];
   const now = Date.now();
 
-  // ALWAYS return cached data if available, regardless of age (never show empty data)
+  // Cost-priority evaluation: refresh more aggressively for cost data
   if (cached) {
     const age = Math.round((now - cached.timestamp) / 1000);
-    console.log(`[SINGLE ACCOUNT] Returning cached data for account ${customerId} (age: ${age}s)`);
+    const isFreshForCost = costPriority ? isCacheValidForCostData(cached, true) : (now - cached.timestamp) < CACHE_TTL_MS;
     
-    // If data is getting old (>2 hours), trigger background refresh
-    if ((now - cached.timestamp) > STALE_TTL_MS && !cached.refreshing && shouldAttemptApiCall()) {
-      console.log(`[SINGLE ACCOUNT] Triggering background refresh for account ${customerId}`);
-      scheduleAccountRefresh(customerId, startDate, endDate, 2000); // 2 second delay
+    console.log(`[SINGLE ACCOUNT] ${costPriority ? 'COST-PRIORITY' : 'REGULAR'} request for account ${customerId} (age: ${age}s)`);
+    
+    // For cost-priority requests, trigger refresh more aggressively
+    const shouldRefresh = costPriority 
+      ? (now - cached.timestamp) > COST_PRIORITY_TTL_MS 
+      : (now - cached.timestamp) > STALE_TTL_MS;
+    
+    if (shouldRefresh && !cached.refreshing && shouldAttemptApiCall()) {
+      const refreshDelay = costPriority ? 500 : 2000; // Faster refresh for cost data
+      console.log(`[SINGLE ACCOUNT] Triggering ${costPriority ? 'PRIORITY' : 'background'} refresh for account ${customerId}`);
+      scheduleAccountRefresh(customerId, startDate, endDate, refreshDelay);
     }
     
     return NextResponse.json(cached.payload, {
       headers: {
-        'X-Cache': age < STALE_TTL_MS ? 'HIT-ACCOUNT' : 'STALE-ACCOUNT',
+        'X-Cache': costPriority 
+          ? (isFreshForCost ? 'HIT-COST-FRESH' : 'HIT-COST-STALE') 
+          : (age < STALE_TTL_MS ? 'HIT-ACCOUNT' : 'STALE-ACCOUNT'),
         'X-Cache-Age': age.toString(),
-        'X-Data-Status': age < STALE_TTL_MS ? 'fresh' : 'refreshing',
+        'X-Data-Status': isFreshForCost ? 'fresh' : 'refreshing',
+        'X-Cost-Priority': costPriority ? 'true' : 'false',
       },
     });
   }
@@ -744,12 +804,12 @@ async function handleSingleAccountRequest(startDate: string, endDate: string, cu
 export async function POST(request: NextRequest) {
   try {
     const { startDate, endDate, customerId } = await request.json();
-    console.log(`Google Ads API request for date range: ${startDate} to ${endDate}, Customer ID: ${customerId || 'All'}`);
+    console.log(`[COST-PRIORITY] Google Ads API request for date range: ${startDate} to ${endDate}, Customer ID: ${customerId || 'All'}`);
     console.log('DEBUG: Current time', new Date().toISOString());
     
-    // For individual accounts, use fast account-specific handler
+    // For individual accounts, use COST-PRIORITY fast account-specific handler
     if (customerId && customerId !== 'All') {
-      return await handleSingleAccountRequest(startDate, endDate, customerId);
+      return await handleSingleAccountRequest(startDate, endDate, customerId, true); // Cost priority
     }
     
     const cacheKey = buildCacheKey(startDate, endDate, customerId);
