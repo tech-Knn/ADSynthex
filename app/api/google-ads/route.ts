@@ -109,9 +109,10 @@ interface CachedGAData {
 const GA_CACHE: Record<string, CachedGAData> = (globalThis as any).__GA_CACHE__ || {};
 (globalThis as any).__GA_CACHE__ = GA_CACHE;
 
-const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours - much longer cache to reduce API calls
-const STALE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours - serve stale data, but trigger refresh
-const EMERGENCY_CACHE_TTL_MS = 72 * 60 * 60 * 1000; // 72 hours - emergency fallback cache
+// Optimized cache timing for fresh financial data while respecting QPS limits
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes - fresh data for accurate financials
+const STALE_TTL_MS = 15 * 60 * 1000; // 15 minutes - serve stale data, but trigger refresh
+const EMERGENCY_CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours - emergency fallback cache
 
 // Circuit breaker to temporarily disable API when it's consistently failing
 interface CircuitBreakerState {
@@ -138,6 +139,90 @@ const CIRCUIT_BREAKER_CONFIG = {
 
 // Global request coordinator to prevent duplicate API calls
 const PENDING_REQUESTS: Record<string, Promise<any>> = {};
+
+// Automatic periodic refresh system for fresh financial data
+const PERIODIC_REFRESH_INTERVAL = 10 * 60 * 1000; // 10 minutes - check for stale data
+let periodicRefreshTimer: NodeJS.Timeout | null = null;
+
+// Start automatic periodic refresh system
+function startPeriodicRefreshSystem() {
+  if (periodicRefreshTimer) {
+    clearInterval(periodicRefreshTimer);
+  }
+  
+  periodicRefreshTimer = setInterval(async () => {
+    const now = Date.now();
+    console.log(`[PERIODIC REFRESH] Checking for stale cache data at ${new Date().toISOString()}`);
+    
+    // Find all cache entries that need refreshing
+    const staleCacheKeys = Object.entries(GA_CACHE).filter(([cacheKey, cacheData]) => {
+      const age = now - cacheData.timestamp;
+      const needsRefresh = age >= STALE_TTL_MS && !cacheData.refreshing;
+      return needsRefresh && shouldAttemptApiCall();
+    }).map(([cacheKey]) => cacheKey);
+    
+    if (staleCacheKeys.length === 0) {
+      console.log(`[PERIODIC REFRESH] No stale cache data found`);
+      return;
+    }
+    
+    console.log(`[PERIODIC REFRESH] Found ${staleCacheKeys.length} stale cache entries, scheduling refreshes`);
+    
+    // Refresh stale entries with staggered timing to respect QPS limits
+    staleCacheKeys.forEach((cacheKey, index) => {
+      const delay = index * 5000; // 5 second delays between refreshes
+      scheduleSmartRefresh(cacheKey, delay);
+    });
+    
+  }, PERIODIC_REFRESH_INTERVAL);
+  
+  console.log(`[PERIODIC REFRESH] Started automatic refresh system (${PERIODIC_REFRESH_INTERVAL/1000/60} minute intervals)`);
+}
+
+// Initialize periodic refresh system on module load
+startPeriodicRefreshSystem();
+
+// Cache warming function for frequently used date ranges
+async function warmCacheForCommonDateRanges() {
+  console.log(`[CACHE WARMING] Starting cache warm-up for common date ranges`);
+  
+  const today = new Date();
+  const commonRanges = [
+    // Today
+    { 
+      startDate: today.toISOString().split('T')[0], 
+      endDate: today.toISOString().split('T')[0] 
+    },
+    // Yesterday
+    {
+      startDate: new Date(today.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      endDate: new Date(today.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    },
+    // Last 3 days
+    {
+      startDate: new Date(today.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      endDate: today.toISOString().split('T')[0]
+    }
+  ];
+  
+  // Warm cache for "All" accounts for each common range
+  for (let i = 0; i < commonRanges.length; i++) {
+    const range = commonRanges[i];
+    const cacheKey = buildCacheKey(range.startDate, range.endDate, null);
+    
+    // Only warm if not already cached or very stale
+    const cached = GA_CACHE[cacheKey];
+    if (!cached || (Date.now() - cached.timestamp) > CACHE_TTL_MS) {
+      console.log(`[CACHE WARMING] Warming cache for range ${range.startDate} to ${range.endDate}`);
+      
+      // Schedule with delays to respect rate limits
+      scheduleSmartRefresh(cacheKey, i * 10000); // 10 second delays between warm-ups
+    }
+  }
+}
+
+// Start cache warming 30 seconds after module load (allow system to stabilize)
+setTimeout(warmCacheForCommonDateRanges, 30000);
 
 // Circuit breaker helper functions
 function recordApiSuccess() {
@@ -289,8 +374,8 @@ async function scheduleSmartRefresh(cacheKey: string, delayMs: number = 0) {
       recordApiSuccess(); // Record successful API call
       console.log(`[SMART REFRESH] Successfully updated GoogleAds cache for ${cacheKey}`);
       
-      // Schedule next refresh in 2 hours + random jitter to spread load
-      const nextRefreshDelay = CACHE_TTL_MS + Math.random() * 30 * 60 * 1000; // +0-30min jitter
+      // Schedule next refresh after cache TTL + small jitter for load distribution
+      const nextRefreshDelay = CACHE_TTL_MS + Math.random() * 5 * 60 * 1000; // +0-5min jitter
       scheduleSmartRefresh(cacheKey, nextRefreshDelay);
       
     } catch (err) {
@@ -682,8 +767,8 @@ export async function POST(request: NextRequest) {
     if (cached && (now - cached.timestamp < CACHE_TTL_MS)) {
       console.log(`[CACHE] Returning fresh cached data for ${cacheKey}`);
       
-      // If data is getting old (>4 hours), schedule a background refresh for next time
-      if ((now - cached.timestamp) > (4 * 60 * 60 * 1000) && !cached.refreshing) {
+      // If data is getting old (>20 minutes), schedule a background refresh for next time
+      if ((now - cached.timestamp) > (20 * 60 * 1000) && !cached.refreshing) {
         console.log(`[CACHE] Scheduling background refresh for aging data`);
         scheduleSmartRefresh(cacheKey, 5000); // Refresh in 5 seconds
       }
@@ -815,8 +900,8 @@ export async function POST(request: NextRequest) {
         
         recordApiSuccess(); // Record successful API call
         
-        // Schedule next smart refresh in 2+ hours with jitter
-        const nextRefreshDelay = CACHE_TTL_MS + Math.random() * 30 * 60 * 1000; // +0-30min jitter
+        // Schedule next smart refresh after cache TTL with small jitter
+        const nextRefreshDelay = CACHE_TTL_MS + Math.random() * 5 * 60 * 1000; // +0-5min jitter
         scheduleSmartRefresh(cacheKey, nextRefreshDelay);
         
         console.log(`[FRESH] Successfully cached validated Google Ads data for ${cacheKey}`);
