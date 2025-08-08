@@ -120,11 +120,12 @@ interface CachedGAData {
 const GA_CACHE: Record<string, CachedGAData> = (globalThis as any).__GA_CACHE__ || {};
 (globalThis as any).__GA_CACHE__ = GA_CACHE;
 
-// REAL-TIME COST DATA optimization - aggressive refresh for accurate financial data
-const CACHE_TTL_MS = 8 * 60 * 1000; // 8 minutes - fresh cost data (more frequent)
-const STALE_TTL_MS = 4 * 60 * 1000; // 4 minutes - trigger refresh faster for cost accuracy
-const COST_PRIORITY_TTL_MS = 2 * 60 * 1000; // 2 minutes - high priority for cost requests
-const EMERGENCY_CACHE_TTL_MS = 1 * 60 * 60 * 1000; // 1 hour - reduced emergency cache
+// INSTANT LOADING + ACCURATE COST DATA - Stale-While-Revalidate pattern
+const CACHE_TTL_MS = 12 * 60 * 1000; // 12 minutes - when to consider cache expired  
+const STALE_TTL_MS = 5 * 60 * 1000; // 5 minutes - when to trigger background refresh
+const COST_PRIORITY_TTL_MS = 3 * 60 * 1000; // 3 minutes - aggressive refresh for cost data
+const EMERGENCY_CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours - emergency fallback
+const INSTANT_SERVE_MAX_AGE = 20 * 60 * 1000; // 20 minutes - ALWAYS serve instantly within this time
 
 // Circuit breaker to temporarily disable API when it's consistently failing
 interface CircuitBreakerState {
@@ -188,10 +189,10 @@ function startPeriodicRefreshSystem() {
     const maxRefreshesPerCycle = Math.max(1, MAX_CONCURRENT_REFRESHES - activeRefreshCount);
     const priorityStaleCacheKeys = staleCacheKeys.slice(0, maxRefreshesPerCycle);
     
-    // Refresh stale entries with staggered timing to respect QPS limits
+    // Refresh stale entries with faster timing for better UX
     priorityStaleCacheKeys.forEach((cacheKey, index) => {
-      const delay = index * 10000; // 10 second delays between refreshes (safer)
-      scheduleSmartRefresh(cacheKey, delay);
+      const delay = index * 5000; // 5 second delays between refreshes (faster warming)
+      scheduleSmartRefresh(cacheKey, delay, true); // Mark as cost priority for faster refresh
     });
     
   }, PERIODIC_REFRESH_INTERVAL);
@@ -472,9 +473,9 @@ async function scheduleSmartRefresh(cacheKey: string, delayMs: number = 0, costP
       recordApiSuccess(); // Record successful API call
       console.log(`[SMART REFRESH] Successfully updated GoogleAds cache for ${cacheKey}`);
       
-      // Schedule next refresh after cache TTL + small jitter for load distribution
-      const nextRefreshDelay = CACHE_TTL_MS + Math.random() * 5 * 60 * 1000; // +0-5min jitter
-      scheduleSmartRefresh(cacheKey, nextRefreshDelay);
+      // Schedule next refresh BEFORE cache expires to prevent stale data serving
+      const nextRefreshDelay = STALE_TTL_MS * 0.8 + Math.random() * 60 * 1000; // Refresh at 80% of stale time + jitter
+      scheduleSmartRefresh(cacheKey, nextRefreshDelay, true); // Proactive refresh with cost priority
       
     } catch (err) {
       // Try to extract retry delay from error for circuit breaker
@@ -797,34 +798,45 @@ async function handleSingleAccountRequest(startDate: string, endDate: string, cu
   const cached = GA_CACHE[accountCacheKey];
   const now = Date.now();
 
-  // Cost-priority evaluation: refresh more aggressively for cost data
+  // INSTANT LOADING for single accounts - always serve immediately
   if (cached) {
-    const age = Math.round((now - cached.timestamp) / 1000);
-    const isFreshForCost = costPriority ? isCacheValidForCostData(cached, true) : (now - cached.timestamp) < CACHE_TTL_MS;
+    const age = now - cached.timestamp;
+    const ageSeconds = Math.round(age / 1000);
+    const isFreshForCost = age < COST_PRIORITY_TTL_MS;
+    const isServeable = age < INSTANT_SERVE_MAX_AGE; // 20 minutes instant serve
     
-    console.log(`[SINGLE ACCOUNT] ${costPriority ? 'COST-PRIORITY' : 'REGULAR'} request for account ${customerId} (age: ${age}s)`);
+    console.log(`[SINGLE ACCOUNT INSTANT] Account ${customerId} request (age: ${ageSeconds}s, serveable: ${isServeable})`);
     
-    // For cost-priority requests, trigger refresh more aggressively
-    const shouldRefresh = costPriority 
-      ? (now - cached.timestamp) > COST_PRIORITY_TTL_MS 
-      : (now - cached.timestamp) > STALE_TTL_MS;
-    
-    if (shouldRefresh && !cached.refreshing && shouldAttemptApiCall()) {
-      const refreshDelay = costPriority ? 500 : 2000; // Faster refresh for cost data
-      console.log(`[SINGLE ACCOUNT] Triggering ${costPriority ? 'PRIORITY' : 'background'} refresh for account ${customerId}`);
-      scheduleAccountRefresh(customerId, startDate, endDate, refreshDelay);
+    // ALWAYS serve instantly if data exists and is reasonable (< 20 minutes)
+    if (isServeable) {
+      // Trigger background refresh if needed (but serve immediately)
+      const shouldRefresh = costPriority 
+        ? age > COST_PRIORITY_TTL_MS 
+        : age > STALE_TTL_MS;
+      
+      if (shouldRefresh && !cached.refreshing && shouldAttemptApiCall()) {
+        const refreshDelay = costPriority ? 100 : 1000; // Very fast refresh
+        console.log(`[SINGLE ACCOUNT INSTANT] 🚀 Serving instantly + background refresh for ${customerId}`);
+        scheduleAccountRefresh(customerId, startDate, endDate, refreshDelay);
+      }
+      
+      const cacheStatus = isFreshForCost 
+        ? 'INSTANT-ACCOUNT-FRESH' 
+        : (age < CACHE_TTL_MS ? 'INSTANT-ACCOUNT-GOOD' : 'INSTANT-ACCOUNT-STALE');
+      
+      return NextResponse.json(cached.payload, {
+        headers: {
+          'X-Cache': cacheStatus,
+          'X-Cache-Age': ageSeconds.toString(),
+          'X-Data-Status': isFreshForCost ? 'fresh' : 'refreshing-background',
+          'X-Cost-Priority': costPriority ? 'true' : 'false',
+          'X-Instant-Loading': 'true',
+        },
+      });
     }
     
-    return NextResponse.json(cached.payload, {
-      headers: {
-        'X-Cache': costPriority 
-          ? (isFreshForCost ? 'HIT-COST-FRESH' : 'HIT-COST-STALE') 
-          : (age < STALE_TTL_MS ? 'HIT-ACCOUNT' : 'STALE-ACCOUNT'),
-        'X-Cache-Age': age.toString(),
-        'X-Data-Status': isFreshForCost ? 'fresh' : 'refreshing',
-        'X-Cost-Priority': costPriority ? 'true' : 'false',
-      },
-    });
+    // Data is very old (>20 minutes) - force fresh but this should be rare
+    console.log(`[SINGLE ACCOUNT INSTANT] Data too old (${ageSeconds}s), forcing fresh fetch for ${customerId}`);
   }
 
   // No cache available - try to get from "All" cache and filter
@@ -945,32 +957,40 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // COST-PRIORITY cache evaluation
+    // INSTANT LOADING - Stale-While-Revalidate pattern
     if (cached) {
       const age = now - cached.timestamp;
-      const isFreshForCost = age < COST_PRIORITY_TTL_MS; // 2 minutes for cost data
-      const isRecentlyFresh = age < CACHE_TTL_MS; // 8 minutes general fresh
+      const ageSeconds = Math.round(age / 1000);
+      const isFreshForCost = age < COST_PRIORITY_TTL_MS; // 3 minutes for cost data
+      const isGenerallyFresh = age < CACHE_TTL_MS; // 12 minutes general fresh
+      const isServeable = age < INSTANT_SERVE_MAX_AGE; // 20 minutes - always serve instantly
       
-      console.log(`[COST-PRIORITY CACHE] Data age: ${Math.round(age/1000)}s, isFresh: ${isFreshForCost}, isRecent: ${isRecentlyFresh}`);
+      console.log(`[INSTANT LOADING] Data age: ${ageSeconds}s, costFresh: ${isFreshForCost}, generalFresh: ${isGenerallyFresh}, serveable: ${isServeable}`);
       
-      // If data is getting old for cost purposes, trigger priority refresh
-      if (age > COST_PRIORITY_TTL_MS && !cached.refreshing && shouldAttemptApiCall()) {
-        console.log(`[COST-PRIORITY CACHE] Triggering cost-priority refresh (age: ${Math.round(age/1000)}s)`);
-        scheduleSmartRefresh(cacheKey, 500, true); // Fast cost-priority refresh
+      // ALWAYS serve data instantly if within 20 minutes, trigger refresh in background if needed
+      if (isServeable) {
+        // Trigger background refresh if data is getting stale (but serve immediately)
+        if (age > COST_PRIORITY_TTL_MS && !cached.refreshing && shouldAttemptApiCall()) {
+          console.log(`[INSTANT LOADING] 🚀 Serving instantly + triggering background refresh (age: ${ageSeconds}s)`);
+          scheduleSmartRefresh(cacheKey, 100, true); // Very fast background refresh
+        }
+        
+        const cacheStatus = isFreshForCost ? 'INSTANT-FRESH' : (isGenerallyFresh ? 'INSTANT-GOOD' : 'INSTANT-STALE');
+        
+        return NextResponse.json(cached.payload, {
+          headers: {
+            'X-Cache': cacheStatus,
+            'X-Cache-Age': ageSeconds.toString(),
+            'X-Cost-Priority': 'true',
+            'X-Data-Status': isFreshForCost ? 'fresh' : 'refreshing-background',
+            'X-Instant-Loading': 'true',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+          },
+        });
       }
       
-      // Always serve cached data (never empty) with appropriate cache headers
-      const cacheStatus = isFreshForCost ? 'COST-FRESH' : (isRecentlyFresh ? 'FRESH' : 'STALE');
-      
-      return NextResponse.json(cached.payload, {
-        headers: {
-          'X-Cache': cacheStatus,
-          'X-Cache-Age': Math.floor(age / 1000).toString(),
-          'X-Cost-Priority': 'true',
-          'X-Data-Status': isFreshForCost ? 'fresh' : 'refreshing',
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-        },
-      });
+      // Data is too old (>20 minutes) - force fresh fetch but this should be rare
+      console.log(`[INSTANT LOADING] Data too old (${ageSeconds}s), forcing fresh fetch`);
     }
 
     // Emergency fallback - serve very old cache if available
