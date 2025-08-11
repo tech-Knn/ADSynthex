@@ -1,6 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchArticlePerformance, getMockArticleData, AdsComArticleData, AdsComResponse } from '../../../lib/adscom-api';
 
+// 🛡️ QPS PROTECTION for Ads.com API requests
+const ADS_QPS_CONFIG = {
+  MAX_CONCURRENT: 3,         // Max concurrent requests
+  MIN_INTERVAL_MS: 1000,      // 1 second minimum between requests
+  MAX_PER_MINUTE: 60,         // Max requests per minute
+  EMERGENCY_COOLDOWN_MS: 30000 // 30 seconds cooldown
+};
+
+let adsActiveRequests = 0;
+let adsLastRequestTime = 0;
+let adsRequestsThisMinute = 0;
+let adsMinuteResetTime = Date.now();
+let adsCooldownUntil = 0;
+
+function checkAdsQpsLimits() {
+  const now = Date.now();
+  // Reset per-minute counter
+  if (now - adsMinuteResetTime > 60000) {
+    adsRequestsThisMinute = 0;
+    adsMinuteResetTime = now;
+  }
+  // Emergency cooldown
+  if (now < adsCooldownUntil) {
+    return { canProceed: false, waitTime: adsCooldownUntil - now };
+  }
+  // Concurrent limit
+  if (adsActiveRequests >= ADS_QPS_CONFIG.MAX_CONCURRENT) {
+    return { canProceed: false, waitTime: ADS_QPS_CONFIG.MIN_INTERVAL_MS };
+  }
+  // Per-minute limit
+  if (adsRequestsThisMinute >= ADS_QPS_CONFIG.MAX_PER_MINUTE) {
+    adsCooldownUntil = now + ADS_QPS_CONFIG.EMERGENCY_COOLDOWN_MS;
+    return { canProceed: false, waitTime: ADS_QPS_CONFIG.EMERGENCY_COOLDOWN_MS };
+  }
+  // Minimum interval
+  const sinceLast = now - adsLastRequestTime;
+  if (sinceLast < ADS_QPS_CONFIG.MIN_INTERVAL_MS) {
+    return { canProceed: false, waitTime: ADS_QPS_CONFIG.MIN_INTERVAL_MS - sinceLast };
+  }
+  return { canProceed: true };
+}
+
 // Helper to transform and map API response
 const transformApiData = (apiResponse: any): AdsComResponse => {
   if (!apiResponse || !apiResponse.data || !Array.isArray(apiResponse.data)) {
@@ -302,6 +344,18 @@ function validateRevenueData(data: any): any {
 console.log('[ADSCOM] Background refresh disabled to prevent API endpoint errors');
 
 export async function POST(request: NextRequest) {
+  // QPS check
+  const qps = checkAdsQpsLimits();
+  if (!qps.canProceed) {
+    return NextResponse.json(
+      { error: 'Rate limit exceeded, please retry later.' },
+      { status: 429, headers: { 'Retry-After': qps.waitTime?.toString() || '1' } }
+    );
+  }
+  adsActiveRequests++;
+  adsRequestsThisMinute++;
+  adsLastRequestTime = Date.now();
+
   try {
     const { startDate, endDate, customerId, forceRefresh } = await request.json();
     console.log(`Ads.com API request for date range: ${startDate} to ${endDate}${customerId ? `, Customer ID: ${customerId}` : ''}${forceRefresh ? ', Force Refresh: true' : ''}`);
@@ -790,8 +844,10 @@ export async function POST(request: NextRequest) {
           'X-Revenue-Source': 'mock-validated',
         }
       });
+    } finally {
+      // QPS cleanup
+      adsActiveRequests = Math.max(0, adsActiveRequests - 1);
     }
-    
   } catch (error) {
     console.error('Error processing Ads.com request:', error);
     return NextResponse.json({
