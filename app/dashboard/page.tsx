@@ -111,27 +111,25 @@ function DashboardContent() {
   const { message } = App.useApp();
 
   const makeApiCall = async (endpoint: string, params: any) => {
-    // Add timestamp to prevent caching
-    const timestamp = new Date().getTime();
+    // 🚀 FIXED: No more cache busting - leverage backend cache for instant responses!
     
     try {
       // Get the current customer ID from window if available
       const currentCustomerId = typeof window !== 'undefined' ? window.__selectedCustomerId : selectedCustomerId;
       
-      console.log(`API call to ${endpoint}:`, params, 'with customerId:', currentCustomerId);
+      console.log(`🚀 CACHE-FRIENDLY API call to ${endpoint}:`, params, 'with customerId:', currentCustomerId);
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache'
+          'Content-Type': 'application/json'
+          // REMOVED ALL CACHE-BUSTING HEADERS - Trust the backend cache!
         },
         body: JSON.stringify({
           ...params,
-          customerId: currentCustomerId,
-          _timestamp: timestamp // Add timestamp parameter
-        }),
-        cache: 'no-store'
+          customerId: currentCustomerId
+          // REMOVED _timestamp parameter - No more cache busting!
+        })
+        // REMOVED cache: 'no-store' - Allow backend cache to work!
       });
       
       const data = await response.json();
