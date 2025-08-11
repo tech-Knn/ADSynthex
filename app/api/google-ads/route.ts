@@ -1192,9 +1192,17 @@ export async function POST(request: NextRequest) {
         },
       });
     } catch (err) {
-      console.error('[FRESH] Google Ads API fetch failed:', err);
+      const errorMessage = String(err);
+      const isAuthError = errorMessage.includes('401') || 
+                         errorMessage.includes('403') ||
+                         errorMessage.includes('UNAUTHENTICATED') ||
+                         errorMessage.includes('PERMISSION_DENIED') ||
+                         errorMessage.includes('token') ||
+                         errorMessage.includes('refresh');
       
-      // Check if we have any emergency fallback cache data
+      console.error(`[FRESH] Google Ads API fetch failed${isAuthError ? ' (AUTH ERROR)' : ''}:`, err);
+      
+      // ENHANCED FALLBACK STRATEGY - Different handling for auth vs other errors
       const emergencyCache = Object.entries(GA_CACHE).find(([key, data]) => {
         const [cacheStartDate, cacheEndDate] = key.split('|');
         return cacheStartDate === startDate && cacheEndDate === endDate;
@@ -1202,13 +1210,45 @@ export async function POST(request: NextRequest) {
       
       if (emergencyCache) {
         const [emergencyCacheKey, emergencyData] = emergencyCache;
-        console.log(`[EMERGENCY] Using emergency fallback cache: ${emergencyCacheKey}`);
+        const ageMinutes = Math.floor((Date.now() - emergencyData.timestamp) / 1000 / 60);
+        
+        console.log(`[EMERGENCY] Using emergency fallback cache: ${emergencyCacheKey} (age: ${ageMinutes}min)`);
+        
         return NextResponse.json(emergencyData.payload, {
           headers: {
-            'X-Cache': 'EMERGENCY_FALLBACK',
+            'X-Cache': isAuthError ? 'AUTH_FALLBACK' : 'EMERGENCY_FALLBACK',
             'X-Cache-Age': Math.floor((Date.now() - emergencyData.timestamp) / 1000).toString(),
             'X-Circuit-State': CIRCUIT_BREAKER.isOpen ? 'OPEN' : 'CLOSED',
+            'X-Auth-Issue': isAuthError ? 'true' : 'false',
             'Cache-Control': 'no-cache, no-store, must-revalidate',
+          },
+        });
+      }
+      
+      // AUTHENTICATION ERROR SPECIFIC HANDLING
+      if (isAuthError) {
+        console.error('[AUTH EMERGENCY] No cached data available for authentication fallback!');
+        console.error('[AUTH EMERGENCY] Refresh token status:', {
+          present: !!process.env.GOOGLE_ADS_REFRESH_TOKEN,
+          length: process.env.GOOGLE_ADS_REFRESH_TOKEN?.length || 0
+        });
+        
+        // For auth errors, return a specific response
+        return NextResponse.json({
+          error: 'Google Ads authentication failed. Cost data temporarily unavailable.',
+          _errorType: 'AUTHENTICATION',
+          _errorDetails: errorMessage,
+          _troubleshooting: {
+            refreshTokenPresent: !!process.env.GOOGLE_ADS_REFRESH_TOKEN,
+            suggestedAction: 'Check refresh token configuration'
+          },
+          _retryAfter: 300 // 5 minutes
+        }, {
+          status: 503, // Service Temporarily Unavailable
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'X-Auth-Issue': 'true',
+            'Retry-After': '300',
           },
         });
       }

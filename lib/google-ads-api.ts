@@ -115,13 +115,22 @@ function analyzeApiError(error: any): { shouldRetry: boolean; errorType: string;
     };
   }
   
-  // Authentication errors
+  // Authentication errors - IMPROVED: Allow retries for token refresh scenarios
   if (errorMessage.includes('401') || errorMessage.includes('UNAUTHENTICATED') || 
       errorMessage.includes('403') || errorMessage.includes('PERMISSION_DENIED')) {
+    
+    // Check if this might be a token refresh issue (retryable)
+    const isTokenRefreshIssue = errorMessage.includes('refresh') || 
+                               errorMessage.includes('token') ||
+                               errorMessage.includes('expired') ||
+                               errorMessage.includes('invalid_grant');
+    
     return {
-      shouldRetry: false,
+      shouldRetry: isTokenRefreshIssue, // Allow retries for token issues
       errorType: 'AUTHENTICATION',
-      message: 'Authentication failed. Please check your API credentials.'
+      message: isTokenRefreshIssue 
+        ? 'Token refresh required. Retrying with new authentication...'
+        : 'Authentication failed. Please check your API credentials.'
     };
   }
   
@@ -193,12 +202,22 @@ async function retryWithBackoff<T>(
         originalError: error.message
       });
       
-      // For quota exceeded, log additional information
+      // Enhanced error details for different error types
       if (errorAnalysis.errorType === 'QUOTA_EXCEEDED') {
-        console.error('Quota exceeded details:', {
+        console.error('[QUOTA ERROR] Daily quota exceeded details:', {
           dailyRequestCount,
           maxRequestsPerDay: RATE_LIMIT_CONFIG.maxRequestsPerDay,
           resetTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+        });
+      } else if (errorAnalysis.errorType === 'AUTHENTICATION') {
+        console.error('[AUTH ERROR] Authentication failure details:', {
+          refreshTokenPresent: !!process.env.GOOGLE_ADS_REFRESH_TOKEN,
+          tokenLength: process.env.GOOGLE_ADS_REFRESH_TOKEN?.length || 0,
+          clientIdPresent: !!process.env.GOOGLE_ADS_CLIENT_ID,
+          managerIdPresent: !!process.env.GOOGLE_ADS_MANAGER_ID,
+          attemptCount: attempt + 1,
+          maxRetries: maxRetries,
+          shouldRetry: errorAnalysis.shouldRetry
         });
       }
       
@@ -210,25 +229,43 @@ async function retryWithBackoff<T>(
   throw lastError!;
 }
 
-// Google Ads client initialization with better error handling
+// ROBUST Google Ads client initialization with authentication validation
 export function initializeGoogleAdsClient() {
   try {
+    // Validate required environment variables
+    const requiredEnvVars = [
+      'GOOGLE_ADS_CLIENT_ID',
+      'GOOGLE_ADS_CLIENT_SECRET', 
+      'GOOGLE_ADS_DEVELOPER_TOKEN',
+      'GOOGLE_ADS_REFRESH_TOKEN',
+      'GOOGLE_ADS_MANAGER_ID'
+    ];
+    
+    const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+    if (missingVars.length > 0) {
+      throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
+    }
+    
+    console.log('[GOOGLE ADS AUTH] ✅ All required environment variables present');
+    console.log('[GOOGLE ADS AUTH] Refresh token length:', process.env.GOOGLE_ADS_REFRESH_TOKEN?.length || 0);
+    
     const client = new GoogleAdsApi({
-      client_id: process.env.GOOGLE_ADS_CLIENT_ID || '',
-      client_secret: process.env.GOOGLE_ADS_CLIENT_SECRET || '',
-      developer_token: process.env.GOOGLE_ADS_DEVELOPER_TOKEN || ''
+      client_id: process.env.GOOGLE_ADS_CLIENT_ID!,
+      client_secret: process.env.GOOGLE_ADS_CLIENT_SECRET!,
+      developer_token: process.env.GOOGLE_ADS_DEVELOPER_TOKEN!
     });
     
-    // Create an auth client with refresh token
+    // Create an auth client with refresh token and enhanced error handling
     const customer = client.Customer({
-      customer_id: process.env.GOOGLE_ADS_MANAGER_ID || '',
-      refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN || '',
-      login_customer_id: process.env.GOOGLE_ADS_MANAGER_ID || ''
+      customer_id: process.env.GOOGLE_ADS_MANAGER_ID!,
+      refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN!,
+      login_customer_id: process.env.GOOGLE_ADS_MANAGER_ID!
     });
     
+    console.log('[GOOGLE ADS AUTH] 🚀 Client initialized successfully');
     return { client, customer };
   } catch (error) {
-    console.error('Error initializing Google Ads API client:', error);
+    console.error('[GOOGLE ADS AUTH] ❌ Failed to initialize Google Ads API client:', error);
     throw error;
   }
 }
@@ -542,16 +579,29 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string): Pr
           login_customer_id: process.env.GOOGLE_ADS_MANAGER_ID || ''
         });
         
-        // Helper function to make API calls with retry and rate limiting
+        // ENHANCED API call helper with authentication recovery
         const makeApiCall = async (query: string, operationName: string) => {
           await waitForRateLimit();
           
           return await retryWithBackoff(async () => {
-            console.log(`Making ${operationName} call for account ${account.id}`);
-            const response = await accountCustomer.query(query);
-            console.log(`${operationName} response: ${response?.length || 0} items`);
-            return response;
-          });
+            try {
+              console.log(`[AUTH] Making ${operationName} call for account ${account.id}`);
+              const response = await accountCustomer.query(query);
+              console.log(`[AUTH] ${operationName} success: ${response?.length || 0} items for account ${account.id}`);
+              return response;
+            } catch (authError: any) {
+              // Enhanced authentication error logging
+              console.error(`[AUTH ERROR] ${operationName} failed for account ${account.id}:`, {
+                error: authError.message,
+                account: account.id,
+                refreshTokenPresent: !!process.env.GOOGLE_ADS_REFRESH_TOKEN,
+                tokenLength: process.env.GOOGLE_ADS_REFRESH_TOKEN?.length || 0
+              });
+              
+              // Re-throw to trigger retry mechanism
+              throw authError;
+            }
+          }, RATE_LIMIT_CONFIG.maxRetries + 2); // Extra retries for auth issues
         };
         
         // Fetch active campaigns
