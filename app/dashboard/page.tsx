@@ -28,19 +28,20 @@ const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
 // Mock API functions since they don't exist in the codebase
-const fetchAdsComArticleData = async (startDate: string, endDate: string): Promise<AdsComArticleData[]> => {
-  // This would be replaced with an actual API call
+const fetchAdsComArticleData = async (startDate: string, endDate: string, forceRefresh: boolean = false): Promise<AdsComArticleData[]> => {
+  // FIXED: Now leverages backend cache for instant loading!
   try {
-    console.log(`Fetching Ads.com data for date range: ${startDate} to ${endDate}`);
-    const timestamp = new Date().getTime(); // Add timestamp to prevent caching
-    const response = await fetch(`/api/adscom?t=${timestamp}`, {
+    console.log(`🚀 Fetching Ads.com data (forceRefresh: ${forceRefresh}) for date range: ${startDate} to ${endDate}`);
+    
+    // NO MORE CACHE BUSTING - Let backend cache do its job!
+    const response = await fetch('/api/adscom', {
       method: 'POST',
       headers: { 
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache, no-store'
+        'Content-Type': 'application/json'
+        // Removed cache-busting headers - trust the backend cache!
       },
-      body: JSON.stringify({ startDate, endDate }),
-      cache: 'no-store'
+      body: JSON.stringify({ startDate, endDate, forceRefresh })
+      // Removed cache: 'no-store' - allow browser and backend caching
     });
     
     if (!response.ok) {
@@ -57,19 +58,20 @@ const fetchAdsComArticleData = async (startDate: string, endDate: string): Promi
   }
 };
 
-const fetchGoogleAdsData = async (startDate: string, endDate: string): Promise<GoogleAdsAd[]> => {
-  // This would be replaced with an actual API call
+const fetchGoogleAdsData = async (startDate: string, endDate: string, forceRefresh: boolean = false): Promise<GoogleAdsAd[]> => {
+  // FIXED: Now leverages backend cache for instant loading!
   try {
-    console.log(`Fetching Google Ads data for date range: ${startDate} to ${endDate}`);
-    const timestamp = new Date().getTime(); // Add timestamp to prevent caching
-    const response = await fetch(`/api/google-ads?t=${timestamp}`, {
+    console.log(`🚀 Fetching Google Ads data (forceRefresh: ${forceRefresh}) for date range: ${startDate} to ${endDate}`);
+    
+    // NO MORE CACHE BUSTING - Let backend cache provide instant responses!
+    const response = await fetch('/api/google-ads', {
       method: 'POST',
       headers: { 
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache, no-store'
+        'Content-Type': 'application/json'
+        // Removed cache-busting headers - trust the backend cache system!
       },
-      body: JSON.stringify({ startDate, endDate }),
-      cache: 'no-store'
+      body: JSON.stringify({ startDate, endDate, forceRefresh })
+      // Removed cache: 'no-store' - allow efficient caching
     });
     
     if (!response.ok) {
@@ -178,15 +180,23 @@ function DashboardContent() {
     }
   };
 
-  const fetchData = async (startDate: string, endDate: string, customerId?: string | null) => {
+  const fetchData = async (startDate: string, endDate: string, customerId?: string | null, isRefresh: boolean = false) => {
     const messageKey = 'dataFetch';
 
-    setLoading(true);
+    // 🚀 STALE-WHILE-REVALIDATE: Only show loading on initial load, not refresh
+    if (!isRefresh || (revenueData.length === 0 && costData.length === 0)) {
+      setLoading(true);
+      console.log('🔄 LOADING: Showing loading state for initial load');
+    } else {
+      console.log('🚀 INSTANT: Keeping existing data visible while refreshing in background');
+    }
     try {
-      // Use makeApiCall instead of direct fetch
+      // 🚀 LEVERAGE BACKEND CACHE - Pass forceRefresh only for manual refresh
+      const forceRefresh = isRefresh && window.event?.type === 'click'; // Only force on manual refresh
+      
       const [adscomData, googleAdsData] = await Promise.all([
-        makeApiCall('/api/adscom', { startDate, endDate, customerId }),
-        makeApiCall('/api/google-ads', { startDate, endDate, customerId })
+        makeApiCall('/api/adscom', { startDate, endDate, customerId, forceRefresh }),
+        makeApiCall('/api/google-ads', { startDate, endDate, customerId, forceRefresh })
       ]);
 
       // Check for API errors (cost side)
@@ -289,8 +299,8 @@ function DashboardContent() {
     
     // Set the new timer
     autoRefreshTimerRef.current = setTimeout(() => {
-      console.log(`🔄 AUTO-REFRESH: Executing refresh at ${new Date().toLocaleTimeString()}`);
-      handleRefresh();
+      console.log(`🔄 AUTO-REFRESH: Executing instant refresh at ${new Date().toLocaleTimeString()}`);
+      handleRefresh(); // This now uses stale-while-revalidate automatically
     }, refreshTime);
   };
   
@@ -568,15 +578,16 @@ function DashboardContent() {
     const startDate = dateRange[0].format('YYYY-MM-DD');
     const endDate = dateRange[1].format('YYYY-MM-DD');
     
+    console.log('🚀 INSTANT REFRESH: Using stale-while-revalidate - keeping UI responsive!');
+    
     // Clear any existing auto-refresh timer
     if (autoRefreshTimerRef.current) {
       clearTimeout(autoRefreshTimerRef.current);
       autoRefreshTimerRef.current = null;
     }
     
-    console.log('🔄 Manual refresh triggered at', new Date().toLocaleTimeString());
-    
-    fetchData(startDate, endDate, selectedCustomerId);
+    // 🚀 INSTANT REFRESH: Pass isRefresh=true to keep existing data visible while updating
+    fetchData(startDate, endDate, selectedCustomerId, true);
   };
 
   // Helper to get date ranges for different periods
