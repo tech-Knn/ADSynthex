@@ -583,12 +583,12 @@ async function scheduleSmartRefresh(cacheKey: string, delayMs: number = 0, costP
         lastCostUpdate: costPriority ? newTimestamp : cached.lastCostUpdate
       };
       
-      // CRITICAL: Invalidate any stale aggregated "All" cache that might be built from old account data
-      const allCacheKey = buildCacheKey(startDate, endDate, null);
-      if (GA_CACHE[allCacheKey]) {
-        console.log(`[CACHE INVALIDATION] Clearing stale "All" cache after individual account refresh`);
-        delete GA_CACHE[allCacheKey];
-      }
+      // DELETE aggregated cache invalidation (no longer needed and breaks cached 'all' data)
+      // const allCacheKey = buildCacheKey(startDate, endDate, null);
+      // if (GA_CACHE[allCacheKey]) {
+      //   console.log(`[CACHE INVALIDATION] Clearing stale "All" cache after individual account refresh`);
+      //   delete GA_CACHE[allCacheKey];
+      // }
       
       recordApiSuccess(); // Record successful API call
       console.log(`[SMART REFRESH] Successfully updated GoogleAds cache for ${cacheKey}`);
@@ -877,13 +877,9 @@ function tryBuildFromAccountCaches(startDate: string, endDate: string) {
     }
   }
   
-  // 🚀 RELAXED AGGREGATION REQUIREMENTS - Prevent QPS overload
-  // Accept 50% cached accounts and allow up to 4 hours cache age to avoid API storms
-  const minAccountsRequired = Math.ceil(accounts.length * 0.5); // 50% instead of 70%
-  const maxCacheAge = 4 * 60 * 60 * 1000; // 4 hours instead of 12 hours
-  
-  if (cachedAccounts.length >= minAccountsRequired && oldestCacheAge < maxCacheAge) {
-    console.log(`[🚀 QPS-SAFE AGGREGATION] Building from ${cachedAccounts.length}/${accounts.length} cached accounts (${Math.round(cachedAccounts.length/accounts.length*100)}% coverage)`);
+  // Only proceed if we have data for at least 70% of accounts and cache is reasonable fresh (< 12 hours)
+  if (cachedAccounts.length >= Math.ceil(accounts.length * 0.7) && oldestCacheAge < (12 * 60 * 60 * 1000)) {
+    console.log(`[AGGREGATION] Building from ${cachedAccounts.length}/${accounts.length} cached accounts`);
     
     // Aggregate all ads from individual accounts
     const allAds = cachedAccounts.flatMap(account => account.ads || []);
@@ -1085,6 +1081,7 @@ export async function POST(request: NextRequest) {
     if (cached) {
       const age = now - cached.timestamp;
       const ageSeconds = Math.round(age / 1000);
+      const isFreshForCost = age < COST_PRIORITY_TTL_MS;
       const cacheQuality = getCacheQuality(age);
       
       console.log(`[🚀 BULLETPROOF CACHE] Data age: ${ageSeconds}s, quality: ${cacheQuality.quality}, canServeInstantly: ${cacheQuality.canServeInstantly}`);
@@ -1097,11 +1094,9 @@ export async function POST(request: NextRequest) {
           scheduleSmartRefresh(cacheKey, 2000, true); // QPS-safe background refresh (2 seconds)
         }
         
-        const cacheStatus = isFreshForCost ? 'INSTANT-FRESH' : (isGenerallyFresh ? 'INSTANT-GOOD' : 'INSTANT-STALE');
-        
         return NextResponse.json(cached.payload, {
           headers: {
-            'X-Cache': cacheQuality.quality,
+            'X-Cache': cacheQuality.quality, // use cacheQuality directly
             'X-Cache-Tier': cacheQuality.tier,
             'X-Cache-Age': ageSeconds.toString(),
             'X-Should-Refresh': cacheQuality.shouldRefresh.toString(),
@@ -1131,41 +1126,24 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 🛡️ QPS-SAFE EMERGENCY FALLBACK - Serve older data to prevent API overload
-    // For "All Accounts", prioritize stability over freshness to avoid QPS issues
+    // Emergency fallback - serve very old cache if available
     if (cached && typeof cached === 'object' && 'timestamp' in cached && 'payload' in cached) {
       const cachedData = cached as CachedGAData;
       const cacheAge = now - cachedData.timestamp;
-      const isAllAccountsRequest = !customerId; // All accounts = null customerId
-      
-      // For All Accounts: extend emergency cache to 6 hours to prevent QPS storms
-      const emergencyLimit = isAllAccountsRequest 
-        ? 6 * 60 * 60 * 1000  // 6 hours for All Accounts (QPS safety)
-        : EMERGENCY_CACHE_TTL_MS; // 2 hours for individual accounts
-      
-      if (cacheAge < emergencyLimit) {
-        // For All Accounts, be very conservative about API refresh to avoid QPS issues
-        const shouldStartRefresh = isAllAccountsRequest 
-          ? !cachedData.refreshing && shouldAttemptApiCall() && cacheAge > (4 * 60 * 60 * 1000) // Only after 4 hours for All Accounts
-          : !cachedData.refreshing && shouldAttemptApiCall(); // Normal refresh for individual accounts
-          
-        if (shouldStartRefresh) {
-          const refreshDelay = isAllAccountsRequest ? 30000 : 100; // 30s delay for All Accounts to stagger
-          console.log(`[EMERGENCY CACHE] Starting ${isAllAccountsRequest ? 'QPS-SAFE' : 'immediate'} refresh for ${isAllAccountsRequest ? 'All Accounts' : 'single account'}: ${cacheKey}`);
-          scheduleSmartRefresh(cacheKey, refreshDelay, true);
+      if (cacheAge < EMERGENCY_CACHE_TTL_MS) {
+        // Start immediate cost-priority refresh
+        if (!cachedData.refreshing && shouldAttemptApiCall()) {
+          console.log(`[EMERGENCY CACHE] Starting immediate cost-priority refresh for very stale data: ${cacheKey}`);
+          scheduleSmartRefresh(cacheKey, 100, true); // Immediate cost-priority refresh
         }
         
-        const ageMinutes = Math.round(cacheAge/60000);
-        console.log(`[EMERGENCY CACHE] Returning ${isAllAccountsRequest ? 'QPS-SAFE' : ''} stale data (age: ${ageMinutes}min)`);
-        
+        console.log(`[EMERGENCY CACHE] Returning very stale data (age: ${Math.round(cacheAge/60000)}min)`);
         return NextResponse.json(cachedData.payload, {
           headers: {
-            'X-Cache': isAllAccountsRequest ? 'QPS_SAFE_EMERGENCY' : 'EMERGENCY',
+            'X-Cache': 'EMERGENCY',
             'X-Cache-Age': Math.floor(cacheAge / 1000).toString(),
-            'X-QPS-Safe-Mode': isAllAccountsRequest ? 'true' : 'false',
-            'X-All-Accounts': isAllAccountsRequest ? 'true' : 'false',
-            'X-Emergency-Limit': `${emergencyLimit/1000/60/60}h`,
-            'X-Data-Status': shouldStartRefresh ? 'refreshing' : 'stable',
+            'X-Cost-Priority': 'true',
+            'X-Data-Status': 'refreshing',
             'Cache-Control': 'no-cache, no-store, must-revalidate',
           },
         });
@@ -1189,30 +1167,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 🛡️ QPS-SAFE CIRCUIT BREAKER - Extra protection for All Accounts requests
-    const isAllAccountsRequest = !customerId;
-    
+    // 5) No cache data available - check circuit breaker before attempting fresh request
     if (!shouldAttemptApiCall()) {
       console.log(`[CIRCUIT] Circuit breaker open, cannot fetch fresh data for ${cacheKey}`);
-      
-      // For All Accounts, provide a helpful QPS-aware error message
-      if (isAllAccountsRequest) {
-        return NextResponse.json({
-          error: 'All Accounts data temporarily unavailable due to QPS protection',
-          _errorType: 'QPS_PROTECTION', 
-          _suggestion: 'Try selecting a specific account instead, or wait a few minutes',
-          _allAccountsMode: true,
-          _circuitBreakerActive: true
-        }, {
-          status: 503,
-          headers: {
-            'X-QPS-Protection': 'ACTIVE',
-            'X-All-Accounts-Mode': 'true',
-            'Retry-After': '300', // 5 minutes
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-          },
-        });
-      }
       return NextResponse.json({
         error: 'Google Ads API temporarily unavailable. Circuit breaker is open due to repeated failures.',
         _circuitOpen: true,
