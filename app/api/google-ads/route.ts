@@ -5,7 +5,8 @@ import {
   storeSmartCacheData,
   scheduleBackgroundRefresh,
   getRateLimitStatus,
-  mergeCostData
+  mergeCostData,
+  handleGoogleAdsRateLimit
 } from '../../../lib/google-ads-smart-cache';
 
 // Helper to transform API response
@@ -332,6 +333,11 @@ export async function POST(request: NextRequest) {
       });
     } catch (apiErr) {
       console.error('Google Ads API error, falling back to mock:', apiErr);
+      
+      // Handle Google Ads specific rate limit errors
+      if (handleGoogleAdsRateLimit(apiErr)) {
+        console.warn('Rate limit detected, serving cached or mock data');
+      }
       
       // Get updated quota status
       const quotaStatus = getQuotaStatus();

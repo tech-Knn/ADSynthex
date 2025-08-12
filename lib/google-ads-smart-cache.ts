@@ -33,11 +33,11 @@ interface RateLimitConfig {
 }
 
 const RATE_LIMIT_CONFIG: RateLimitConfig = {
-  maxQPS: 1,                   // Conservative: 1 request per second
-  maxDailyRequests: 7500,      // Leave buffer from 8000 limit
-  burstLimit: 5,               // Max 5 requests in burst
-  cooldownPeriod: 60000,       // 1 minute cooldown
-  requestWindow: 1000          // 1 second window
+  maxQPS: 1,                   // Ultra conservative: 1 request per second
+  maxDailyRequests: 6000,      // Much lower buffer from 8000 limit
+  burstLimit: 2,               // Max 2 requests in burst (very conservative)
+  cooldownPeriod: 300000,      // 5 minute cooldown when hit
+  requestWindow: 2000          // 2 second window for QPS calculation
 };
 
 // Cache TTL configuration
@@ -49,9 +49,11 @@ const CACHE_CONFIG = {
   staleWhileRevalidate: 30 * 60 * 1000 // 30 minutes stale period
 };
 
-// Global cache storage
-const SMART_CACHE: Record<string, SmartCacheData> = (globalThis as any).__SMART_CACHE__ || {};
-const COST_CACHE: Record<string, SmartCacheData> = (globalThis as any).__COST_CACHE__ || {};
+// Separate cache storage for different data types
+const INDIVIDUAL_CACHE: Record<string, SmartCacheData> = (globalThis as any).__INDIVIDUAL_CACHE__ || {};
+const INDIVIDUAL_COST_CACHE: Record<string, SmartCacheData> = (globalThis as any).__INDIVIDUAL_COST_CACHE__ || {};
+const ALL_ACCOUNTS_CACHE: Record<string, SmartCacheData> = (globalThis as any).__ALL_ACCOUNTS_CACHE__ || {};
+const ALL_ACCOUNTS_COST_CACHE: Record<string, SmartCacheData> = (globalThis as any).__ALL_ACCOUNTS_COST_CACHE__ || {};
 
 // Rate limiting state
 const RATE_LIMITER = {
@@ -71,8 +73,10 @@ const BACKGROUND_WORKERS = {
 };
 
 // Initialize global storage
-(globalThis as any).__SMART_CACHE__ = SMART_CACHE;
-(globalThis as any).__COST_CACHE__ = COST_CACHE;
+(globalThis as any).__INDIVIDUAL_CACHE__ = INDIVIDUAL_CACHE;
+(globalThis as any).__INDIVIDUAL_COST_CACHE__ = INDIVIDUAL_COST_CACHE;
+(globalThis as any).__ALL_ACCOUNTS_CACHE__ = ALL_ACCOUNTS_CACHE;
+(globalThis as any).__ALL_ACCOUNTS_COST_CACHE__ = ALL_ACCOUNTS_COST_CACHE;
 
 // Helper functions
 export const buildSmartCacheKey = (startDate: string, endDate: string, accountId: string | null): string => {
@@ -160,10 +164,35 @@ const recordRequest = (): void => {
   console.log(`[RATE_LIMITER] Request recorded. Daily: ${RATE_LIMITER.dailyCount}/${RATE_LIMIT_CONFIG.maxDailyRequests}, QPS: ${RATE_LIMITER.requestTimes.length}/${RATE_LIMIT_CONFIG.maxQPS}`);
 };
 
-const enterCooldown = (): void => {
+const enterCooldown = (customPeriod?: number): void => {
+  const cooldownTime = customPeriod || RATE_LIMIT_CONFIG.cooldownPeriod;
   RATE_LIMITER.isInCooldown = true;
-  RATE_LIMITER.cooldownUntil = Date.now() + RATE_LIMIT_CONFIG.cooldownPeriod;
-  console.warn(`[RATE_LIMITER] Entering cooldown until ${new Date(RATE_LIMITER.cooldownUntil).toISOString()}`);
+  RATE_LIMITER.cooldownUntil = Date.now() + cooldownTime;
+  console.warn(`[RATE_LIMITER] Entering cooldown for ${cooldownTime / 1000} seconds until ${new Date(RATE_LIMITER.cooldownUntil).toISOString()}`);
+};
+
+// Enhanced rate limit detection for Google Ads specific errors
+export const handleGoogleAdsRateLimit = (error: any): boolean => {
+  const errorMessage = error?.message || error?.toString() || '';
+  const errorString = JSON.stringify(error);
+  
+  // Check for "Too many requests" error
+  if (errorString.includes('Too many requests') || 
+      errorString.includes('Retry in') ||
+      errorMessage.includes('RESOURCE_EXHAUSTED') ||
+      errorMessage.includes('429')) {
+    
+    // Extract retry time if available
+    const retryMatch = errorString.match(/Retry in (\d+) seconds/);
+    const retrySeconds = retryMatch ? parseInt(retryMatch[1]) : 300; // Default 5 minutes
+    const cooldownTime = Math.min(retrySeconds * 1000, 1800000); // Max 30 minutes
+    
+    console.error(`[RATE_LIMITER] Google Ads rate limit detected! Retry in ${retrySeconds} seconds`);
+    enterCooldown(cooldownTime);
+    return true;
+  }
+  
+  return false;
 };
 
 // Cache validation functions
@@ -247,7 +276,7 @@ const getIndividualAccountsData = (startDate: string, endDate: string): {
   let staleCount = 0;
   
   for (const key of accountKeys) {
-    const cached = SMART_CACHE[key];
+    const cached = INDIVIDUAL_CACHE[key];
     if (cached && cached.isValid && now < cached.expires) {
       individualData.push(cached.payload);
     } else if (cached && now < cached.expires + CACHE_CONFIG.staleWhileRevalidate) {
@@ -287,8 +316,9 @@ export const getSmartCachedData = (
   
   console.log(`[CACHE_DEBUG] Looking for cache keys: data=${cacheKey}, cost=${costCacheKey}`);
   
-  const cachedData = SMART_CACHE[cacheKey];
-  const cachedCost = COST_CACHE[costCacheKey];
+  // Use individual account cache
+  const cachedData = INDIVIDUAL_CACHE[cacheKey];
+  const cachedCost = INDIVIDUAL_COST_CACHE[costCacheKey];
   
   console.log(`[CACHE_DEBUG] Cache found: data=${!!cachedData}, cost=${!!cachedCost}`);
   if (cachedData) {
@@ -361,17 +391,33 @@ const getAggregatedCachedData = (
   shouldRefresh: boolean;
   needsBackgroundRefresh: boolean;
 } => {
-  // First check if we have a cached aggregated result
+  // Check for cached aggregated result in separate "all accounts" cache
   const cacheKey = buildSmartCacheKey(startDate, endDate, null);
-  const cachedAggregated = SMART_CACHE[cacheKey];
+  const costCacheKey = buildCostCacheKey(startDate, endDate, null);
+  const cachedAggregated = ALL_ACCOUNTS_CACHE[cacheKey];
+  const cachedAggregatedCost = ALL_ACCOUNTS_COST_CACHE[costCacheKey];
   const now = Date.now();
   
-  if (cachedAggregated && cachedAggregated.isValid && now < cachedAggregated.expires) {
+  // Check if we have valid aggregated cache data
+  const hasValidAggregatedData = cachedAggregated && cachedAggregated.isValid && now < cachedAggregated.expires;
+  const hasValidAggregatedCost = cachedAggregatedCost && cachedAggregatedCost.isValid && now < cachedAggregatedCost.expires;
+  
+  if (hasValidAggregatedData && hasValidAggregatedCost) {
+    const data = mergeCostData(cachedAggregated.payload, cachedAggregatedCost.payload);
     return {
-      data: cachedAggregated.payload,
-      cacheStatus: 'HIT_AGGREGATED',
+      data,
+      cacheStatus: 'HIT_AGGREGATED_FULL',
       shouldRefresh: false,
-      needsBackgroundRefresh: now > cachedAggregated.staleAfter
+      needsBackgroundRefresh: (now > cachedAggregated.staleAfter) || (now > cachedAggregatedCost.staleAfter)
+    };
+  } else if (hasValidAggregatedData || hasValidAggregatedCost) {
+    // Partial cache hit - serve what we have and refresh
+    const data = hasValidAggregatedData ? cachedAggregated.payload : cachedAggregatedCost?.payload;
+    return {
+      data,
+      cacheStatus: 'HIT_AGGREGATED_PARTIAL',
+      shouldRefresh: true,
+      needsBackgroundRefresh: false
     };
   }
   
@@ -466,8 +512,15 @@ export const storeSmartCacheData = (
   console.log(`[CACHE_STORE] Storing data for accountId=${accountId}, keys: data=${cacheKey}, cost=${costCacheKey}`);
   console.log(`[CACHE_STORE] Data has ${data?.ads?.length || 0} ads, total_cost: ${data?.total_cost || 0}`);
   
-  // Store full data
-  SMART_CACHE[cacheKey] = {
+  // Determine which cache to use
+  const isAllAccountsView = !accountId || accountId === 'all';
+  const dataCache = isAllAccountsView ? ALL_ACCOUNTS_CACHE : INDIVIDUAL_CACHE;
+  const costCache = isAllAccountsView ? ALL_ACCOUNTS_COST_CACHE : INDIVIDUAL_COST_CACHE;
+  
+  console.log(`[CACHE_STORE] Using ${isAllAccountsView ? 'ALL_ACCOUNTS' : 'INDIVIDUAL'} cache`);
+  
+  // Store full data in appropriate cache
+  dataCache[cacheKey] = {
     timestamp: now,
     payload: data,
     isValid,
@@ -483,7 +536,7 @@ export const storeSmartCacheData = (
   const costValid = validateCostData(costData);
   
   if (costValid) {
-    COST_CACHE[costCacheKey] = {
+    costCache[costCacheKey] = {
       timestamp: now,
       payload: costData,
       isValid: true,
@@ -570,19 +623,18 @@ const processBackgroundQueue = async (): Promise<void> => {
     } catch (error) {
       console.error(`[BACKGROUND] Error processing ${workerId}:`, error);
       
-      // If we hit rate limits, enter cooldown
-      if (error.message?.includes('429') || error.message?.includes('RATE_LIMIT')) {
-        enterCooldown();
+      // Handle Google Ads specific rate limit errors
+      if (handleGoogleAdsRateLimit(error)) {
         BACKGROUND_WORKERS.queue.unshift(item); // Requeue
-        break; // Stop processing
+        break; // Stop processing during cooldown
       }
       
     } finally {
       BACKGROUND_WORKERS.active.delete(workerId);
     }
     
-    // Add delay between requests to respect rate limits
-    await new Promise(resolve => setTimeout(resolve, 1200)); // 1.2 second delay
+    // Add much longer delay between requests to be ultra conservative
+    await new Promise(resolve => setTimeout(resolve, 3000)); // 3 second delay
   }
   
   BACKGROUND_WORKERS.isProcessing = false;
