@@ -7,16 +7,15 @@ import * as utils from './google-ads-utils';
 // Target accounts configuration
 const TARGET_ACCOUNTS = config.TARGET_ACCOUNTS;
 
-// Rate limiting configuration - MATHEMATICALLY SAFE to never exceed Google Ads API limits
+// Rate limiting configuration
 const RATE_LIMIT_CONFIG = {
-  maxRequestsPerMinute: 40, // Safe buffer under Google's 60/minute limit
-  maxRequestsPerDay: 6000,  // Large buffer for other operations
-  delayBetweenAccounts: 4000, // 4 seconds between accounts (safer)
-  delayBetweenRequests: 1500,  // 1.5 seconds between requests (40/min = 1500ms)
+  maxRequestsPerMinute: 60, // Conservative limit
+  maxRequestsPerDay: 8000,  // Leave buffer for other operations
+  delayBetweenAccounts: 1000, // 1 second between accounts
+  delayBetweenRequests: 200,  // 200ms between requests
   maxRetries: 3,
   backoffMultiplier: 2,
-  maxBackoffDelay: 60000,  // 1 minute max backoff delay
-  maxConcurrentRefreshes: 2 // Limit concurrent cache refreshes
+  maxBackoffDelay: 10000
 };
 
 // Rate limiting state
@@ -24,20 +23,6 @@ let requestCount = 0;
 let lastRequestTime = 0;
 let dailyRequestCount = 0;
 let lastDailyReset = new Date().toDateString();
-
-// Add a per-account queue and staggered request logic
-const accountRequestQueue: Record<string, Promise<any>> = {};
-
-async function queueAccountRequest(accountId: string, fn: () => Promise<any>): Promise<any> {
-  if (!accountRequestQueue[accountId]) {
-    accountRequestQueue[accountId] = Promise.resolve();
-  }
-  // Chain the new request onto the previous one
-  accountRequestQueue[accountId] = accountRequestQueue[accountId].then(async () => {
-    return await fn();
-  });
-  return accountRequestQueue[accountId];
-}
 
 // Helper function to reset daily counter
 function resetDailyCounter() {
@@ -82,21 +67,9 @@ async function waitForRateLimit(): Promise<void> {
 }
 
 // Helper function to check API quotas and provide detailed error information
-function analyzeApiError(error: any): { shouldRetry: boolean; errorType: string; message: string; retryAfter?: number } {
+function analyzeApiError(error: any): { shouldRetry: boolean; errorType: string; message: string } {
   const errorMessage = error.message || error.toString();
   
-  // Google short-term rate limit: "Too many requests. Retry in X seconds."
-  const retryMatch = errorMessage.match(/Retry in (\d+) seconds/);
-  if (retryMatch) {
-    const retryAfter = parseInt(retryMatch[1], 10) * 1000;
-    return {
-      shouldRetry: true,
-      errorType: 'SHORT_TERM_RATE_LIMIT',
-      message: `Short-term rate limit hit. Retry in ${retryAfter / 1000}s`,
-      retryAfter
-    };
-  }
-
   // Rate limit errors
   if (errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
     return {
@@ -115,22 +88,13 @@ function analyzeApiError(error: any): { shouldRetry: boolean; errorType: string;
     };
   }
   
-  // Authentication errors - IMPROVED: Allow retries for token refresh scenarios
+  // Authentication errors
   if (errorMessage.includes('401') || errorMessage.includes('UNAUTHENTICATED') || 
       errorMessage.includes('403') || errorMessage.includes('PERMISSION_DENIED')) {
-    
-    // Check if this might be a token refresh issue (retryable)
-    const isTokenRefreshIssue = errorMessage.includes('refresh') || 
-                               errorMessage.includes('token') ||
-                               errorMessage.includes('expired') ||
-                               errorMessage.includes('invalid_grant');
-    
     return {
-      shouldRetry: isTokenRefreshIssue, // Allow retries for token issues
+      shouldRetry: false,
       errorType: 'AUTHENTICATION',
-      message: isTokenRefreshIssue 
-        ? 'Token refresh required. Retrying with new authentication...'
-        : 'Authentication failed. Please check your API credentials.'
+      message: 'Authentication failed. Please check your API credentials.'
     };
   }
   
@@ -178,15 +142,11 @@ async function retryWithBackoff<T>(
       
       const errorAnalysis = analyzeApiError(error);
       
-      // If Google tells us exactly how long to wait, use that
       if (attempt < maxRetries && errorAnalysis.shouldRetry) {
-        let delay = Math.min(
+        const delay = Math.min(
           baseDelay * Math.pow(RATE_LIMIT_CONFIG.backoffMultiplier, attempt),
           RATE_LIMIT_CONFIG.maxBackoffDelay
         );
-        if (errorAnalysis.retryAfter) {
-          delay = errorAnalysis.retryAfter;
-        }
         
         console.log(`Google Ads API attempt ${attempt + 1} failed: ${errorAnalysis.errorType} - ${errorAnalysis.message}`);
         console.log(`Retrying in ${delay}ms...`);
@@ -202,22 +162,12 @@ async function retryWithBackoff<T>(
         originalError: error.message
       });
       
-      // Enhanced error details for different error types
+      // For quota exceeded, log additional information
       if (errorAnalysis.errorType === 'QUOTA_EXCEEDED') {
-        console.error('[QUOTA ERROR] Daily quota exceeded details:', {
+        console.error('Quota exceeded details:', {
           dailyRequestCount,
           maxRequestsPerDay: RATE_LIMIT_CONFIG.maxRequestsPerDay,
           resetTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-        });
-      } else if (errorAnalysis.errorType === 'AUTHENTICATION') {
-        console.error('[AUTH ERROR] Authentication failure details:', {
-          refreshTokenPresent: !!process.env.GOOGLE_ADS_REFRESH_TOKEN,
-          tokenLength: process.env.GOOGLE_ADS_REFRESH_TOKEN?.length || 0,
-          clientIdPresent: !!process.env.GOOGLE_ADS_CLIENT_ID,
-          managerIdPresent: !!process.env.GOOGLE_ADS_MANAGER_ID,
-          attemptCount: attempt + 1,
-          maxRetries: maxRetries,
-          shouldRetry: errorAnalysis.shouldRetry
         });
       }
       
@@ -229,43 +179,25 @@ async function retryWithBackoff<T>(
   throw lastError!;
 }
 
-// ROBUST Google Ads client initialization with authentication validation
+// Google Ads client initialization with better error handling
 export function initializeGoogleAdsClient() {
   try {
-    // Validate required environment variables
-    const requiredEnvVars = [
-      'GOOGLE_ADS_CLIENT_ID',
-      'GOOGLE_ADS_CLIENT_SECRET', 
-      'GOOGLE_ADS_DEVELOPER_TOKEN',
-      'GOOGLE_ADS_REFRESH_TOKEN',
-      'GOOGLE_ADS_MANAGER_ID'
-    ];
-    
-    const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
-    if (missingVars.length > 0) {
-      throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
-    }
-    
-    console.log('[GOOGLE ADS AUTH] ✅ All required environment variables present');
-    console.log('[GOOGLE ADS AUTH] Refresh token length:', process.env.GOOGLE_ADS_REFRESH_TOKEN?.length || 0);
-    
     const client = new GoogleAdsApi({
-      client_id: process.env.GOOGLE_ADS_CLIENT_ID!,
-      client_secret: process.env.GOOGLE_ADS_CLIENT_SECRET!,
-      developer_token: process.env.GOOGLE_ADS_DEVELOPER_TOKEN!
+      client_id: process.env.GOOGLE_ADS_CLIENT_ID || '',
+      client_secret: process.env.GOOGLE_ADS_CLIENT_SECRET || '',
+      developer_token: process.env.GOOGLE_ADS_DEVELOPER_TOKEN || ''
     });
     
-    // Create an auth client with refresh token and enhanced error handling
+    // Create an auth client with refresh token
     const customer = client.Customer({
-      customer_id: process.env.GOOGLE_ADS_MANAGER_ID!,
-      refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN!,
-      login_customer_id: process.env.GOOGLE_ADS_MANAGER_ID!
+      customer_id: process.env.GOOGLE_ADS_MANAGER_ID || '',
+      refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN || '',
+      login_customer_id: process.env.GOOGLE_ADS_MANAGER_ID || ''
     });
     
-    console.log('[GOOGLE ADS AUTH] 🚀 Client initialized successfully');
     return { client, customer };
   } catch (error) {
-    console.error('[GOOGLE ADS AUTH] ❌ Failed to initialize Google Ads API client:', error);
+    console.error('Error initializing Google Ads API client:', error);
     throw error;
   }
 }
@@ -562,230 +494,129 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string): Pr
 
   for (let i = 0; i < TARGET_ACCOUNTS.length; i++) {
     const account = TARGET_ACCOUNTS[i];
-    await queueAccountRequest(account.id, async () => {
-      try {
-        // Check rate limits before processing each account
-        // if (!checkRateLimits()) { // This line is now handled by queueAccountRequest and waitForRateLimit
-        //   console.warn(`Rate limit reached, skipping account ${account.id}`);
-        //   return; // Skip the account if rate limit is hit
-        // }
+    
+    try {
+      // Check rate limits before processing each account
+      if (!checkRateLimits()) {
+        console.warn(`Rate limit reached, skipping account ${account.id}`);
+        continue;
+      }
 
-        console.log(`Processing account ${i + 1}/${TARGET_ACCOUNTS.length}: ${account.id} (${account.name})`);
+      console.log(`Processing account ${i + 1}/${TARGET_ACCOUNTS.length}: ${account.id} (${account.name})`);
+      
+      // Create account-specific customer
+      const accountCustomer = client.Customer({
+        customer_id: account.id,
+        refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN || '',
+        login_customer_id: process.env.GOOGLE_ADS_MANAGER_ID || ''
+      });
+      
+      // Helper function to make API calls with retry and rate limiting
+      const makeApiCall = async (query: string, operationName: string) => {
+        await waitForRateLimit();
         
-        // Create account-specific customer
-        const accountCustomer = client.Customer({
-          customer_id: account.id,
-          refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN || '',
-          login_customer_id: process.env.GOOGLE_ADS_MANAGER_ID || ''
+        return await retryWithBackoff(async () => {
+          console.log(`Making ${operationName} call for account ${account.id}`);
+          const response = await accountCustomer.query(query);
+          console.log(`${operationName} response: ${response?.length || 0} items`);
+          return response;
         });
-        
-        // ENHANCED API call helper with authentication recovery
-        const makeApiCall = async (query: string, operationName: string) => {
-          await waitForRateLimit();
-          
-          return await retryWithBackoff(async () => {
-            try {
-              console.log(`[AUTH] Making ${operationName} call for account ${account.id}`);
-              const response = await accountCustomer.query(query);
-              console.log(`[AUTH] ${operationName} success: ${response?.length || 0} items for account ${account.id}`);
-              return response;
-            } catch (authError: any) {
-              // Enhanced authentication error logging
-              console.error(`[AUTH ERROR] ${operationName} failed for account ${account.id}:`, {
-                error: authError.message,
-                account: account.id,
-                refreshTokenPresent: !!process.env.GOOGLE_ADS_REFRESH_TOKEN,
-                tokenLength: process.env.GOOGLE_ADS_REFRESH_TOKEN?.length || 0
-              });
-              
-              // Re-throw to trigger retry mechanism
-              throw authError;
-            }
-          }, RATE_LIMIT_CONFIG.maxRetries + 2); // Extra retries for auth issues
-        };
-        
-        // Fetch active campaigns
-        const activeCampaignQuery = buildActiveCampaignQuery(startDate, endDate);
-        const activeCampaignResponse = await makeApiCall(activeCampaignQuery, 'Active Campaigns');
-        if (activeCampaignResponse && activeCampaignResponse.length > 0) {
-          const processedCampaigns = processCampaignData(activeCampaignResponse, account);
-          data.campaigns.push(...processedCampaigns);
-        }
+      };
+      
+      // Fetch active campaigns
+      const activeCampaignQuery = buildActiveCampaignQuery(startDate, endDate);
+      const activeCampaignResponse = await makeApiCall(activeCampaignQuery, 'Active Campaigns');
+      if (activeCampaignResponse && activeCampaignResponse.length > 0) {
+        const processedCampaigns = processCampaignData(activeCampaignResponse, account);
+        data.campaigns.push(...processedCampaigns);
+      }
 
-        // Fetch all campaigns
-        const allCampaignsQuery = buildAllCampaignsQuery(startDate, endDate);
-        const allCampaignsResponse = await makeApiCall(allCampaignsQuery, 'All Campaigns');
-        if (allCampaignsResponse && allCampaignsResponse.length > 0) {
-          const allCampaigns = processCampaignData(allCampaignsResponse, account);
-          
-          // Merge campaign lists, prioritizing active campaigns
-          const campaignMap = new Map();
-          
-          // First add all campaigns
-          for (const campaign of allCampaigns) {
+      // Fetch all campaigns
+      const allCampaignsQuery = buildAllCampaignsQuery(startDate, endDate);
+      const allCampaignsResponse = await makeApiCall(allCampaignsQuery, 'All Campaigns');
+      if (allCampaignsResponse && allCampaignsResponse.length > 0) {
+        const allCampaigns = processCampaignData(allCampaignsResponse, account);
+        
+        // Merge campaign lists, prioritizing active campaigns
+        const campaignMap = new Map();
+        
+        // First add all campaigns
+        for (const campaign of allCampaigns) {
+          campaignMap.set(campaign.campaign_id, campaign);
+        }
+        
+        // Then override with active campaigns
+        for (const campaign of data.campaigns) {
+          if (campaign.customer_id === account.id) {
             campaignMap.set(campaign.campaign_id, campaign);
           }
-          
-          // Then override with active campaigns
-          for (const campaign of data.campaigns) {
-            if (campaign.customer_id === account.id) {
-              campaignMap.set(campaign.campaign_id, campaign);
-            }
-          }
-          
-          // Update campaigns list
-          data.campaigns = data.campaigns.filter(c => c.customer_id !== account.id);
-          data.campaigns.push(...Array.from(campaignMap.values()));
         }
+        
+        // Update campaigns list
+        data.campaigns = data.campaigns.filter(c => c.customer_id !== account.id);
+        data.campaigns.push(...Array.from(campaignMap.values()));
+      }
 
-        // Fetch active ad group ads
-        const activeAdQuery = buildActiveAdGroupAdQuery(startDate, endDate);
-        const activeAdResponse = await makeApiCall(activeAdQuery, 'Active Ads');
-        if (activeAdResponse && activeAdResponse.length > 0) {
-          const processedAds = processAdData(activeAdResponse, account);
-          data.ads.push(...processedAds);
+      // Fetch active ad group ads
+      const activeAdQuery = buildActiveAdGroupAdQuery(startDate, endDate);
+      const activeAdResponse = await makeApiCall(activeAdQuery, 'Active Ads');
+      if (activeAdResponse && activeAdResponse.length > 0) {
+        const processedAds = processAdData(activeAdResponse, account);
+        data.ads.push(...processedAds);
+      }
+
+      // Fetch all ad group ads
+      const allAdQuery = buildAllAdGroupAdQuery(startDate, endDate);
+      const allAdResponse = await makeApiCall(allAdQuery, 'All Ads');
+      if (allAdResponse && allAdResponse.length > 0) {
+        const allAds = processAdData(allAdResponse, account);
+        
+        // Merge ad lists, prioritizing active ads
+        const adMap = new Map();
+        
+        // First add all ads
+        for (const ad of allAds) {
+          adMap.set(ad.ad_id, ad);
         }
-
-        // Fetch all ad group ads
-        const allAdQuery = buildAllAdGroupAdQuery(startDate, endDate);
-        const allAdResponse = await makeApiCall(allAdQuery, 'All Ads');
-        if (allAdResponse && allAdResponse.length > 0) {
-          const allAds = processAdData(allAdResponse, account);
-          
-          // Merge ad lists, prioritizing active ads
-          const adMap = new Map();
-          
-          // First add all ads
-          for (const ad of allAds) {
+        
+        // Then override with active ads
+        for (const ad of data.ads) {
+          if (ad.customer_id === account.id) {
             adMap.set(ad.ad_id, ad);
           }
-          
-          // Then override with active ads
-          for (const ad of data.ads) {
-            if (ad.customer_id === account.id) {
-              adMap.set(ad.ad_id, ad);
-            }
-          }
-          
-          // Update ads list
-          data.ads = data.ads.filter(a => a.customer_id !== account.id);
-          data.ads.push(...Array.from(adMap.values()));
-        }
-
-        // Fetch Performance Max asset groups
-        const assetGroupQuery = buildAssetGroupQuery(startDate, endDate);
-        const assetGroupResponse = await makeApiCall(assetGroupQuery, 'Asset Groups');
-        if (assetGroupResponse && assetGroupResponse.length > 0) {
-          const assetGroupAds = processAssetGroupData(assetGroupResponse, account);
-          
-          // Add asset group ads to the list
-          data.ads.push(...assetGroupAds);
-        }
-
-        // COMPREHENSIVE CAMPAIGN COST DEBUGGING - Get ALL campaign types with cost
-        try {
-          const comprehensiveCampaignQuery = `
-            SELECT
-              campaign.id,
-              campaign.name,
-              campaign.status,
-              campaign.advertising_channel_type,
-              campaign.advertising_channel_sub_type,
-              metrics.cost_micros,
-              metrics.impressions,
-              metrics.clicks,
-              metrics.conversions
-            FROM campaign
-            WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
-          `;
-          
-          console.log(`[COST DEBUG] Fetching comprehensive campaign cost data for account ${account.id}`);
-          const comprehensiveResponse = await makeApiCall(comprehensiveCampaignQuery, 'Comprehensive Campaign Cost');
-          
-          if (comprehensiveResponse && comprehensiveResponse.length > 0) {
-            let totalAccountCost = 0;
-            const campaignTypes: Record<string, { cost: number; count: number }> = {};
-            
-            console.log(`[COST DEBUG] Account ${account.id} (${account.name}) campaign breakdown:`);
-            
-            comprehensiveResponse.forEach((campaign: any) => {
-              const costMicros = Number(campaign.metrics?.cost_micros || 0);
-              const cost = costMicros / 1000000;
-              const channelType = campaign.campaign?.advertising_channel_type || 'UNKNOWN';
-              const status = campaign.campaign?.status || 'UNKNOWN';
-              
-              totalAccountCost += cost;
-              
-              if (!campaignTypes[channelType]) {
-                campaignTypes[channelType] = { cost: 0, count: 0 };
-              }
-              campaignTypes[channelType].cost += cost;
-              campaignTypes[channelType].count += 1;
-              
-              if (cost > 0) {
-                console.log(`  ${campaign.campaign?.name || 'Unknown'} | ${channelType} | ${status} | $${cost.toFixed(2)}`);
-              }
-            });
-            
-            console.log(`[COST DEBUG] Account ${account.id} campaign type breakdown:`);
-            Object.entries(campaignTypes).forEach(([type, data]) => {
-              console.log(`  ${type}: ${data.count} campaigns, $${data.cost.toFixed(2)} total cost`);
-            });
-            
-            console.log(`[COST DEBUG] Account ${account.id} TOTAL COST FROM CAMPAIGNS: $${totalAccountCost.toFixed(2)}`);
-          }
-        } catch (debugError) {
-          console.error(`[COST DEBUG] Error fetching comprehensive cost data for account ${account.id}:`, debugError);
-        }
-
-        // Add delay between accounts to prevent overwhelming the API
-        if (i < TARGET_ACCOUNTS.length - 1) {
-          console.log(`Waiting ${RATE_LIMIT_CONFIG.delayBetweenAccounts}ms before next account...`);
-          await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_CONFIG.delayBetweenAccounts));
         }
         
-      } catch (error) {
-        console.error(`Error fetching data for account ${account.id}:`, error);
-        
-        // Continue with other accounts even if one fails
-        // This prevents one bad account from breaking the entire fetch
+        // Update ads list
+        data.ads = data.ads.filter(a => a.customer_id !== account.id);
+        data.ads.push(...Array.from(adMap.values()));
       }
-    });
+
+      // Fetch Performance Max asset groups
+      const assetGroupQuery = buildAssetGroupQuery(startDate, endDate);
+      const assetGroupResponse = await makeApiCall(assetGroupQuery, 'Asset Groups');
+      if (assetGroupResponse && assetGroupResponse.length > 0) {
+        const assetGroupAds = processAssetGroupData(assetGroupResponse, account);
+        
+        // Add asset group ads to the list
+        data.ads.push(...assetGroupAds);
+      }
+
+      // Add delay between accounts to prevent overwhelming the API
+      if (i < TARGET_ACCOUNTS.length - 1) {
+        console.log(`Waiting ${RATE_LIMIT_CONFIG.delayBetweenAccounts}ms before next account...`);
+        await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_CONFIG.delayBetweenAccounts));
+      }
+      
+    } catch (error) {
+      console.error(`Error fetching data for account ${account.id}:`, error);
+      
+      // Continue with other accounts even if one fails
+      // This prevents one bad account from breaking the entire fetch
+    }
   }
 
-  // Calculate comprehensive cost tracking
-  const totalCostFromAds = data.ads.reduce((sum, ad) => sum + (ad.metrics?.cost || 0), 0);
-  const totalCostFromCampaigns = data.campaigns.reduce((sum, campaign) => sum + (campaign.metrics?.cost || 0), 0);
-  
-  // Log detailed cost breakdown for debugging
-  console.log(`\n=== COST DEBUGGING BREAKDOWN ===`);
-  console.log(`Total cost from ${data.ads.length} ads: $${totalCostFromAds.toFixed(2)}`);
-  console.log(`Total cost from ${data.campaigns.length} campaigns: $${totalCostFromCampaigns.toFixed(2)}`);
-  
-  // Account-by-account cost breakdown
-  const accountCosts: Record<string, { name: string; cost: number; adCount: number }> = {};
-  data.ads.forEach(ad => {
-    const accountId = ad.customer_id;
-    const accountName = ad.customer_name;
-    if (!accountCosts[accountId]) {
-      accountCosts[accountId] = { name: accountName, cost: 0, adCount: 0 };
-    }
-    accountCosts[accountId].cost += ad.metrics?.cost || 0;
-    accountCosts[accountId].adCount += 1;
-  });
-  
-  console.log(`\n=== ACCOUNT-BY-ACCOUNT COST BREAKDOWN ===`);
-  Object.entries(accountCosts).forEach(([accountId, data]) => {
-    console.log(`Account ${accountId} (${data.name}): $${data.cost.toFixed(2)} from ${data.adCount} ads`);
-  });
-  
-  console.log(`\n=== API FETCH SUMMARY ===`);
   console.log(`Google Ads API fetch completed. Total: ${data.campaigns.length} campaigns, ${data.ads.length} ads`);
   console.log(`Daily request count: ${dailyRequestCount}/${RATE_LIMIT_CONFIG.maxRequestsPerDay}`);
-  console.log(`================================\n`);
-  
-  // Use the higher cost value for final result (usually ads-level is more accurate)
-  data.total_cost = Math.max(totalCostFromAds, totalCostFromCampaigns);
   
   return data;
 }
@@ -1224,8 +1055,8 @@ export function getMockGoogleAdsData(startDate?: string, endDate?: string, custo
       console.log(`Adjusting mock Google Ads data for ${daysDiff}-day range`);
       
       // Scale up metrics based on daysDiff
-      filteredAds = filteredAds.map((ad: GoogleAdsAd) => {
-        const scaleFactor = 0.8 + (Math.random() * 0.4); // Scale factor between 0.8-1.2
+      filteredAds = filteredAds.map((ad: GoogleAdsAd, index: number) => {
+        const scaleFactor = 0.8 + (deterministicRandom(startDate, index) * 0.4); // Scale factor between 0.8-1.2
         
         return {
           ...ad,
@@ -1372,6 +1203,18 @@ function generateAdditionalAds(count: number, campaigns: GoogleAdsCampaign[]): G
   return ads;
 }
 
+// Deterministic random function based on date and seed
+function deterministicRandom(date: string, seed: number): number {
+  // Create a hash from date and seed for consistent randomness
+  const hash = (date + seed.toString()).split('').reduce((a, b) => {
+    a = ((a << 5) - a) + b.charCodeAt(0);
+    return a & a;
+  }, 0);
+  
+  // Convert to 0-1 range
+  return Math.abs(hash % 1000) / 1000;
+}
+
 // Generate mock data for a single day
 function generateSingleDayMockData(dateString: string, targetAdCount: number = 553): GoogleAdsData {
   // Calculate a factor based on which day it is (to make data different per day)
@@ -1390,7 +1233,7 @@ function generateSingleDayMockData(dateString: string, targetAdCount: number = 5
   // Today will have slightly higher numbers than yesterday
   const adjustedFactor = isToday ? factor * 1.2 : (isYesterday ? factor * 0.9 : factor);
   
-  console.log(`Mock data for ${dateString} using factor: ${adjustedFactor.toFixed(2)}`);
+  console.log(`Mock data for ${dateString} using factor: ${adjustedFactor.toFixed(2)} (deterministic)`);
   
   // Base campaigns and ads
   const baseCampaigns = [
@@ -1525,15 +1368,15 @@ function generateSingleDayMockData(dateString: string, targetAdCount: number = 5
   // Generate additional ads
   const additionalAds = [];
   for (let i = 0; i < additionalAdsNeeded; i++) {
-    // Select a random base ad as template
-    const template = baseAds[Math.floor(Math.random() * baseAds.length)];
+    // Select a deterministic base ad as template
+    const template = baseAds[Math.floor(deterministicRandom(dateString, i * 100) * baseAds.length)];
     
-    // Generate variation from template
-    const variationFactor = 0.3 + Math.random() * 0.7; // 0.3 to 1.0
+    // Generate variation from template - now deterministic
+    const variationFactor = 0.3 + deterministicRandom(dateString, i) * 0.7; // 0.3 to 1.0
     
-    // Generate URL
-    const urlPrefix = urlPrefixes[Math.floor(Math.random() * urlPrefixes.length)];
-    const topic = topics[Math.floor(Math.random() * topics.length)];
+    // Generate URL - now deterministic
+    const urlPrefix = urlPrefixes[Math.floor(deterministicRandom(dateString, i * 200) * urlPrefixes.length)];
+    const topic = topics[Math.floor(deterministicRandom(dateString, i * 300) * topics.length)];
     const finalUrl = `${urlPrefix}${topic}-article-${i + 3}`;
     
     // Calculate metrics
