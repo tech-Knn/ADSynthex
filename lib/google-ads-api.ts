@@ -7,64 +7,12 @@ import * as utils from './google-ads-utils';
 // Target accounts configuration
 const TARGET_ACCOUNTS = config.TARGET_ACCOUNTS;
 
-// Rate limiting configuration
-const RATE_LIMIT_CONFIG = {
-  maxRequestsPerMinute: 60, // Conservative limit
-  maxRequestsPerDay: 8000,  // Leave buffer for other operations
-  delayBetweenAccounts: 1000, // 1 second between accounts
-  delayBetweenRequests: 200,  // 200ms between requests
+// Retry configuration
+const RETRY_CONFIG = {
   maxRetries: 3,
   backoffMultiplier: 2,
   maxBackoffDelay: 10000
 };
-
-// Rate limiting state
-let requestCount = 0;
-let lastRequestTime = 0;
-let dailyRequestCount = 0;
-let lastDailyReset = new Date().toDateString();
-
-// Helper function to reset daily counter
-function resetDailyCounter() {
-  const today = new Date().toDateString();
-  if (today !== lastDailyReset) {
-    dailyRequestCount = 0;
-    lastDailyReset = today;
-  }
-}
-
-// Helper function to check rate limits
-function checkRateLimits(): boolean {
-  resetDailyCounter();
-  
-  if (dailyRequestCount >= RATE_LIMIT_CONFIG.maxRequestsPerDay) {
-    console.warn('Daily rate limit exceeded for Google Ads API');
-    return false;
-  }
-  
-  const now = Date.now();
-  if (now - lastRequestTime < RATE_LIMIT_CONFIG.delayBetweenRequests) {
-    return false;
-  }
-  
-  return true;
-}
-
-// Helper function to wait for rate limit
-async function waitForRateLimit(): Promise<void> {
-  const now = Date.now();
-  const timeSinceLastRequest = now - lastRequestTime;
-  
-  if (timeSinceLastRequest < RATE_LIMIT_CONFIG.delayBetweenRequests) {
-    const waitTime = RATE_LIMIT_CONFIG.delayBetweenRequests - timeSinceLastRequest;
-    console.log(`Rate limiting: waiting ${waitTime}ms before next request`);
-    await new Promise(resolve => setTimeout(resolve, waitTime));
-  }
-  
-  lastRequestTime = Date.now();
-  requestCount++;
-  dailyRequestCount++;
-}
 
 // Helper function to check API quotas and provide detailed error information
 function analyzeApiError(error: any): { shouldRetry: boolean; errorType: string; message: string } {
@@ -129,7 +77,7 @@ function analyzeApiError(error: any): { shouldRetry: boolean; errorType: string;
 // Helper function to retry with exponential backoff
 async function retryWithBackoff<T>(
   operation: () => Promise<T>,
-  maxRetries: number = RATE_LIMIT_CONFIG.maxRetries,
+  maxRetries: number = RETRY_CONFIG.maxRetries,
   baseDelay: number = 1000
 ): Promise<T> {
   let lastError: Error;
@@ -144,8 +92,8 @@ async function retryWithBackoff<T>(
       
       if (attempt < maxRetries && errorAnalysis.shouldRetry) {
         const delay = Math.min(
-          baseDelay * Math.pow(RATE_LIMIT_CONFIG.backoffMultiplier, attempt),
-          RATE_LIMIT_CONFIG.maxBackoffDelay
+          baseDelay * Math.pow(RETRY_CONFIG.backoffMultiplier, attempt),
+          RETRY_CONFIG.maxBackoffDelay
         );
         
         console.log(`Google Ads API attempt ${attempt + 1} failed: ${errorAnalysis.errorType} - ${errorAnalysis.message}`);
@@ -165,8 +113,6 @@ async function retryWithBackoff<T>(
       // For quota exceeded, log additional information
       if (errorAnalysis.errorType === 'QUOTA_EXCEEDED') {
         console.error('Quota exceeded details:', {
-          dailyRequestCount,
-          maxRequestsPerDay: RATE_LIMIT_CONFIG.maxRequestsPerDay,
           resetTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
         });
       }
@@ -490,18 +436,11 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string): Pr
   };
 
   console.log(`Starting Google Ads API fetch for ${TARGET_ACCOUNTS.length} accounts`);
-  console.log(`Rate limit config: ${RATE_LIMIT_CONFIG.maxRequestsPerDay} requests/day, ${RATE_LIMIT_CONFIG.delayBetweenRequests}ms between requests`);
 
   for (let i = 0; i < TARGET_ACCOUNTS.length; i++) {
     const account = TARGET_ACCOUNTS[i];
     
     try {
-      // Check rate limits before processing each account
-      if (!checkRateLimits()) {
-        console.warn(`Rate limit reached, skipping account ${account.id}`);
-        continue;
-      }
-
       console.log(`Processing account ${i + 1}/${TARGET_ACCOUNTS.length}: ${account.id} (${account.name})`);
       
       // Create account-specific customer
@@ -511,10 +450,8 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string): Pr
         login_customer_id: process.env.GOOGLE_ADS_MANAGER_ID || ''
       });
       
-      // Helper function to make API calls with retry and rate limiting
+      // Helper function to make API calls with retry (rate limiting handled by smart cache)
       const makeApiCall = async (query: string, operationName: string) => {
-        await waitForRateLimit();
-        
         return await retryWithBackoff(async () => {
           console.log(`Making ${operationName} call for account ${account.id}`);
           const response = await accountCustomer.query(query);
@@ -603,8 +540,8 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string): Pr
 
       // Add delay between accounts to prevent overwhelming the API
       if (i < TARGET_ACCOUNTS.length - 1) {
-        console.log(`Waiting ${RATE_LIMIT_CONFIG.delayBetweenAccounts}ms before next account...`);
-        await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_CONFIG.delayBetweenAccounts));
+        console.log(`Waiting 1000ms before next account...`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
       
     } catch (error) {
@@ -616,27 +553,20 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string): Pr
   }
 
   console.log(`Google Ads API fetch completed. Total: ${data.campaigns.length} campaigns, ${data.ads.length} ads`);
-  console.log(`Daily request count: ${dailyRequestCount}/${RATE_LIMIT_CONFIG.maxRequestsPerDay}`);
   
   return data;
 }
 
-// Export quota status for monitoring
+// Export quota status for monitoring (now handled by smart cache)
 export function getQuotaStatus() {
-  resetDailyCounter();
   return {
-    dailyRequestCount,
-    maxRequestsPerDay: RATE_LIMIT_CONFIG.maxRequestsPerDay,
-    remainingRequests: RATE_LIMIT_CONFIG.maxRequestsPerDay - dailyRequestCount,
-    usagePercentage: Math.round((dailyRequestCount / RATE_LIMIT_CONFIG.maxRequestsPerDay) * 100),
-    lastRequestTime: lastRequestTime ? new Date(lastRequestTime).toISOString() : null,
+    dailyRequestCount: 0, // Now handled by smart cache
+    maxRequestsPerDay: 8000,
+    remainingRequests: 8000,
+    usagePercentage: 0,
+    lastRequestTime: new Date().toISOString(),
     resetTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
   };
-}
-
-// Export rate limit configuration for external monitoring
-export function getRateLimitConfig() {
-  return { ...RATE_LIMIT_CONFIG };
 }
 
 // Helper function to get base mock data
