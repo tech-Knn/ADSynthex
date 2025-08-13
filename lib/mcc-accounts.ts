@@ -69,6 +69,17 @@ export async function logAllMCCAccounts(): Promise<{
   };
   error?: string;
 }> {
+  // EMERGENCY: Disable MCC discovery due to rate limit
+  console.log('=== MCC ACCOUNTS DISCOVERY DISABLED DUE TO RATE LIMIT ===');
+  return {
+    success: false,
+    error: 'MCC discovery disabled due to Google Ads API rate limit ban',
+    accounts: [],
+    managedAccounts: [],
+    summary: { total: 0, managed: 0, managers: 0, test: 0 }
+  };
+
+  /* DISABLED DUE TO RATE LIMIT BAN
   try {
     console.log('=== FETCHING ALL ACCOUNTS UNDER MCC ===');
     

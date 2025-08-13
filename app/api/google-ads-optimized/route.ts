@@ -147,10 +147,42 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Need to fetch fresh data - use smart rate limiter
+    // EMERGENCY: Skip API calls due to rate limit ban
     try {
-      console.log('[OPTIMIZED_API] Fetching fresh data from Google Ads API');
+      console.log('[EMERGENCY] Skipping Google Ads API due to rate limit ban - using mock data');
 
+      // Use mock data instead of making API calls
+      const mockData = getMockGoogleAdsData(startDate, endDate, customerId);
+      const transformedData = transformApiResponse(mockData, startDate, endDate, customerId);
+      
+      // Store mock data in cache to prevent further API attempts
+      unifiedCache.set(
+        startDate,
+        endDate,
+        customerId,
+        transformedData,
+        {
+          dataType: isIndividualAccount ? 'individual' : 'aggregated',
+          priority: 1,
+          customTTL: 60 * 60 * 1000 // 1 hour TTL for mock data
+        }
+      );
+
+      const response: ApiResponse = {
+        ...transformedData,
+        _source: 'mock',
+        _cacheStatus: 'MOCK_RATE_LIMITED',
+        _message: 'Using mock data due to Google Ads API rate limit'
+      };
+
+      return NextResponse.json(response, {
+        headers: {
+          'X-Cache': 'MOCK_RATE_LIMITED',
+          'X-Processing-Time': (Date.now() - startTime).toString()
+        }
+      });
+
+      /* DISABLED DUE TO RATE LIMIT BAN
       const freshData = await smartRateLimiter.executeRequest(
         () => fetchGoogleAdsData(startDate, endDate),
         {

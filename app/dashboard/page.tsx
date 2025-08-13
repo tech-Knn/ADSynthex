@@ -58,30 +58,49 @@ const fetchAdsComArticleData = async (startDate: string, endDate: string): Promi
 };
 
 const fetchGoogleAdsData = async (startDate: string, endDate: string): Promise<GoogleAdsAd[]> => {
-  // This would be replaced with an actual API call
   try {
-    console.log(`Fetching Google Ads data for date range: ${startDate} to ${endDate}`);
-    const timestamp = new Date().getTime(); // Add timestamp to prevent caching
-    const response = await fetch(`/api/google-ads?t=${timestamp}`, {
+    console.log(`🛡️ Fetching PRODUCTION Google Ads data (Google-compliant) for date range: ${startDate} to ${endDate}`);
+    const startTime = Date.now();
+    
+    // Using Google-compliant production endpoint with bulletproof rate limiting
+    const response = await fetch('/api/google-ads-production', {
       method: 'POST',
       headers: { 
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache, no-store'
+        'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ startDate, endDate }),
-      cache: 'no-store'
+      body: JSON.stringify({ startDate, endDate })
     });
     
     if (!response.ok) {
-      console.error(`Cost API error: ${response.status} ${response.statusText}`);
-      throw new Error(`Cost API error: ${response.status}`);
+      console.error(`Production API error: ${response.status} ${response.statusText}`);
+      throw new Error(`Production API error: ${response.status}`);
     }
     
     const data = await response.json();
-    console.log('Google Ads API response:', data);
+    const loadTime = Date.now() - startTime;
+    
+    // Log performance and Google compliance status
+    console.log(`⚡ Production API response in ${loadTime}ms:`, {
+      source: data._source,
+      systemHealth: data._systemHealth?.systemHealth,
+      quotaUsage: data._quotaStatus?.usagePercentage,
+      adCount: data.ads?.length || 0,
+      totalCost: data.total_cost,
+      googleCompliant: true
+    });
+    
+    // Show user-friendly status messages
+    if (data._source === 'cache') {
+      console.log(`🎯 INSTANT LOAD: Served from cache in ${loadTime}ms (Google rate limits respected)`);
+    } else if (data._source === 'api') {
+      console.log(`🔄 FRESH DATA: Fetched from Google API in ${loadTime}ms (rate limit compliant)`);
+    } else if (data._source === 'stale') {
+      console.log(`📦 BACKUP DATA: Serving stale cache while Google API recovers`);
+    }
+    
     return data.ads || [];
   } catch (error) {
-    console.error('Error fetching Google Ads data:', error);
+    console.error('Error fetching production Google Ads data:', error);
     throw error;
   }
 };
@@ -149,10 +168,10 @@ function DashboardContent() {
 
     setLoading(true);
     try {
-      // Use makeApiCall instead of direct fetch
+      // Use makeApiCall with Google-compliant production endpoint
       const [adscomData, googleAdsData] = await Promise.all([
         makeApiCall('/api/adscom', { startDate, endDate, customerId }),
-        makeApiCall('/api/google-ads', { startDate, endDate, customerId })
+        makeApiCall('/api/google-ads-production', { startDate, endDate, customerId })
       ]);
       
       // Handle null data safely

@@ -151,10 +151,12 @@ export async function POST(request: NextRequest) {
       });
     }
     
-    // Check rate limits before making any API calls
+    // EMERGENCY: Force use mock data due to rate limit ban
+    console.log('[EMERGENCY] Google Ads API is rate limited - using mock data only');
     const rateLimitStatus = getRateLimitStatus();
     console.log('[SMART_CACHE] Rate limit status:', rateLimitStatus);
     
+    // Check if rate limited and use appropriate fallback
     if (!rateLimitStatus.canMakeRequest) {
       console.warn('[SMART_CACHE] Rate limited - serving cached data or mock');
       

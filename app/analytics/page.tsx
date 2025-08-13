@@ -60,8 +60,8 @@ export default function Analytics() {
       // Process revenue data
       setRevenueData(revenueResponse.data.data || []);
 
-      // Fetch Google Ads cost data
-      const costResponse = await axios.post('/api/google-ads', {
+      // Fetch Google Ads cost data (PRODUCTION - Google Compliant)
+      const costResponse = await axios.post('/api/google-ads-production', {
         startDate,
         endDate
       });
