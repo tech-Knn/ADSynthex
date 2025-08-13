@@ -6,6 +6,8 @@ const publicPaths = [
   '/login',
   '/api/auth/login',
   '/api/auth/logout',
+  '/api/google-ads/accounts',
+  '/api/test',
   '/logout'
 ];
 

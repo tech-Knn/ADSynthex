@@ -28,20 +28,19 @@ const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
 // Mock API functions since they don't exist in the codebase
-const fetchAdsComArticleData = async (startDate: string, endDate: string, forceRefresh: boolean = false): Promise<AdsComArticleData[]> => {
-  // FIXED: Now leverages backend cache for instant loading!
+const fetchAdsComArticleData = async (startDate: string, endDate: string): Promise<AdsComArticleData[]> => {
+  // This would be replaced with an actual API call
   try {
-    console.log(`🚀 Fetching Ads.com data (forceRefresh: ${forceRefresh}) for date range: ${startDate} to ${endDate}`);
-    
-    // NO MORE CACHE BUSTING - Let backend cache do its job!
-    const response = await fetch('/api/adscom', {
+    console.log(`Fetching Ads.com data for date range: ${startDate} to ${endDate}`);
+    const timestamp = new Date().getTime(); // Add timestamp to prevent caching
+    const response = await fetch(`/api/adscom?t=${timestamp}`, {
       method: 'POST',
       headers: { 
-        'Content-Type': 'application/json'
-        // Removed cache-busting headers - trust the backend cache!
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store'
       },
-      body: JSON.stringify({ startDate, endDate, forceRefresh })
-      // Removed cache: 'no-store' - allow browser and backend caching
+      body: JSON.stringify({ startDate, endDate }),
+      cache: 'no-store'
     });
     
     if (!response.ok) {
@@ -58,20 +57,19 @@ const fetchAdsComArticleData = async (startDate: string, endDate: string, forceR
   }
 };
 
-const fetchGoogleAdsData = async (startDate: string, endDate: string, forceRefresh: boolean = false): Promise<GoogleAdsAd[]> => {
-  // FIXED: Now leverages backend cache for instant loading!
+const fetchGoogleAdsData = async (startDate: string, endDate: string): Promise<GoogleAdsAd[]> => {
+  // This would be replaced with an actual API call
   try {
-    console.log(`🚀 Fetching Google Ads data (forceRefresh: ${forceRefresh}) for date range: ${startDate} to ${endDate}`);
-    
-    // NO MORE CACHE BUSTING - Let backend cache provide instant responses!
-    const response = await fetch('/api/google-ads', {
+    console.log(`Fetching Google Ads data for date range: ${startDate} to ${endDate}`);
+    const timestamp = new Date().getTime(); // Add timestamp to prevent caching
+    const response = await fetch(`/api/google-ads?t=${timestamp}`, {
       method: 'POST',
       headers: { 
-        'Content-Type': 'application/json'
-        // Removed cache-busting headers - trust the backend cache system!
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store'
       },
-      body: JSON.stringify({ startDate, endDate, forceRefresh })
-      // Removed cache: 'no-store' - allow efficient caching
+      body: JSON.stringify({ startDate, endDate }),
+      cache: 'no-store'
     });
     
     if (!response.ok) {
@@ -111,66 +109,34 @@ function DashboardContent() {
   const { message } = App.useApp();
 
   const makeApiCall = async (endpoint: string, params: any) => {
-    // 🚀 FIXED: No more cache busting - leverage backend cache for instant responses!
+    // Add timestamp to prevent caching
+    const timestamp = new Date().getTime();
     
     try {
       // Get the current customer ID from window if available
       const currentCustomerId = typeof window !== 'undefined' ? window.__selectedCustomerId : selectedCustomerId;
       
-      console.log(`🚀 CACHE-FRIENDLY API call to ${endpoint}:`, params, 'with customerId:', currentCustomerId);
+      console.log(`API call to ${endpoint}:`, params, 'with customerId:', currentCustomerId);
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
-          // REMOVED ALL CACHE-BUSTING HEADERS - Trust the backend cache!
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
         },
         body: JSON.stringify({
           ...params,
-          customerId: currentCustomerId
-          // REMOVED _timestamp parameter - No more cache busting!
-        })
-        // REMOVED cache: 'no-store' - Allow backend cache to work!
+          customerId: currentCustomerId,
+          _timestamp: timestamp // Add timestamp parameter
+        }),
+        cache: 'no-store'
       });
       
-      const data = await response.json();
-      
-      // Handle circuit breaker or service unavailable responses
-      if (response.status === 503) {
-        const retryAfter = response.headers.get('Retry-After');
-        const nextAttempt = data._nextAttempt ? new Date(data._nextAttempt).toLocaleTimeString() : 'soon';
-        throw new Error(`${endpoint === '/api/google-ads' ? 'Google Ads API' : 'API'} is temporarily unavailable. Please try again at ${nextAttempt}`);
-      }
-      
       if (!response.ok) {
-        // Enhanced error message with circuit breaker info
-        let errorMessage = data.error || `API error: ${response.status}`;
-        if (data._circuitState === 'OPEN') {
-          errorMessage += ` (Circuit breaker is open due to repeated failures. Retry in ${data._retryAfter || 60} seconds)`;
-        }
-        throw new Error(errorMessage);
+        throw new Error(`API error: ${response.status}`);
       }
       
-      // Log cache performance for monitoring (Google Ads only)
-      if (endpoint === '/api/google-ads') {
-        const cacheHeader = response.headers.get('X-Cache');
-        const cacheAge = response.headers.get('X-Cache-Age');
-        const circuitState = response.headers.get('X-Circuit-State');
-        const messageHeader = response.headers.get('X-Message');
-        
-        if (cacheHeader) {
-          console.log(`[DASHBOARD] Google Ads data: ${cacheHeader}${cacheAge ? ` (age: ${cacheAge}s)` : ''}, circuit: ${circuitState || 'unknown'}`);
-        }
-        
-        // Only log cache status, don't show multiple toast messages
-        if (messageHeader && (cacheHeader === 'LOADING' || cacheHeader === 'STALE-ACCOUNT')) {
-          console.log('Cache status:', messageHeader);
-        }
-        
-        if (cacheHeader === 'AGGREGATED') {
-          console.log('Data loaded instantly from cache');
-        }
-      }
-      
+      const data = await response.json();
       return data;
     } catch (error) {
       console.error(`Error calling ${endpoint}:`, error);
@@ -178,49 +144,32 @@ function DashboardContent() {
     }
   };
 
-  const fetchData = async (startDate: string, endDate: string, customerId?: string | null, isRefresh: boolean = false) => {
+  const fetchData = async (startDate: string, endDate: string, customerId?: string | null) => {
     const messageKey = 'dataFetch';
 
-    // 🚀 STALE-WHILE-REVALIDATE: Only show loading on initial load, not refresh
-    if (!isRefresh || (revenueData.length === 0 && costData.length === 0)) {
-      setLoading(true);
-      console.log('🔄 LOADING: Showing loading state for initial load');
-    } else {
-      console.log('🚀 INSTANT: Keeping existing data visible while refreshing in background');
-    }
+    setLoading(true);
     try {
-      // 🚀 LEVERAGE BACKEND CACHE - Pass forceRefresh only for manual refresh
-      const forceRefresh = isRefresh && window.event?.type === 'click'; // Only force on manual refresh
-      
+      // Use makeApiCall instead of direct fetch
       const [adscomData, googleAdsData] = await Promise.all([
-        makeApiCall('/api/adscom', { startDate, endDate, customerId, forceRefresh }),
-        makeApiCall('/api/google-ads', { startDate, endDate, customerId, forceRefresh })
+        makeApiCall('/api/adscom', { startDate, endDate, customerId }),
+        makeApiCall('/api/google-ads', { startDate, endDate, customerId })
       ]);
-
-      // Check for API errors (cost side)
-      if (googleAdsData && googleAdsData._apiError) {
-        throw new Error(googleAdsData.error || 'Failed to load Google Ads cost data');
-      }
-      // Check for API errors (revenue side, if any similar flag is used)
-      if (adscomData && adscomData._apiError) {
-        throw new Error(adscomData.error || 'Failed to load Ads.com revenue data');
-      }
-
+      
       // Handle null data safely
       const articleData = adscomData && adscomData.data ? adscomData.data : [];
       const adsData = googleAdsData && googleAdsData.ads ? googleAdsData.ads : [];
-
+      
       if (articleData.length === 0) {
         message.warning('No revenue data found for the selected date range.');
       }
-
+      
       if (adsData.length === 0) {
         message.warning('No cost data found for the selected date range.');
       }
-
+      
       setRevenueData(articleData);
       setCostData(adsData);
-
+      
       // Store update time information
       if (adscomData && adscomData.lastUpdated) {
         console.log(`🔄 Received update info: Last updated at ${new Date(adscomData.lastUpdated).toLocaleTimeString()}, next update in ${adscomData.nextUpdateIn || 'unknown'} seconds`);
@@ -264,12 +213,15 @@ function DashboardContent() {
       }
       
       // Success toast
-      message.success({ key: messageKey, content: 'Data loaded successfully', duration: 2 });
+      if (customerId) {
+        const customerName = getCustomerNameById(customerId);
+        message.success({ key: messageKey, content: `Data for ${customerName} loaded successfully`, duration: 2 });
+      } else {
+        message.success({ key: messageKey, content: 'Data loaded successfully for all accounts', duration: 2 });
+      }
     } catch (error) {
       console.error('Error fetching data:', error);
-      message.error({ key: messageKey, content: (error as Error).message || 'Failed to load data', duration: 2 });
-      setRevenueData([]);
-      setCostData([]);
+      message.error({ key: messageKey, content: 'Failed to load data', duration: 2 });
     } finally {
       setLoading(false);
     }
@@ -297,8 +249,13 @@ function DashboardContent() {
     
     // Set the new timer
     autoRefreshTimerRef.current = setTimeout(() => {
-      console.log(`🔄 AUTO-REFRESH: Executing instant refresh at ${new Date().toLocaleTimeString()}`);
-      handleRefresh(); // This now uses stale-while-revalidate automatically
+      console.log(`🔄 AUTO-REFRESH: Executing refresh at ${new Date().toLocaleTimeString()}`);
+      message.info({
+        content: 'Auto-refreshing data from Ads.com...',
+        duration: 2,
+        icon: <SyncOutlined spin />
+      });
+      handleRefresh();
     }, refreshTime);
   };
   
@@ -316,6 +273,10 @@ function DashboardContent() {
       // Set up the timer if auto-refresh is enabled
       console.log(`🔄 AUTO-REFRESH: Setting up timer with ${nextUpdateIn} seconds until next update`);
       scheduleNextRefresh(nextUpdateIn);
+      message.success({
+        content: `Auto-refresh enabled. Next update in ${formatNextUpdate()}`,
+        duration: 3
+      });
     }
   };
 
@@ -576,16 +537,15 @@ function DashboardContent() {
     const startDate = dateRange[0].format('YYYY-MM-DD');
     const endDate = dateRange[1].format('YYYY-MM-DD');
     
-    console.log('🚀 INSTANT REFRESH: Using stale-while-revalidate - keeping UI responsive!');
-    
     // Clear any existing auto-refresh timer
     if (autoRefreshTimerRef.current) {
       clearTimeout(autoRefreshTimerRef.current);
       autoRefreshTimerRef.current = null;
     }
     
-    // 🚀 INSTANT REFRESH: Pass isRefresh=true to keep existing data visible while updating
-    fetchData(startDate, endDate, selectedCustomerId, true);
+    console.log('🔄 Manual refresh triggered at', new Date().toLocaleTimeString());
+    
+    fetchData(startDate, endDate, selectedCustomerId);
   };
 
   // Helper to get date ranges for different periods
@@ -807,7 +767,11 @@ function DashboardContent() {
                         }
                       }
                       
-                      // Success handled by main fetchData function
+                      message.success({
+                        content: 'Ads.com data refreshed',
+                        key: 'adscomRefresh',
+                        duration: 2
+                      });
                     })
                     .catch(error => {
                       console.error('Error refreshing Ads.com data:', error);
