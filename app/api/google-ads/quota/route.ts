@@ -2,19 +2,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getQuotaStatus } from '../../../../lib/google-ads-api';
 import { smartRateLimiter } from '../../../../lib/smart-rate-limiter';
 import { unifiedCache } from '../../../../lib/unified-cache-manager';
+import { productionRateManager } from '../../../../lib/production-rate-manager';
 
 export async function GET(request: NextRequest) {
   try {
+    // 🛡️ BULLETPROOF: Get production-grade quota status
     const quotaStatus = getQuotaStatus();
     const rateLimiterStats = smartRateLimiter.getStats();
     const cacheStats = unifiedCache.getStats();
+    const productionQuotaStatus = productionRateManager.getQuotaStatus();
     
     return NextResponse.json({
       quota: quotaStatus,
       rateLimiter: rateLimiterStats,
       cache: cacheStats,
+      productionQuota: productionQuotaStatus, // 🛡️ Production-grade quota tracking
+      systemHealth: productionQuotaStatus.safeToOperate ? 'healthy' : 'protected',
       timestamp: new Date().toISOString(),
-      recommendations: getRecommendations(quotaStatus, rateLimiterStats)
+      recommendations: getRecommendations(quotaStatus, rateLimiterStats, productionQuotaStatus)
     }, {
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -31,7 +36,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-function getRecommendations(quotaStatus: any, rateLimiterStats: any) {
+function getRecommendations(quotaStatus: any, rateLimiterStats: any, productionQuotaStatus: any) {
   const recommendations = [];
   
   // Rate limiter recommendations
@@ -65,6 +70,21 @@ function getRecommendations(quotaStatus: any, rateLimiterStats: any) {
       type: 'warning',
       message: 'API quota usage is high. The new optimization system should help reduce usage.',
       action: 'Monitor the optimized endpoints for better quota efficiency.'
+    });
+  }
+  
+  // 🛡️ Production-grade recommendations
+  if (!productionQuotaStatus.safeToOperate) {
+    recommendations.push({
+      type: 'error',
+      message: '🛡️ BULLETPROOF PROTECTION: API requests are temporarily blocked to prevent rate limits',
+      action: `System will resume automatically. Current status: ${productionQuotaStatus.status}`
+    });
+  } else {
+    recommendations.push({
+      type: 'success',
+      message: '🛡️ BULLETPROOF PROTECTION: System is operating safely within Google limits',
+      action: `Quota usage: ${productionQuotaStatus.usagePercentage}%, QPS: ${productionQuotaStatus.currentQPS}`
     });
   }
   

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleAdsApi } from 'google-ads-api';
+import { productionRateManager } from '@/lib/production-rate-manager';
 
 // Initialize Google Ads client for MCC account queries
 function initializeMCCClient() {
@@ -57,6 +58,19 @@ export async function GET(request: NextRequest) {
   try {
     console.log('=== MCC ACCOUNTS DISCOVERY STARTING ===');
     
+    // 🛡️ BULLETPROOF: Check rate limits BEFORE making any API calls
+    const canRequest = productionRateManager.canMakeRequest(undefined, 'standard');
+    if (!canRequest.allowed) {
+      console.warn(`[MCC_ACCOUNTS] Rate limit protection: ${canRequest.reason}`);
+      return NextResponse.json({
+        success: false,
+        error: 'Rate limit protection active',
+        reason: canRequest.reason,
+        waitTime: canRequest.waitTime,
+        message: 'Please try again later to avoid hitting Google API limits'
+      }, { status: 429 });
+    }
+    
     // Check if we have all required environment variables
     const requiredEnvVars = [
       'GOOGLE_ADS_CLIENT_ID',
@@ -87,6 +101,9 @@ export async function GET(request: NextRequest) {
     const { mccCustomer } = initializeMCCClient();
     
     console.log('Querying all accessible customer accounts under MCC...');
+    
+    // 🛡️ BULLETPROOF: Record the API request for quota tracking
+    productionRateManager.recordRequest(undefined, 'standard');
     
     // Execute the query to get all customer accounts
     const customerAccounts = await mccCustomer.query(CUSTOMER_ACCOUNTS_QUERY);
