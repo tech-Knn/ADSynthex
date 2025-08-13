@@ -1,16 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getQuotaStatus, getRateLimitConfig } from '../../../../lib/google-ads-api';
+import { getQuotaStatus } from '../../../../lib/google-ads-api';
+import { smartRateLimiter } from '../../../../lib/smart-rate-limiter';
+import { unifiedCache } from '../../../../lib/unified-cache-manager';
 
 export async function GET(request: NextRequest) {
   try {
     const quotaStatus = getQuotaStatus();
-    const rateLimitConfig = getRateLimitConfig();
+    const rateLimiterStats = smartRateLimiter.getStats();
+    const cacheStats = unifiedCache.getStats();
     
     return NextResponse.json({
       quota: quotaStatus,
-      config: rateLimitConfig,
+      rateLimiter: rateLimiterStats,
+      cache: cacheStats,
       timestamp: new Date().toISOString(),
-      recommendations: getRecommendations(quotaStatus, rateLimitConfig)
+      recommendations: getRecommendations(quotaStatus, rateLimiterStats)
     }, {
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -27,45 +31,49 @@ export async function GET(request: NextRequest) {
   }
 }
 
-function getRecommendations(quotaStatus: any, rateLimitConfig: any) {
+function getRecommendations(quotaStatus: any, rateLimiterStats: any) {
   const recommendations = [];
   
+  // Rate limiter recommendations
+  if (rateLimiterStats.errorRate > 0.1) {
+    recommendations.push({
+      type: 'warning',
+      message: `High error rate detected: ${Math.round(rateLimiterStats.errorRate * 100)}%`,
+      action: 'Check API credentials and network connectivity.'
+    });
+  }
+  
+  if (rateLimiterStats.queueLength > 5) {
+    recommendations.push({
+      type: 'info',
+      message: `Request queue is building up: ${rateLimiterStats.queueLength} pending requests`,
+      action: 'Consider reducing request frequency or implementing better caching.'
+    });
+  }
+  
+  if (rateLimiterStats.currentQPS < 2) {
+    recommendations.push({
+      type: 'info',
+      message: `QPS is low (${rateLimiterStats.currentQPS}), indicating possible rate limiting`,
+      action: 'Monitor for API errors and consider reducing request frequency.'
+    });
+  }
+  
+  // Legacy quota recommendations
   if (quotaStatus.usagePercentage >= 90) {
     recommendations.push({
       type: 'warning',
-      message: 'API quota usage is high. Consider reducing request frequency or upgrading your quota.',
-      action: 'Monitor usage closely and implement caching strategies.'
+      message: 'API quota usage is high. The new optimization system should help reduce usage.',
+      action: 'Monitor the optimized endpoints for better quota efficiency.'
     });
   }
   
-  if (quotaStatus.usagePercentage >= 95) {
-    recommendations.push({
-      type: 'critical',
-      message: 'API quota usage is critical. Requests may be throttled soon.',
-      action: 'Implement aggressive caching and reduce API calls immediately.'
-    });
-  }
-  
-  if (quotaStatus.remainingRequests <= 100) {
-    recommendations.push({
-      type: 'info',
-      message: 'Low remaining requests for today.',
-      action: 'Consider implementing request batching and optimizing queries.'
-    });
-  }
-  
-  // Calculate estimated requests per dashboard load
-  const accountsCount = 9; // Your 9 accounts
-  const requestsPerAccount = 5; // 5 API calls per account
-  const estimatedRequestsPerLoad = accountsCount * requestsPerAccount;
-  
-  if (quotaStatus.remainingRequests < estimatedRequestsPerLoad) {
-    recommendations.push({
-      type: 'warning',
-      message: `Insufficient quota for full dashboard load (needs ~${estimatedRequestsPerLoad} requests).`,
-      action: 'Consider implementing partial data loading or using cached data.'
-    });
-  }
+  // Optimization recommendations
+  recommendations.push({
+    type: 'success',
+    message: 'AdSyntheX Optimization Suite is active!',
+    action: `Smart Rate Limiter running at ${rateLimiterStats.currentQPS} QPS with ${rateLimiterStats.queueLength} queued requests.`
+  });
   
   return recommendations;
 } 
