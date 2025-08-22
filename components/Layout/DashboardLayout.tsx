@@ -9,7 +9,10 @@ import {
   LogoutOutlined,
   LockOutlined,
   BulbOutlined,
-  BulbFilled
+  BulbFilled,
+  DollarOutlined,
+  ApiOutlined,
+  RocketOutlined
 } from '@ant-design/icons';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -144,6 +147,16 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   const [isAdmin, setIsAdmin] = useState(false);
   const [userAccountId, setUserAccountId] = useState<string | null>(null);
   const { theme, toggleTheme } = useTheme();
+  
+  // Get current active menu key based on pathname
+  const getActiveMenuKey = () => {
+    if (typeof window === 'undefined') return '1';
+    const pathname = window.location.pathname;
+    if (pathname === '/inuvo-dashboard') return '2';
+    if (pathname === '/analytics') return '3';
+    // if (pathname === '/ad-launcher') return '4'; // Hidden for now
+    return '1'; // Default to dashboard
+  };
   
   // Helper function to get cookie value
   const getCookie = (name: string): string | null => {
@@ -292,14 +305,30 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
           
           <Menu
             theme="light"
-            defaultSelectedKeys={['1']}
+            selectedKeys={[getActiveMenuKey()]}
             mode="inline"
             items={[
               {
                 key: '1',
                 icon: <DashboardOutlined />,
                 label: <Link href="/dashboard">Dashboard</Link>,
+              },
+              {
+                key: '2',
+                icon: <DollarOutlined />,
+                label: <Link href="/inuvo-dashboard">Cost vs Revenue</Link>,
+              },
+              {
+                key: '3',
+                icon: <ApiOutlined />,
+                label: <Link href="/analytics">Analytics</Link>,
               }
+              // Hidden for now - Ad Launcher ready but not shown to client
+              // {
+              //   key: '4',
+              //   icon: <RocketOutlined />,
+              //   label: <Link href="/ad-launcher">🚀 Ad Launcher</Link>,
+              // }
             ]}
           />
         </Sider>

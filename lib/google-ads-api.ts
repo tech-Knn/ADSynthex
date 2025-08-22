@@ -428,20 +428,30 @@ function processAssetGroupData(response: any[], account: any): GoogleAdsAd[] {
 }
 
 // Fetch all necessary data
-export async function fetchGoogleAdsData(startDate: string, endDate: string): Promise<GoogleAdsData> {
+export async function fetchGoogleAdsData(startDate: string, endDate: string, specificAccountId?: string | null): Promise<GoogleAdsData> {
   const { client, customer } = initializeGoogleAdsClient();
   const data: GoogleAdsData = {
     campaigns: [],
     ads: []
   };
 
-  console.log(`Starting Google Ads API fetch for ${TARGET_ACCOUNTS.length} accounts`);
+  // Filter accounts based on specificAccountId
+  let accountsToProcess = TARGET_ACCOUNTS;
+  if (specificAccountId && specificAccountId !== 'all') {
+    accountsToProcess = TARGET_ACCOUNTS.filter(acc => acc.id === specificAccountId);
+    if (accountsToProcess.length === 0) {
+      console.warn(`[GOOGLE_ADS_API] Account ${specificAccountId} not found in TARGET_ACCOUNTS`);
+      return data; // Return empty data if account not found
+    }
+  }
 
-  for (let i = 0; i < TARGET_ACCOUNTS.length; i++) {
-    const account = TARGET_ACCOUNTS[i];
+  console.log(`Starting Google Ads API fetch for ${accountsToProcess.length} accounts${specificAccountId ? ` (filtered for ${specificAccountId})` : ''}`);
+
+  for (let i = 0; i < accountsToProcess.length; i++) {
+    const account = accountsToProcess[i];
     
     try {
-      console.log(`Processing account ${i + 1}/${TARGET_ACCOUNTS.length}: ${account.id} (${account.name})`);
+      console.log(`Processing account ${i + 1}/${accountsToProcess.length}: ${account.id} (${account.name})`);
       
       // Create account-specific customer
       const accountCustomer = client.Customer({
@@ -539,7 +549,7 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string): Pr
       }
 
       // Add delay between accounts to prevent overwhelming the API
-      if (i < TARGET_ACCOUNTS.length - 1) {
+      if (i < accountsToProcess.length - 1) {
         console.log(`Waiting 1000ms before next account...`);
         await new Promise(resolve => setTimeout(resolve, 1000));
       }

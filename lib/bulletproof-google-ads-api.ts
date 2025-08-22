@@ -200,8 +200,8 @@ export class BulletproofGoogleAdsAPI {
     console.log(`[BULLETPROOF_API] Making Google Ads ${serviceType} API call for customer ${customerId || 'all'}`);
     const startTime = Date.now();
 
-    // Make the actual API call
-    const apiData = await fetchGoogleAdsData(startDate, endDate);
+    // Make the actual API call with specific account filtering
+    const apiData = await fetchGoogleAdsData(startDate, endDate, customerId);
     const responseTime = Date.now() - startTime;
 
     if (!apiData || !apiData.ads) {

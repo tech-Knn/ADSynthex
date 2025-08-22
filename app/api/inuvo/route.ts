@@ -1,0 +1,214 @@
+/**
+ * Inuvo API Endpoint
+ * Provides cost vs revenue mapping using TKID
+ */
+
+import { NextRequest, NextResponse } from 'next/server';
+import { 
+  fetchInuvoRealtimeData, 
+  fetchInuvoDailyData, 
+  mapCostRevenue, 
+  getCostRevenueSummary,
+  getMockInuvoData 
+} from '@/lib/inuvo-api';
+import { bulletproofAPI } from '@/lib/bulletproof-google-ads-api';
+
+interface CostRevenueApiResponse {
+  inuvo_data: any;
+  google_ads_data: any;
+  cost_revenue_mapping: any[];
+  summary: any;
+  _source: string;
+  _timestamp: string;
+  _message: string;
+}
+
+export async function POST(request: NextRequest) {
+  const startTime = Date.now();
+  
+  try {
+    // Parse request body
+    const body = await request.json();
+    const { startDate, endDate, customerId, dataType = 'realtime', useMockData = false } = body;
+
+    // Validate required parameters
+    if (!startDate || !endDate) {
+      return NextResponse.json(
+        { error: 'Missing required parameters: startDate, endDate' },
+        { status: 400 }
+      );
+    }
+
+    console.log(`[INUVO_ENDPOINT] Cost/Revenue mapping request: ${startDate} to ${endDate}, type: ${dataType}`);
+
+    let inuvoData;
+    let googleAdsData;
+    let message = '';
+
+    try {
+      // Fetch Google Ads cost data using bulletproof API
+      console.log('[INUVO_ENDPOINT] Fetching Google Ads cost data...');
+      const googleAdsResult = await bulletproofAPI.getData(startDate, endDate, customerId, {
+        priority: 8,
+        allowStale: true,
+        maxWait: 20000
+      });
+
+      googleAdsData = googleAdsResult.data;
+      message += `Google Ads: ${googleAdsResult.message}. `;
+
+      // Fetch Inuvo revenue data
+      console.log('[INUVO_ENDPOINT] Fetching Inuvo revenue data...');
+      
+      if (useMockData || !process.env.INUVO_ACCESS_TOKEN) {
+        console.log('[INUVO_ENDPOINT] Using mock Inuvo data');
+        inuvoData = getMockInuvoData(startDate, endDate);
+        message += 'Inuvo: Mock data (API key not configured). ';
+      } else {
+        try {
+          if (dataType === 'daily') {
+            inuvoData = await fetchInuvoDailyData(startDate, endDate, customerId);
+          } else {
+            inuvoData = await fetchInuvoRealtimeData(startDate, endDate, customerId);
+          }
+          message += `Inuvo: Fresh ${dataType} data from API. `;
+        } catch (inuvoError) {
+          console.warn('[INUVO_ENDPOINT] Inuvo API failed, using mock data:', inuvoError);
+          inuvoData = getMockInuvoData(startDate, endDate);
+          message += 'Inuvo: Fallback to mock data (API error). ';
+        }
+      }
+
+      // Create cost/revenue mapping using TKID
+      console.log('[INUVO_ENDPOINT] Creating cost/revenue mapping...');
+      const costRevenueMapping = mapCostRevenue(
+        googleAdsData?.ads || [],
+        inuvoData.data || []
+      );
+
+      // Generate summary
+      const summary = getCostRevenueSummary(costRevenueMapping);
+
+      const response: CostRevenueApiResponse = {
+        inuvo_data: inuvoData,
+        google_ads_data: {
+          ads: googleAdsData?.ads || [],
+          campaigns: googleAdsData?.campaigns || [],
+          total_cost: googleAdsData?.ads?.reduce((sum: number, ad: any) => sum + (ad.metrics?.cost || 0), 0) || 0
+        },
+        cost_revenue_mapping: costRevenueMapping,
+        summary,
+        _source: 'inuvo_cost_revenue_api',
+        _timestamp: new Date().toISOString(),
+        _message: message.trim()
+      };
+
+      console.log(`[INUVO_ENDPOINT] Response: ${costRevenueMapping.length} mappings, $${summary.totalCost} cost, $${summary.totalRevenue} revenue`);
+
+      return NextResponse.json(response, {
+        headers: {
+          'X-Data-Source': 'INUVO_GOOGLE_ADS_MAPPING',
+          'X-Load-Time': (Date.now() - startTime).toString(),
+          'X-Mapping-Count': costRevenueMapping.length.toString(),
+          'Cache-Control': 'no-cache, must-revalidate'
+        }
+      });
+
+    } catch (dataError) {
+      console.error('[INUVO_ENDPOINT] Data fetching failed:', dataError);
+      
+      // Fallback to mock data for both sources
+      const mockInuvoData = getMockInuvoData(startDate, endDate);
+      const mockGoogleAdsData = {
+        ads: [
+          {
+            ad_id: 'online_tkid1',
+            campaign_name: 'Mock Campaign 1',
+            metrics: { cost: 85.30 },
+            date: startDate
+          },
+          {
+            ad_id: 'online_tkid2', 
+            campaign_name: 'Mock Campaign 2',
+            metrics: { cost: 67.50 },
+            date: startDate
+          }
+        ],
+        campaigns: [],
+        total_cost: 152.80
+      };
+
+      const mockMapping = mapCostRevenue(mockGoogleAdsData.ads, mockInuvoData.data);
+      const mockSummary = getCostRevenueSummary(mockMapping);
+
+      const fallbackResponse: CostRevenueApiResponse = {
+        inuvo_data: mockInuvoData,
+        google_ads_data: mockGoogleAdsData,
+        cost_revenue_mapping: mockMapping,
+        summary: mockSummary,
+        _source: 'mock_fallback',
+        _timestamp: new Date().toISOString(),
+        _message: `Data fetch failed, using mock data. Error: ${dataError instanceof Error ? dataError.message : 'Unknown error'}`
+      };
+
+      return NextResponse.json(fallbackResponse, {
+        status: 202, // Accepted but mock data
+        headers: {
+          'X-Data-Source': 'MOCK_FALLBACK',
+          'X-Load-Time': (Date.now() - startTime).toString(),
+          'X-Error': 'true'
+        }
+      });
+    }
+
+  } catch (error) {
+    console.error('[INUVO_ENDPOINT] Request processing error:', error);
+    
+    return NextResponse.json({
+      error: 'Internal server error',
+      message: error instanceof Error ? error.message : 'Unknown error',
+      _loadTime: Date.now() - startTime
+    }, { status: 500 });
+  }
+}
+
+/**
+ * Health check endpoint for Inuvo integration
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const hasInuvoToken = !!process.env.INUVO_ACCESS_TOKEN;
+    
+    return NextResponse.json({
+      status: 'healthy',
+      service: 'Inuvo Cost/Revenue Mapping API',
+      version: '1.0.0',
+      features: {
+        inuvo_api: hasInuvoToken ? 'configured' : 'not_configured',
+        google_ads_api: 'bulletproof_protected',
+        cost_revenue_mapping: 'enabled',
+        tkid_mapping: 'enabled'
+      },
+      accounts: [
+        { id: '5133038944', name: 'Inuvo - Account - 01 - GMT' },
+        { id: '7195529443', name: 'Inuvo - Account - 02 - GMT' }
+      ],
+      endpoints: {
+        realtime: '/api/inuvo (POST with dataType: "realtime")',
+        daily: '/api/inuvo (POST with dataType: "daily")',
+        health: '/api/inuvo (GET)'
+      },
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    return NextResponse.json({
+      status: 'error',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    }, { status: 500 });
+  }
+}
+
+
+
