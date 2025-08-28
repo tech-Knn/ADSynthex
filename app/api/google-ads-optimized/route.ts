@@ -181,105 +181,12 @@ export async function POST(request: NextRequest) {
           'X-Processing-Time': (Date.now() - startTime).toString()
         }
       });
-
-      /* DISABLED DUE TO RATE LIMIT BAN
-      const freshData = await smartRateLimiter.executeRequest(
-        () => fetchGoogleAdsData(startDate, endDate),
-        {
-          priority: isIndividualAccount ? 8 : 10, // Higher priority for individual accounts
-          accountId: customerId || undefined
-        }
-      );
-
-      if (freshData && freshData.ads) {
-        const transformedData = transformApiResponse(freshData, startDate, endDate, customerId);
-        
-        // Store in unified cache
-        unifiedCache.set(
-          startDate,
-          endDate,
-          customerId,
-          transformedData,
-          {
-            dataType: isIndividualAccount ? 'individual' : 'aggregated',
-            priority: 1 // High priority for fresh data
-          }
-        );
-
-        const response: ApiResponse = {
-          ...transformedData,
-          _source: 'api',
-          _cacheStatus: 'MISS_FRESH_FETCH',
-          _stats: {
-            rateLimiter: smartRateLimiter.getStats(),
-            cache: unifiedCache.getStats()
-          },
-          _message: 'Fresh data fetched from Google Ads API'
-        };
-
-        return NextResponse.json(response, {
-          headers: {
-            'X-Cache': 'MISS',
-            'X-Source': 'GOOGLE_ADS_API',
-            'X-Processing-Time': (Date.now() - startTime).toString()
-          }
-        });
-      } else {
-        throw new Error('Invalid or empty response from Google Ads API');
-      }
-
-    } catch (apiError: any) {
-      console.error('[OPTIMIZED_API] Google Ads API request failed:', apiError);
-
-      // Try to serve stale cache data if available
-      if (cacheResult.data) {
-        const transformedData = transformApiResponse(cacheResult.data, startDate, endDate, customerId);
-        
-        // Schedule high-priority background refresh
-        smartBackgroundRefresher.scheduleRefresh(customerId, startDate, endDate, {
-          priority: 12,
-          userRequested: true,
-          delayMs: 60000 // 1 minute delay to avoid immediate retry
-        });
-
-        const response: ApiResponse = {
-          ...transformedData,
-          _source: 'cache',
-          _cacheStatus: 'STALE_API_ERROR',
-          _age: Math.round(cacheResult.age / 1000),
-          _message: `API failed, serving stale ${cacheResult.source} cache data`
-        };
-
-        return NextResponse.json(response, {
-          headers: {
-            'X-Cache': 'STALE_FALLBACK',
-            'X-API-Error': 'true',
-            'X-Processing-Time': (Date.now() - startTime).toString()
-          }
-        });
-      }
-
-      // Last resort: serve mock data
-      console.warn('[OPTIMIZED_API] Falling back to mock data');
-      const mockData = getMockGoogleAdsData(startDate, endDate, customerId);
-      const transformedMockData = transformApiResponse(mockData, startDate, endDate, customerId);
-
-      const response: ApiResponse = {
-        ...transformedMockData,
-        _source: 'mock',
-        _cacheStatus: 'MOCK_FALLBACK',
-        _message: 'API unavailable, serving mock data'
-      };
-
-      return NextResponse.json(response, {
-        status: 202, // Accepted but not real data
-        headers: {
-          'X-Cache': 'MOCK',
-          'X-API-Error': 'true',
-          'X-Processing-Time': (Date.now() - startTime).toString()
-        }
-      });
     }
+
+    /* DISABLED DUE TO RATE LIMIT BAN - API calls commented out
+    const freshData = await smartRateLimiter.executeRequest(...);
+    // ... rest of API logic commented out for rate limit protection
+    */
 
   } catch (error) {
     console.error('[OPTIMIZED_API] Request processing error:', error);
