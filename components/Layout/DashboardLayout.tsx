@@ -323,11 +323,11 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 icon: <ApiOutlined />,
                 label: <Link href="/analytics">Analytics</Link>,
               },
-              {
-                key: '4',
-                icon: <RocketOutlined />,
-                label: <Link href="/google-ads-launcher">🚀 Google Ads Launcher</Link>,
-              }
+              // {
+              //   key: '4',
+              //   icon: <RocketOutlined />,
+              //   label: <Link href="/google-ads-launcher">🚀 Google Ads Launcher</Link>,
+              // }
             ]}
           />
         </Sider>
