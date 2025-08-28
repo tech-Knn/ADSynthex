@@ -154,7 +154,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     const pathname = window.location.pathname;
     if (pathname === '/inuvo-dashboard') return '2';
     if (pathname === '/analytics') return '3';
-    // if (pathname === '/ad-launcher') return '4'; // Hidden for now
+    if (pathname === '/google-ads-launcher') return '4';
     return '1'; // Default to dashboard
   };
   
@@ -322,13 +322,12 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 key: '3',
                 icon: <ApiOutlined />,
                 label: <Link href="/analytics">Analytics</Link>,
+              },
+              {
+                key: '4',
+                icon: <RocketOutlined />,
+                label: <Link href="/google-ads-launcher">🚀 Google Ads Launcher</Link>,
               }
-              // Hidden for now - Ad Launcher ready but not shown to client
-              // {
-              //   key: '4',
-              //   icon: <RocketOutlined />,
-              //   label: <Link href="/ad-launcher">🚀 Ad Launcher</Link>,
-              // }
             ]}
           />
         </Sider>

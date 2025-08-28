@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
     }
 
     // EMERGENCY: Skip API calls due to rate limit ban
-    try {
+    {
       console.log('[EMERGENCY] Skipping Google Ads API due to rate limit ban - using mock data');
 
       // Use mock data instead of making API calls
@@ -182,60 +182,7 @@ export async function POST(request: NextRequest) {
         }
       });
 
-    } catch (error: any) {
-      console.error('[OPTIMIZED_API] Google Ads API request failed:', error);
-
-      // Try to serve stale cache data if available
-      if (cacheResult.data) {
-        const transformedData = transformApiResponse(cacheResult.data, startDate, endDate, customerId);
-        
-        // Schedule high-priority background refresh
-        smartBackgroundRefresher.scheduleRefresh(customerId, startDate, endDate, {
-          priority: 12,
-          userRequested: true,
-          delayMs: 60000 // 1 minute delay to avoid immediate retry
-        });
-
-        const response: ApiResponse = {
-          ...transformedData,
-          _source: 'cache',
-          _cacheStatus: 'STALE_API_ERROR',
-          _age: Math.round(cacheResult.age / 1000),
-          _message: `API failed, serving stale ${cacheResult.source} cache data`
-        };
-
-        return NextResponse.json(response, {
-          headers: {
-            'X-Cache': 'STALE_FALLBACK',
-            'X-API-Error': 'true',
-            'X-Processing-Time': (Date.now() - startTime).toString()
-          }
-        });
-      }
-
-      // Last resort: serve mock data
-      console.warn('[OPTIMIZED_API] Falling back to mock data');
-      const mockData = getMockGoogleAdsData(startDate, endDate, customerId);
-      const transformedMockData = transformApiResponse(mockData, startDate, endDate, customerId);
-
-      const response: ApiResponse = {
-        ...transformedMockData,
-        _source: 'mock',
-        _cacheStatus: 'MOCK_FALLBACK',
-        _message: 'API unavailable, serving mock data'
-      };
-
-      return NextResponse.json(response, {
-        status: 202, // Accepted but not real data
-        headers: {
-          'X-Cache': 'MOCK',
-          'X-API-Error': 'true',
-          'X-Processing-Time': (Date.now() - startTime).toString()
-        }
-      });
-    }
-
-    /* DISABLED DUE TO RATE LIMIT BAN - Original API call code
+      /* DISABLED DUE TO RATE LIMIT BAN
       const freshData = await smartRateLimiter.executeRequest(
         () => fetchGoogleAdsData(startDate, endDate),
         {
@@ -332,6 +279,7 @@ export async function POST(request: NextRequest) {
           'X-Processing-Time': (Date.now() - startTime).toString()
         }
       });
+    }
     */
 
   } catch (error) {

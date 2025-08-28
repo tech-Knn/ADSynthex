@@ -1,3 +1,4 @@
+ 
 /**
  * Enhanced caching system for Google Ads cost data
  * Implements stale-while-revalidate pattern with separate caching for cost metrics

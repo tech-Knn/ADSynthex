@@ -10,19 +10,13 @@ import {
   Col, 
   Card,
   Select,
-  Switch,
-  Space,
   Alert,
-  Spin,
-  Tabs
+  Spin
 } from 'antd';
 import { 
-  CalendarOutlined, 
   ReloadOutlined, 
   DollarOutlined,
-  BarChartOutlined,
-  ApiOutlined,
-  SettingOutlined
+  ApiOutlined
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import utc from 'dayjs/plugin/utc';
@@ -37,7 +31,6 @@ const { Header, Content } = Layout;
 const { Title, Text, Paragraph } = Typography;
 const { RangePicker } = DatePicker;
 const { Option } = Select;
-const { TabPane } = Tabs;
 
 interface InuvoApiResponse {
   inuvo_data: any;
@@ -57,44 +50,23 @@ export default function InuvoDashboard() {
   
   // Configuration state
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>([
-    dayjs().subtract(7, 'days'),
-    dayjs()
+    dayjs(), // Today's start
+    dayjs()  // Today's end (same day for live data)
   ]);
   const [selectedAccount, setSelectedAccount] = useState<string>('7195529443');
   const [dataType, setDataType] = useState<'realtime' | 'daily'>('realtime');
-  const [useMockData, setUseMockData] = useState(false);
-  const [autoRefresh, setAutoRefresh] = useState(false);
 
-  // Initial data fetch and auto refresh management
+  // Initial data fetch
   useEffect(() => {
     console.log('[INUVO_DASHBOARD] useEffect triggered - fetching data...', {
       selectedAccount,
       dataType,
-      useMockData,
-      autoRefresh,
       dateRange: [dateRange[0].format('YYYY-MM-DD'), dateRange[1].format('YYYY-MM-DD')]
     });
     
     // Always fetch data when dependencies change
     fetchData();
-    
-    // Set up auto refresh interval if enabled
-    let interval: NodeJS.Timeout;
-    if (autoRefresh) {
-      console.log('[INUVO_DASHBOARD] Setting up auto-refresh (5 min interval)');
-      interval = setInterval(() => {
-        console.log('[INUVO_DASHBOARD] Auto-refresh triggered');
-        fetchData();
-      }, 300000); // 5 minutes
-    }
-    
-    return () => {
-      if (interval) {
-        console.log('[INUVO_DASHBOARD] Cleaning up auto-refresh interval');
-        clearInterval(interval);
-      }
-    };
-  }, [dateRange, selectedAccount, dataType, useMockData, autoRefresh]);
+  }, [dateRange, selectedAccount, dataType]);
 
   const fetchData = async () => {
     console.log('[INUVO_DASHBOARD] fetchData called');
@@ -118,7 +90,7 @@ export default function InuvoDashboard() {
           endDate,
           customerId: selectedAccount, // Always use the specific account
           dataType,
-          useMockData
+          useMockData: false // Always use live data
         })
       });
       
@@ -158,7 +130,9 @@ export default function InuvoDashboard() {
   };
 
   const accounts = [
-    { id: '7195529443', name: 'Inuvo - Account - 02 - GMT (719-552-9443)' }
+    { id: '7195529443', name: 'Inuvo - Account - 02 - GMT (719-552-9443)' },
+    { id: '9833281050', name: 'Inuvo - Account 3 - PST (GMT -8:00)' },
+    { id: '7616718892', name: 'Inuvo - Account 2 - PST (GMT -8:00)' }
   ];
 
   return (
@@ -250,31 +224,7 @@ export default function InuvoDashboard() {
                 </div>
               </Col>
               
-              <Col xs={24} sm={12} md={8} lg={3}>
-                <div>
-                  <Text strong style={{ display: 'block', marginBottom: '8px' }}>
-                    Settings
-                  </Text>
-                  <Space direction="vertical" size="small">
-                    <Switch
-                      checked={useMockData}
-                      onChange={setUseMockData}
-                      checkedChildren="Mock"
-                      unCheckedChildren="Live"
-                      size="small"
-                    />
-                    <Switch
-                      checked={autoRefresh}
-                      onChange={setAutoRefresh}
-                      checkedChildren="Auto"
-                      unCheckedChildren="Manual"
-                      size="small"
-                    />
-                  </Space>
-                </div>
-              </Col>
-              
-              <Col xs={24} sm={12} md={8} lg={3}>
+              <Col xs={24} sm={12} md={8} lg={4}>
                 <div style={{ paddingTop: '24px' }}>
                   <Button
                     type="primary"
@@ -337,129 +287,30 @@ export default function InuvoDashboard() {
 
           {/* Main Content */}
           <Spin spinning={loading} size="large">
-            <Tabs defaultActiveKey="overview" type="card">
-              <TabPane 
-                tab={
-                  <span>
-                    <BarChartOutlined />
-                    Overview
-                  </span>
-                } 
-                key="overview"
-              >
-                {data ? (
-                  <CostRevenueMapping
-                    data={data.cost_revenue_mapping || []}
-                    summary={data.summary || {
-                      totalCost: 0,
-                      totalRevenue: 0,
-                      totalProfit: 0,
-                      overallROI: 0,
-                      profitableCampaigns: 0,
-                      totalCampaigns: 0,
-                      profitabilityRate: 0
-                    }}
-                    loading={loading}
-                    showDetailedView={true}
-                  />
-                ) : (
-                  <Card style={{ textAlign: 'center', padding: '60px 20px' }}>
-                    <DollarOutlined style={{ fontSize: '64px', color: '#d9d9d9', marginBottom: '16px' }} />
-                    <Title level={4} type="secondary">No Data Available</Title>
-                    <Paragraph type="secondary">
-                      Use "Refresh Data" button in the controls above to load cost/revenue mappings
-                    </Paragraph>
-                  </Card>
-                )}
-              </TabPane>
-
-              <TabPane 
-                tab={
-                  <span>
-                    <ApiOutlined />
-                    Raw Data
-                  </span>
-                } 
-                key="raw-data"
-              >
-                <Row gutter={[16, 16]}>
-                  <Col xs={24} lg={12}>
-                    <Card title="Google Ads Data" size="small">
-                      <div style={{ maxHeight: '400px', overflow: 'auto' }}>
-                        <pre style={{ fontSize: '12px', background: '#f5f5f5', padding: '12px', borderRadius: '4px' }}>
-                          {JSON.stringify(data?.google_ads_data, null, 2)}
-                        </pre>
-                      </div>
-                    </Card>
-                  </Col>
-                  
-                  <Col xs={24} lg={12}>
-                    <Card title="Inuvo Data" size="small">
-                      <div style={{ maxHeight: '400px', overflow: 'auto' }}>
-                        <pre style={{ fontSize: '12px', background: '#f5f5f5', padding: '12px', borderRadius: '4px' }}>
-                          {JSON.stringify(data?.inuvo_data, null, 2)}
-                        </pre>
-                      </div>
-                    </Card>
-                  </Col>
-                </Row>
-              </TabPane>
-
-              <TabPane 
-                tab={
-                  <span>
-                    <SettingOutlined />
-                    Configuration
-                  </span>
-                } 
-                key="config"
-              >
-                <Card title="Inuvo API Configuration">
-                  <Row gutter={[16, 16]}>
-                    <Col xs={24} md={12}>
-                      <Card size="small" title="Account Configuration">
-                        {accounts.map(account => (
-                          <div key={account.id} style={{ marginBottom: '12px' }}>
-                            <Text strong>{account.name}</Text>
-                            <br />
-                            <Text type="secondary" style={{ fontSize: '12px' }}>
-                              Account ID: {account.id}
-                            </Text>
-                            <br />
-                            <Text type="secondary" style={{ fontSize: '12px' }}>
-                              Timezone: GMT (API) / PST (Operations)
-                            </Text>
-                            <br />
-                            <Text type="secondary" style={{ fontSize: '12px' }}>
-                              TKID Source: Google Ads URLs → Inuvo TKID
-                            </Text>
-                          </div>
-                        ))}
-                      </Card>
-                    </Col>
-                    
-                    <Col xs={24} md={12}>
-                      <Card size="small" title="API Endpoints">
-                        <div style={{ marginBottom: '8px' }}>
-                          <Text strong>Realtime:</Text>
-                          <br />
-                          <Text code style={{ fontSize: '11px' }}>
-                            /analytics/GetAdsenseOnlineRealtimeByChannel
-                          </Text>
-                        </div>
-                        <div style={{ marginBottom: '8px' }}>
-                          <Text strong>Daily:</Text>
-                          <br />
-                          <Text code style={{ fontSize: '11px' }}>
-                            /analytics/GetAdsenseOnlineDailyByChannel
-                          </Text>
-                        </div>
-                      </Card>
-                    </Col>
-                  </Row>
-                </Card>
-              </TabPane>
-            </Tabs>
+            {data ? (
+              <CostRevenueMapping
+                data={data.cost_revenue_mapping || []}
+                summary={data.summary || {
+                  totalCost: 0,
+                  totalRevenue: 0,
+                  totalProfit: 0,
+                  overallROI: 0,
+                  profitableCampaigns: 0,
+                  totalCampaigns: 0,
+                  profitabilityRate: 0
+                }}
+                loading={loading}
+                showDetailedView={true}
+              />
+            ) : (
+              <Card style={{ textAlign: 'center', padding: '60px 20px' }}>
+                <DollarOutlined style={{ fontSize: '64px', color: '#d9d9d9', marginBottom: '16px' }} />
+                <Title level={4} type="secondary">No Data Available</Title>
+                <Paragraph type="secondary">
+                  Use "Refresh Data" button in the controls above to load cost/revenue mappings
+                </Paragraph>
+              </Card>
+            )}
           </Spin>
         </Content>
       </Layout>

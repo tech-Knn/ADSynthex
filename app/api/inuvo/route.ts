@@ -187,11 +187,12 @@ export async function GET(request: NextRequest) {
         inuvo_api: hasInuvoToken ? 'configured' : 'not_configured',
         google_ads_api: 'bulletproof_protected',
         cost_revenue_mapping: 'enabled',
-        tkid_mapping: 'enabled'
+        tkid_mapping: 'enabled' 
       },
       accounts: [
-        { id: '5133038944', name: 'Inuvo - Account - 01 - GMT' },
-        { id: '7195529443', name: 'Inuvo - Account - 02 - GMT' }
+        { id: '7195529443', name: 'Inuvo - Account - 02 - GMT' },
+        {id: '9833281050', name: 'Inuvo - Account 3 - PST (GMT -8:00)' },
+        { id: '7616718892', name: 'Inuvo - Account 2 - PST (GMT -8:00)' }
       ],
       endpoints: {
         realtime: '/api/inuvo (POST with dataType: "realtime")',

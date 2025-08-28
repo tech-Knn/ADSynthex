@@ -62,7 +62,7 @@ export interface CostRevenueMapping {
   date: string;
 }
 
-// Inuvo API Configuration - Focus on PST timezone account
+// Inuvo API Configuration - All active accounts
 const INUVO_CONFIG: InuvoApiConfig = {
   accessToken: process.env.INUVO_ACCESS_TOKEN || '',
   baseUrl: 'https://partners.inuvo.com/analytics',
@@ -71,6 +71,31 @@ const INUVO_CONFIG: InuvoApiConfig = {
       id: '7195529443', 
       name: 'Inuvo - Account - 02 - GMT',
       timezone: 'GMT' // This account runs in PST but Inuvo API expects GMT
+    },
+    {
+      id: '7616718892', 
+      name: 'Inuvo - Account 2 - PST (GMT -8:00)',
+      timezone: 'GMT'
+    },
+    {
+      id: '9833281050', 
+      name: 'Inuvo - Account 3 - PST (GMT -8:00)',
+      timezone: 'GMT'
+    },
+    {
+      id: '9790364217', 
+      name: 'Inuvo - Account - 03 - GMT',
+      timezone: 'GMT'
+    },
+    {
+      id: '9835231086', 
+      name: 'Inuvo - Account - 04 - GMT',
+      timezone: 'GMT'
+    },
+    {
+      id: '2420687578', 
+      name: 'Inuvo - Account - 05 - GMT',
+      timezone: 'GMT'
     }
   ]
 };
@@ -454,7 +479,7 @@ function formatDateForDisplay(date: Date): string {
 }
 
 /**
- * Get mock Inuvo data for testing (focused on account 7195529443)
+ * Get mock Inuvo data for testing (supports all configured accounts)
  */
 export function getMockInuvoData(startDate: string, endDate: string): InuvoResponse {
   // Realistic TKIDs that might appear in Google Ads URLs
@@ -529,9 +554,34 @@ export function getMockInuvoData(startDate: string, endDate: string): InuvoRespo
     total_impressions: totalImpressions,
     account_summary: {
       '7195529443': { 
-        earnings: totalEarnings, 
-        clicks: totalClicks, 
-        impressions: totalImpressions 
+        earnings: totalEarnings * 0.25, 
+        clicks: Math.floor(totalClicks * 0.25), 
+        impressions: Math.floor(totalImpressions * 0.25) 
+      },
+      '7616718892': { 
+        earnings: totalEarnings * 0.15, 
+        clicks: Math.floor(totalClicks * 0.15), 
+        impressions: Math.floor(totalImpressions * 0.15) 
+      },
+      '9833281050': { 
+        earnings: totalEarnings * 0.20, 
+        clicks: Math.floor(totalClicks * 0.20), 
+        impressions: Math.floor(totalImpressions * 0.20) 
+      },
+      '9790364217': { 
+        earnings: totalEarnings * 0.15, 
+        clicks: Math.floor(totalClicks * 0.15), 
+        impressions: Math.floor(totalImpressions * 0.15) 
+      },
+      '9835231086': { 
+        earnings: totalEarnings * 0.15, 
+        clicks: Math.floor(totalClicks * 0.15), 
+        impressions: Math.floor(totalImpressions * 0.15) 
+      },
+      '2420687578': { 
+        earnings: totalEarnings * 0.10, 
+        clicks: Math.floor(totalClicks * 0.10), 
+        impressions: Math.floor(totalImpressions * 0.10) 
       }
     },
     _source: 'inuvo_api',

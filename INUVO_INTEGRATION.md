@@ -32,8 +32,12 @@ GOOGLE_ADS_MANAGER_ID=your_mcc_account_id
 ### 2. **Inuvo Accounts**
 
 The integration is configured for these accounts:
-- **Account 01**: `5133038944` (Inuvo - Account - 01 - GMT)
-- **Account 02**: `7195529443` (Inuvo - Account - 02 - GMT)
+- **Account 01**: `7195529443` (Inuvo - Account - 02 - GMT)
+- **Account 02**: `7616718892` (Inuvo - Account 2 - PST)
+- **Account 03**: `9833281050` (Inuvo - Account 3 - PST)
+- **Account 04**: `9790364217` (Inuvo - Account - 03 - GMT)
+- **Account 05**: `9835231086` (Inuvo - Account - 04 - GMT)
+- **Account 06**: `2420687578` (Inuvo - Account - 05 - GMT)
 
 ### 3. **Getting Your Inuvo Access Token**
 

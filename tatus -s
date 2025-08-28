@@ -1,0 +1,16 @@
+warning: in the working copy of 'INUVO_INTEGRATION.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/api/google-ads-optimized/route.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/api/google-ads/accounts/route.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/api/google-ads/quota/route.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/api/inuvo/route.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/inuvo-dashboard/page.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'components/Layout/DashboardLayout.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'lib/google-ads-cache.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'lib/inuvo-api.ts', LF will be replaced by CRLF the next time Git touches it
+INUVO_INTEGRATION.md
+app/api/google-ads-optimized/route.ts
+app/api/inuvo/route.ts
+app/inuvo-dashboard/page.tsx
+components/Layout/DashboardLayout.tsx
+lib/google-ads-cache.ts
+lib/inuvo-api.ts
