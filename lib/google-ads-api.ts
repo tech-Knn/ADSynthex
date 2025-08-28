@@ -438,11 +438,15 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string, spe
   // Filter accounts based on specificAccountId
   let accountsToProcess = TARGET_ACCOUNTS;
   if (specificAccountId && specificAccountId !== 'all') {
+    console.log(`[GOOGLE_ADS_API] Filtering for specific account: ${specificAccountId}`);
+    console.log(`[GOOGLE_ADS_API] Available accounts: ${TARGET_ACCOUNTS.map(acc => acc.id).join(', ')}`);
     accountsToProcess = TARGET_ACCOUNTS.filter(acc => acc.id === specificAccountId);
     if (accountsToProcess.length === 0) {
       console.warn(`[GOOGLE_ADS_API] Account ${specificAccountId} not found in TARGET_ACCOUNTS`);
+      console.warn(`[GOOGLE_ADS_API] Available account IDs: ${TARGET_ACCOUNTS.map(acc => `"${acc.id}"`).join(', ')}`);
       return data; // Return empty data if account not found
     }
+    console.log(`[GOOGLE_ADS_API] Found matching account: ${accountsToProcess[0].name}`);
   }
 
   console.log(`Starting Google Ads API fetch for ${accountsToProcess.length} accounts${specificAccountId ? ` (filtered for ${specificAccountId})` : ''}`);
