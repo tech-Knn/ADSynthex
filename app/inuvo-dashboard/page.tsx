@@ -50,8 +50,8 @@ export default function InuvoDashboard() {
   
   // Configuration state
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>([
-    dayjs().subtract(1, 'day'), // Yesterday's start
-    dayjs().subtract(1, 'day')  // Yesterday's end (for yesterday's data)
+    dayjs(), // Today's start
+    dayjs()  // Today's end (for today's live data)
   ]);
   const [selectedAccount, setSelectedAccount] = useState<string>('7195529443');
   const [dataType, setDataType] = useState<'realtime' | 'daily'>('realtime');
