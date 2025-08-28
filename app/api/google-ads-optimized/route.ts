@@ -280,7 +280,6 @@ export async function POST(request: NextRequest) {
         }
       });
     }
-    */
 
   } catch (error) {
     console.error('[OPTIMIZED_API] Request processing error:', error);
