@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
 
       // Fetch Inuvo revenue data
       console.log('[INUVO_ENDPOINT] Fetching Inuvo revenue data...');
-      
+1
       if (useMockData || !process.env.INUVO_ACCESS_TOKEN) {
         console.log('[INUVO_ENDPOINT] Using mock Inuvo data');
         inuvoData = getMockInuvoData(startDate, endDate);

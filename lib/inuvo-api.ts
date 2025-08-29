@@ -53,11 +53,17 @@ export interface InuvoResponse {
 
 export interface CostRevenueMapping {
   TKID: string;
+  // Google Ads Metrics
+  conversions: number;    // From Google Ads
+  cpa: number;            // Cost Per Acquisition from Google Ads
   cost: number;           // From Google Ads
-  revenue: number;        // From Inuvo
+  // Inuvo Metrics  
+  revenue: number;        // From Inuvo (ESTIMATED_EARNINGS)
+  ctr: number;            // Click Through Rate from Inuvo
+  epc: number;            // Earnings Per Click = revenue/clicks
+  clicks: number;         // From Inuvo
+  roi: number;            // (Revenue - Cost) / Cost * 100
   profit: number;         // Revenue - Cost
-  roi: number;           // (Revenue - Cost) / Cost * 100
-  platform: string;
   campaign_name?: string;
   date: string;
 }
@@ -380,17 +386,35 @@ export function mapCostRevenue(
       
       if (inuvoMap.has(normalizedTkid)) {
         const revenueRecords = inuvoMap.get(normalizedTkid)!;
+        
+        // Aggregate Inuvo metrics
         const totalRevenue = revenueRecords.reduce((sum, record) => sum + record.ESTIMATED_EARNINGS, 0);
+        const totalInuvoClicks = revenueRecords.reduce((sum, record) => sum + record.CLICKS, 0);
+        const totalImpressions = revenueRecords.reduce((sum, record) => sum + record.IMPRESSIONS, 0);
+        
+        // Calculate derived metrics
         const profit = totalRevenue - cost;
         const roi = cost > 0 ? ((totalRevenue - cost) / cost) * 100 : 0;
+        const inuvoCtr = totalImpressions > 0 ? (totalInuvoClicks / totalImpressions) * 100 : 0;
+        const epc = totalInuvoClicks > 0 ? totalRevenue / totalInuvoClicks : 0;
+        
+        // Extract Google Ads metrics
+        const conversions = ad.metrics?.conversions || 0;
+        const cpa = ad.metrics?.cpa || (conversions > 0 ? cost / conversions : 0);
 
         mappings.push({
           TKID: tkid,
+          // Google Ads Metrics
+          conversions: conversions,
+          cpa: cpa,
           cost: cost,
+          // Inuvo Metrics
           revenue: totalRevenue,
-          profit: profit,
+          ctr: inuvoCtr,
+          epc: epc,
+          clicks: totalInuvoClicks,
           roi: roi,
-          platform: revenueRecords[0]?.PLATFORM_TYPE_CODE || 'Unknown',
+          profit: profit,
           campaign_name: ad.campaign_name || ad.name || `Campaign ${tkid}`,
           date: ad.date || revenueRecords[0]?.DATE || formatDateForDisplay(new Date())
         });
@@ -398,13 +422,22 @@ export function mapCostRevenue(
         console.log(`[COST_REVENUE_MAPPING] ✅ Mapped TKID ${tkid} (${normalizedTkid}): $${cost} cost → $${totalRevenue.toFixed(2)} revenue`);
       } else {
         // Ad has cost but no revenue (no matching TKID in inuvo)
+        const conversions = ad.metrics?.conversions || 0;
+        const cpa = ad.metrics?.cpa || (conversions > 0 ? cost / conversions : 0);
+        
         mappings.push({
           TKID: tkid,
+          // Google Ads Metrics
+          conversions: conversions,
+          cpa: cpa,
           cost: cost,
+          // Inuvo Metrics (no data available)
           revenue: 0,
-          profit: -cost,
+          ctr: 0,
+          epc: 0,
+          clicks: 0,
           roi: -100,
-          platform: 'No Revenue Data',
+          profit: -cost,
           campaign_name: ad.campaign_name || ad.name || `Campaign ${tkid}`,
           date: ad.date || formatDateForDisplay(new Date())
         });

@@ -8,6 +8,7 @@ const publicPaths = [
   '/api/auth/logout',
   '/api/google-ads/accounts',
   '/api/test',
+  '/api/inuvo',
   '/logout'
 ];
 

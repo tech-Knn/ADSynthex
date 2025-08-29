@@ -25,9 +25,27 @@ export interface ConversionGoal {
   status: 'RECORDING' | 'NOT_RECORDING';
 }
 
+export interface CampaignLocation {
+  geoId: string;
+  name: string;
+  countryCode: string;
+  type: 'country' | 'region' | 'city';
+}
+
+export interface CampaignLanguage {
+  googleId: string;
+  name: string;
+  code: string;
+}
+
+export interface CampaignSettingsData {
+  locations: CampaignLocation[];
+  languages: CampaignLanguage[];
+  locationBidAdjustments: { [geoId: string]: number };
+}
+
 export interface CampaignSettings {
-  locations: string[];
-  languages: string[];
+  locationSettings: CampaignSettingsData;
   budget: {
     daily: number;
     currency: string;

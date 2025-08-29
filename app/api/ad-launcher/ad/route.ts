@@ -108,15 +108,12 @@ export async function POST(request: NextRequest) {
       };
     }
 
-    const adOperation = {
-      create: adResource
-    };
-
-    const adResponse = await customer.service('AdGroupAdService').mutate({
-      customer_id: process.env.GOOGLE_ADS_MANAGER_ID,
-      operations: [adOperation]
-    });
-    const adResourceName = adResponse.results[0].resource_name;
+    const adResponse = await customer.adGroupAds.create([adResource]);
+    const adResourceName = adResponse.results?.[0]?.resource_name;
+    
+    if (!adResourceName) {
+      throw new Error('Failed to create ad: No resource name returned');
+    }
     
     // Extract ad ID from resource name
     const adId = adResourceName.split('~').pop();

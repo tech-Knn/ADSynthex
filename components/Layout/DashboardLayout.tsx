@@ -350,7 +350,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 style: { fontSize: '18px', marginRight: '24px' }
               })}
               <Title level={4} style={{ margin: 0 }}>
-                Ads.com Revenue & Google Ads Cost Dashboard
+                Inuvo Revenue & Google Ads Cost Dashboard
               </Title>
             </div>
             

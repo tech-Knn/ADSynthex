@@ -6,7 +6,8 @@ import { ArrowLeftOutlined, ArrowRightOutlined } from '@ant-design/icons';
 import CampaignTypeSelector from './CampaignTypeSelector';
 import CampaignObjectiveSelector from './CampaignObjectiveSelector';
 import ConversionGoalsSetup from './ConversionGoalsSetup';
-import { GoogleAdsCampaign, CampaignType, CampaignObjective, ConversionGoal } from './types';
+import CampaignSettings from './CampaignSettings';
+import { GoogleAdsCampaign, CampaignType, CampaignObjective, ConversionGoal, CampaignSettingsData } from './types';
 
 const { Title, Text } = Typography;
 const { Step } = Steps;
@@ -36,11 +37,23 @@ const GoogleAdsLauncher: React.FC = () => {
     setCampaignData(prev => ({ ...prev, conversionGoals: goals }));
   };
 
+  const handleCampaignSettingsChange = (locationSettings: CampaignSettingsData) => {
+    setCampaignData(prev => ({ 
+      ...prev, 
+      settings: { 
+        ...prev.settings,
+        locationSettings 
+      } 
+    }));
+  };
+
   const canProceed = () => {
     switch (currentStep) {
       case 0: return !!campaignData.type;
       case 1: return !!campaignData.objective;
       case 2: return campaignData.conversionGoals && campaignData.conversionGoals.length > 0;
+      case 3: return campaignData.settings?.locationSettings?.locations?.length > 0 && 
+                     campaignData.settings?.locationSettings?.languages?.length > 0;
       default: return true;
     }
   };
@@ -90,6 +103,19 @@ const GoogleAdsLauncher: React.FC = () => {
         ) : (
           <div className="text-center py-8">
             <Text type="secondary">Please select a campaign objective first.</Text>
+          </div>
+        );
+
+      case 3:
+        return campaignData.conversionGoals && campaignData.conversionGoals.length > 0 ? (
+          <CampaignSettings
+            settings={campaignData.settings?.locationSettings || { locations: [], languages: [], locationBidAdjustments: {} }}
+            onSettingsChange={handleCampaignSettingsChange}
+            campaignType={campaignData.type || 'PERFORMANCE_MAX'}
+          />
+        ) : (
+          <div className="text-center py-8">
+            <Text type="secondary">Please set up conversion goals first.</Text>
           </div>
         );
       
