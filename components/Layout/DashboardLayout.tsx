@@ -154,7 +154,6 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     const pathname = window.location.pathname;
     if (pathname === '/inuvo-dashboard') return '2';
     if (pathname === '/analytics') return '3';
-    if (pathname === '/google-ads-launcher') return '4';
     return '1'; // Default to dashboard
   };
   
