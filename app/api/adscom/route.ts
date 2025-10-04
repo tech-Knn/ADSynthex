@@ -522,7 +522,7 @@ export async function POST(request: NextRequest) {
             '5133038944': ['utc18'],
             '9084731648': ['utc19'],
             '5109995931': ['utc20'],
-            '8077209608': ['yahoo', 'utcyahoo'],
+            '8807720960': ['yahoo', 'utcyahoo'],
             '4277350349': ['siddhi']
             // The IST customer (8677814915) will be handled as the fallback below
           };
@@ -623,7 +623,7 @@ export async function POST(request: NextRequest) {
           '5133038944': 'innovationspotlight.net', // UTC-18
           '9084731648': 'futuretechtoday.com', // UTC-19
           '5109995931': 'emergingtrendsreport.org', // UTC-20
-          '8077209608': 'freshcuesdaily.com', // Yahoo
+          '8807720960': 'freshcuesdaily.com', // Yahoo
           '4277350349': 'emergingtrendsreport.org' // Siddhi
         };
         
@@ -748,7 +748,7 @@ export async function GET(request: NextRequest) {
         '5133038944': 'innovationspotlight.net', // UTC-18
         '9084731648': 'futuretechtoday.com', // UTC-19
         '5109995931': 'emergingtrendsreport.org', // UTC-20
-        '8077209608': 'freshcuesdaily.com', // Yahoo
+        '8807720960': 'freshcuesdaily.com', // Yahoo
         '4277350349': 'emergingtrendsreport.org' // Siddhi
       };
       

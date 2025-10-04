@@ -185,7 +185,7 @@ export async function GET(request: NextRequest) {
       { id: '5133038944', name: 'Ads.com - RSOC - UTC 18'},
       { id: '9084731648', name: 'Ads.com - RSOC - UTC - 19'},
       { id: '5109995931', name: 'Ads.com - RSOC - UTC - 20'},
-      { id: '8077209608', name: 'Ads.com - RSOC - UTC - Yahoo'},
+      { id: '8807720960', name: 'Ads.com - RSOC - UTC - Yahoo'},
       { id: '4277350349', name: 'RSOC - UTC - Ads.com' },
     ];
     
