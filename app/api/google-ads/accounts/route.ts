@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
   try {
     console.log('=== MCC ACCOUNTS DISCOVERY STARTING ===');
     
-    // 🛡️ BULLETPROOF: Check rate limits BEFORE making any API calls
+    // BULLETPROOF: Check rate limits BEFORE making any API calls
     const canRequest = productionRateManager.canMakeRequest(undefined, 'standard');
     if (!canRequest.allowed) {
       console.warn(`[MCC_ACCOUNTS] Rate limit protection: ${canRequest.reason}`);
@@ -102,7 +102,7 @@ export async function GET(request: NextRequest) {
     
     console.log('Querying all accessible customer accounts under MCC...');
     
-    // 🛡️ BULLETPROOF: Record the API request for quota tracking
+    // BULLETPROOF: Record the API request for quota tracking
     productionRateManager.recordRequest(undefined, 'standard');
     
     // Execute the query to get all customer accounts
@@ -179,7 +179,14 @@ export async function GET(request: NextRequest) {
       { id: '7605096292', name: 'Ads.com - RSOC - UTC - 11' },
       { id: '5719842337', name: 'Ads.com - RSOC - UTC - 12' },
       { id: '9341614254', name: 'Ads.com - RSOC - UTC - 13' },
-      { id: '4277350349', name: 'RSOC - UTC - Ads.com' }
+      { id: '9790364217', name: 'Ads.com - UTC - 14'},
+      { id: '2420687578', name: 'Ads.com -UTC - 16'},
+      { id: '6324595978', name: 'Ads.com - RSOC - UTC - 17'},
+      { id: '5133038944', name: 'Ads.com - RSOC - UTC 18'},
+      { id: '9084731648', name: 'Ads.com - RSOC - UTC - 19'},
+      { id: '5109995931', name: 'Ads.com - RSOC - UTC - 20'},
+      { id: '8077209608', name: 'Ads.com - RSOC - UTC - Yahoo'},
+      { id: '4277350349', name: 'RSOC - UTC - Ads.com' },
     ];
     
     console.log('\n=== CONFIGURATION COMPARISON ===');

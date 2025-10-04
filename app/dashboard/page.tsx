@@ -59,7 +59,7 @@ const fetchAdsComArticleData = async (startDate: string, endDate: string): Promi
 
 const fetchGoogleAdsData = async (startDate: string, endDate: string): Promise<GoogleAdsAd[]> => {
   try {
-    console.log(`🛡️ Fetching PRODUCTION Google Ads data (Google-compliant) for date range: ${startDate} to ${endDate}`);
+    console.log(` Fetching PRODUCTION Google Ads data (Google-compliant) for date range: ${startDate} to ${endDate}`);
     const startTime = Date.now();
     
     // Using Google-compliant production endpoint with bulletproof rate limiting
@@ -91,11 +91,11 @@ const fetchGoogleAdsData = async (startDate: string, endDate: string): Promise<G
     
     // Show user-friendly status messages
     if (data._source === 'cache') {
-      console.log(`🎯 INSTANT LOAD: Served from cache in ${loadTime}ms (Google rate limits respected)`);
+      console.log(` INSTANT LOAD: Served from cache in ${loadTime}ms (Google rate limits respected)`);
     } else if (data._source === 'api') {
-      console.log(`🔄 FRESH DATA: Fetched from Google API in ${loadTime}ms (rate limit compliant)`);
+      console.log(` FRESH DATA: Fetched from Google API in ${loadTime}ms (rate limit compliant)`);
     } else if (data._source === 'stale') {
-      console.log(`📦 BACKUP DATA: Serving stale cache while Google API recovers`);
+      console.log(` BACKUP DATA: Serving stale cache while Google API recovers`);
     }
     
     return data.ads || [];
@@ -525,6 +525,41 @@ function DashboardContent() {
       id: 'CID_9341614254',
       name: 'Ads.com - RSOC - UTC - 13',
       value: '9341614254'
+    },
+    {
+      id: 'CID_9790364217',
+      name: 'Ads.com - UTC - 14',
+      value: '9790364217'
+    },
+    {
+      id: 'CID_2420687578',
+      name: 'Ads.com - UTC - 16',
+      value: '2420687578'
+    },
+    {
+      id: 'CID_6324595978',
+      name: 'Ads.com - RSOC - UTC - 17',
+      value: '6324595978'
+    },
+    {
+      id: 'CID_5133038944',
+      name: 'Ads.com - RSOC - UTC - 18',
+      value: '5133038944'
+    },
+    {
+      id: 'CID_9084731648',
+      name: 'Ads.com - RSOC - UTC - 19',
+      value: '9084731648'
+    },
+    {
+      id: 'CID_5109995931',
+      name: 'Ads.com - RSOC - UTC - 20',
+      value: '5109995931'
+    },
+    {
+      id: 'CID_8077209608',
+      name: 'Ads.com - RSOC - UTC - Yahoo',
+      value: '8077209608'
     },
     {
       id: 'CID_4277350349',

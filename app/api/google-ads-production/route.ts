@@ -115,7 +115,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       status: systemHealth.systemHealth,
       version: '3.0.0-production',
-      canMakeRequests: systemHealth.canMakeRequests,
       ...systemHealth,
       timestamp: new Date().toISOString()
     });

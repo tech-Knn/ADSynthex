@@ -31,25 +31,7 @@ const transformApiData = (apiResponse: any): AdsComResponse => {
       // Usually in format "article-ACTUALVALUE" or just the article URL
       let article = subid5Value;
       
-      /*
-       * subid_5 can be formatted in a couple of different ways depending on how
-       * the tracking links were set up:
-       *   1. A full URL slug such as "freshcuesdaily.com/industrial-crusher-machines..."
-       *   2. A raw slug such as "industrial-crusher-machines-enhancing-efficiency..."
-       *   3. A prefixed slug where the prefix helps to identify the value that
-       *      follows, e.g. "article-industrial-crusher-machines...".
-       *
-       * The old implementation simply removed the first dash-separated segment
-       * for any value that did not contain a slash.  Unfortunately, that meant
-       * legitimate first words like "industrial", "choosing", "how", etc. were
-       * being chopped off when the slug was in form (2).  The dashboard then
-       * displayed titles without their leading keywords.
-       *
-       * The fix below is more surgical: we ONLY strip the prefix when the slug
-       * starts with a *known* marker such as "article-" or "url-".  In every
-       * other case we leave the slug untouched so that its first real word is
-       * preserved.
-       */
+      
 
       if (!subid5Value.includes('/')) {
         const knownPrefixes = ['article-', 'url-', 'landing-'];
@@ -534,11 +516,18 @@ export async function POST(request: NextRequest) {
             '7605096292': ['utc11'],
             '5719842337': ['utc12'],
             '9341614254': ['utc13'],
+            '9790364217': ['utc14'],
+            '2420687578': ['utc16'],
+            '6324595978': ['utc17'],
+            '5133038944': ['utc18'],
+            '9084731648': ['utc19'],
+            '5109995931': ['utc20'],
+            '8077209608': ['yahoo', 'utcyahoo'],
             '4277350349': ['siddhi']
             // The IST customer (8677814915) will be handled as the fallback below
           };
 
-          const excludeSubidsForIst = ['utc02', 'utc03', 'utc04', 'utc05', 'utc06', 'utc07', 'utc08', 'utc09', 'utc10', 'utc11', 'utc12', 'utc13', 'siddhi'];
+          const excludeSubidsForIst = ['utc02', 'utc03', 'utc04', 'utc05', 'utc06', 'utc07', 'utc08', 'utc09', 'utc10', 'utc11', 'utc12', 'utc13', 'utc14', 'utc16', 'utc17', 'utc18', 'utc19', 'utc20', 'yahoo', 'utcyahoo', 'siddhi'];
 
           if (customerSubidMap[customerId]) {
             const allowedSubids = customerSubidMap[customerId];
@@ -628,6 +617,13 @@ export async function POST(request: NextRequest) {
           '7605096292': 'futuristinsights.org', // UTC-11
           '5719842337': 'innovationdigest.com', // UTC-12
           '9341614254': 'emergingtechreview.com', // UTC-13
+          '9790364217': 'nextgentechnology.info', // UTC-14
+          '2420687578': 'digitaltransformationhub.com', // UTC-16
+          '6324595978': 'techinsightsweekly.com', // UTC-17
+          '5133038944': 'innovationspotlight.net', // UTC-18
+          '9084731648': 'futuretechtoday.com', // UTC-19
+          '5109995931': 'emergingtrendsreport.org', // UTC-20
+          '8077209608': 'freshcuesdaily.com', // Yahoo
           '4277350349': 'emergingtrendsreport.org' // Siddhi
         };
         
@@ -746,6 +742,13 @@ export async function GET(request: NextRequest) {
         '7605096292': 'futuristinsights.org', // UTC-11
         '5719842337': 'innovationdigest.com', // UTC-12
         '9341614254': 'emergingtechreview.com', // UTC-13
+        '9790364217': 'nextgentechnology.info', // UTC-14
+        '2420687578': 'digitaltransformationhub.com', // UTC-16
+        '6324595978': 'techinsightsweekly.com', // UTC-17
+        '5133038944': 'innovationspotlight.net', // UTC-18
+        '9084731648': 'futuretechtoday.com', // UTC-19
+        '5109995931': 'emergingtrendsreport.org', // UTC-20
+        '8077209608': 'freshcuesdaily.com', // Yahoo
         '4277350349': 'emergingtrendsreport.org' // Siddhi
       };
       

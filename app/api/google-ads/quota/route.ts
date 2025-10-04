@@ -6,7 +6,7 @@ import { productionRateManager } from '../../../../lib/production-rate-manager';
 
 export async function GET(request: NextRequest) {
   try {
-    // 🛡️ BULLETPROOF: Get production-grade quota status
+    //  Get production-grade quota status
     const quotaStatus = getQuotaStatus();
     const rateLimiterStats = smartRateLimiter.getStats();
     const cacheStats = unifiedCache.getStats();
@@ -73,17 +73,17 @@ function getRecommendations(quotaStatus: any, rateLimiterStats: any, productionQ
     });
   }
   
-  // 🛡️ Production-grade recommendations
+  //  Production-grade recommendations
   if (!productionQuotaStatus.safeToOperate) {
     recommendations.push({
       type: 'error',
-      message: '🛡️ BULLETPROOF PROTECTION: API requests are temporarily blocked to prevent rate limits',
+      message: ' BULLETPROOF PROTECTION: API requests are temporarily blocked to prevent rate limits',
       action: `System will resume automatically. Current status: ${productionQuotaStatus.status}`
     });
   } else {
     recommendations.push({
       type: 'success',
-      message: '🛡️ BULLETPROOF PROTECTION: System is operating safely within Google limits',
+      message: ' BULLETPROOF PROTECTION: System is operating safely within Google limits',
       action: `Quota usage: ${productionQuotaStatus.usagePercentage}%, QPS: ${productionQuotaStatus.currentQPS}`
     });
   }
