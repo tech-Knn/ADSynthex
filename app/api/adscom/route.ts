@@ -522,12 +522,18 @@ export async function POST(request: NextRequest) {
             '5133038944': ['utc18'],
             '9084731648': ['utc19'],
             '5109995931': ['utc20'],
+            '3218250684': ['utc21'],
+            '7035336235': ['utc22'],
+            '5343981146': ['utc23'],
+            '1908857409': ['utc24'],
+            '3848887282': ['utc25'],
+            '4213092623': ['utc26'],
             '8807720960': ['yahoo', 'utcyahoo'],
             '4277350349': ['siddhi']
             // The IST customer (8677814915) will be handled as the fallback below
           };
 
-          const excludeSubidsForIst = ['utc02', 'utc03', 'utc04', 'utc05', 'utc06', 'utc07', 'utc08', 'utc09', 'utc10', 'utc11', 'utc12', 'utc13', 'utc14', 'utc16', 'utc17', 'utc18', 'utc19', 'utc20', 'yahoo', 'utcyahoo', 'siddhi'];
+          const excludeSubidsForIst = ['utc02', 'utc03', 'utc04', 'utc05', 'utc06', 'utc07', 'utc08', 'utc09', 'utc10', 'utc11', 'utc12', 'utc13', 'utc14', 'utc16', 'utc17', 'utc18', 'utc19', 'utc20', 'utc21', 'utc22', 'utc23', 'utc24', 'utc25', 'utc26', 'yahoo', 'utcyahoo', 'siddhi'];
 
           if (customerSubidMap[customerId]) {
             const allowedSubids = customerSubidMap[customerId];
@@ -623,6 +629,12 @@ export async function POST(request: NextRequest) {
           '5133038944': 'innovationspotlight.net', // UTC-18
           '9084731648': 'futuretechtoday.com', // UTC-19
           '5109995931': 'emergingtrendsreport.org', // UTC-20
+          '3218250684': 'digitaltrendstoday.com', // UTC-21
+          '7035336235': 'techreviewcentral.net', // UTC-22
+          '5343981146': 'futuristinsights.org', // UTC-23
+          '1908857409': 'innovationdigest.com', // UTC-24
+          '3848887282': 'emergingtechreview.com', // UTC-25
+          '4213092623': 'nextgentechnology.info', // UTC-26
           '8807720960': 'freshcuesdaily.com', // Yahoo
           '4277350349': 'emergingtrendsreport.org' // Siddhi
         };
@@ -748,6 +760,12 @@ export async function GET(request: NextRequest) {
         '5133038944': 'innovationspotlight.net', // UTC-18
         '9084731648': 'futuretechtoday.com', // UTC-19
         '5109995931': 'emergingtrendsreport.org', // UTC-20
+        '3218250684': 'digitaltrendstoday.com', // UTC-21
+        '7035336235': 'techreviewcentral.net', // UTC-22
+        '5343981146': 'futuristinsights.org', // UTC-23
+        '1908857409': 'innovationdigest.com', // UTC-24
+        '3848887282': 'emergingtechreview.com', // UTC-25
+        '4213092623': 'nextgentechnology.info', // UTC-26
         '8807720960': 'freshcuesdaily.com', // Yahoo
         '4277350349': 'emergingtrendsreport.org' // Siddhi
       };

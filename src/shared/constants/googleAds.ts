@@ -23,6 +23,12 @@ export const TARGET_ACCOUNTS = [
   { id: '5133038944', name: 'Ads.com - RSOC - UTC - 18' },
   { id: '9084731648', name: 'Ads.com - RSOC - UTC - 19' },
   { id: '5109995931', name: 'Ads.com - RSOC - UTC - 20' },
+  { id: '3218250684', name: 'Ads.com - UTC - 21' },
+  { id: '7035336235', name: 'Ads.com - UTC - 22' },
+  { id: '5343981146', name: 'Ads.com - UTC - 23' },
+  { id: '1908857409', name: 'Ads.com - UTC - 24' },
+  { id: '3848887282', name: 'Ads.com - UTC - 25' },
+  { id: '4213092623', name: 'Ads.com - UTC - 26' },
   { id: '8807720960', name: 'Ads.com - RSOC - UTC - Yahoo' },
   { id: '4277350349', name: 'RSOC - UTC - Ads.com' }
 ];
