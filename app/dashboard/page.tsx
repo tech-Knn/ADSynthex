@@ -302,9 +302,9 @@ function DashboardContent() {
   // Get customer name by ID
   const getCustomerNameById = (customerId: string | null): string => {
     if (!customerId) return 'All Accounts';
-    
-    const customerIdKey = `CID_${customerId}`;
-    const account = CUSTOMER_ACCOUNTS.find(acc => acc.id === customerIdKey);
+
+    // Search by value field (numeric ID) instead of id field (CID_ prefixed)
+    const account = CUSTOMER_ACCOUNTS.find(acc => acc.value === customerId);
     return account ? account.name : 'Unknown Account';
   };
 
