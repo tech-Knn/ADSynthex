@@ -12,7 +12,8 @@ import {
   BulbFilled,
   DollarOutlined,
   ApiOutlined,
-  RocketOutlined
+  RocketOutlined,
+  ThunderboltOutlined
 } from '@ant-design/icons';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -155,6 +156,16 @@ const CUSTOMER_ACCOUNTS = [
     value: '4213092623'
   },
   {
+    id: 'CID_6626619603',
+    name: 'Ads.com - RSOC - UTC - 27',
+    value: '6626619603'
+  },
+  {
+    id: 'CID_8914190629',
+    name: 'Ads.com - RSOC - UTC - 28',
+    value: '8914190629'
+  },
+  {
     id: 'CID_8807720960',
     name: 'Ads.com - RSOC - UTC - Yahoo',
     value: '8807720960'
@@ -219,6 +230,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     const pathname = window.location.pathname;
     if (pathname === '/inuvo-dashboard') return '2';
     if (pathname === '/analytics') return '3';
+    if (pathname === '/compado') return '4';
     return '1'; // Default to dashboard
   };
   
@@ -387,8 +399,13 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 icon: <ApiOutlined />,
                 label: <Link href="/analytics">Analytics</Link>,
               },
+              {
+                key: '4',
+                icon: <ThunderboltOutlined />,
+                label: <Link href="/compado">Compado</Link>,
+              },
               // {
-              //   key: '4',
+              //   key: '5',
               //   icon: <RocketOutlined />,
               //   label: <Link href="/google-ads-launcher">🚀 Google Ads Launcher</Link>,
               // }
