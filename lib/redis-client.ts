@@ -44,13 +44,24 @@ class RedisClient {
       this.client = new Redis({
         url: this.config.url,
         token: this.config.token,
+        automaticDeserialization: false, // Prevent deserialization errors from crashing
       });
       this.isConnected = true;
       console.log('[REDIS] Connected to Upstash Redis successfully');
+
+      // Test connection with a simple ping (non-blocking)
+      this.client.ping().then(() => {
+        console.log('[REDIS] Connection verified with ping');
+      }).catch((err) => {
+        console.error('[REDIS] Connection test failed, switching to fallback:', err);
+        this.isConnected = false;
+        this.client = null;
+      });
     } catch (error) {
       console.error('[REDIS] Failed to initialize Redis client:', error);
       console.warn('[REDIS] Falling back to in-memory cache');
       this.isConnected = false;
+      this.client = null;
     }
   }
 
@@ -75,6 +86,12 @@ class RedisClient {
       return this.getFallback(key);
     } catch (error) {
       console.error(`[REDIS] Error getting key ${key}:`, error);
+      // Auto-disable Redis on errors to prevent cascading failures
+      if (this.isConnected) {
+        console.warn('[REDIS] Disabling Redis due to errors, switching to in-memory fallback');
+        this.isConnected = false;
+        this.client = null;
+      }
       return this.getFallback(key);
     }
   }
@@ -93,6 +110,12 @@ class RedisClient {
       this.setFallback(key, value);
     } catch (error) {
       console.error(`[REDIS] Error setting key ${key}:`, error);
+      // Auto-disable Redis on errors
+      if (this.isConnected) {
+        console.warn('[REDIS] Disabling Redis due to set errors');
+        this.isConnected = false;
+        this.client = null;
+      }
       this.setFallback(key, value);
     }
   }
@@ -111,6 +134,12 @@ class RedisClient {
       this.setFallback(key, value, seconds);
     } catch (error) {
       console.error(`[REDIS] Error setting key ${key} with expiry:`, error);
+      // Auto-disable Redis on errors
+      if (this.isConnected) {
+        console.warn('[REDIS] Disabling Redis due to setex errors');
+        this.isConnected = false;
+        this.client = null;
+      }
       this.setFallback(key, value, seconds);
     }
   }
