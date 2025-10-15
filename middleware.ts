@@ -7,8 +7,12 @@ const publicPaths = [
   '/api/auth/login',
   '/api/auth/logout',
   '/api/google-ads/accounts',
+  '/api/google-ads-production',
+  '/api/compado',
+  '/api/compado-cost-revenue',
   '/api/test',
   '/api/inuvo',
+  '/api/currency/refresh',
   '/logout'
 ];
 

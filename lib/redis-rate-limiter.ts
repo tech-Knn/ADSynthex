@@ -38,6 +38,8 @@ interface RateLimiterConfig {
 export class RedisRateLimiter {
   private config: RateLimiterConfig;
   private apiName: string;
+  private enabled: boolean;
+  private inMemoryCounters: Map<string, number> = new Map();
 
   constructor(apiName: string = 'google', config?: Partial<RateLimiterConfig>) {
     this.apiName = apiName;
@@ -48,12 +50,28 @@ export class RedisRateLimiter {
       cooldownBuffer: 300, // 5 minutes safety buffer
       ...config
     };
+
+    // Check if rate limiter is enabled (can be disabled if Redis lacks permissions)
+    this.enabled = process.env.REDIS_RATE_LIMITER_ENABLED !== 'false';
+
+    if (!this.enabled) {
+      console.warn('[REDIS_RATE_LIMITER] Rate limiter disabled via environment variable');
+    }
   }
 
   /**
    * Check if a request can be made
    */
   async canMakeRequest(customerId?: string): Promise<RateLimitCheck> {
+    // If rate limiter is disabled, always allow requests
+    if (!this.enabled) {
+      return {
+        allowed: true,
+        reason: 'Rate limiter disabled',
+        waitTime: 0
+      };
+    }
+
     try {
       const now = Date.now();
       const date = this.getDateKey();
@@ -144,6 +162,11 @@ export class RedisRateLimiter {
    * Record a successful request
    */
   async recordRequest(customerId?: string): Promise<void> {
+    // If rate limiter is disabled, skip recording
+    if (!this.enabled) {
+      return;
+    }
+
     try {
       const now = Date.now();
       const date = this.getDateKey();
@@ -189,6 +212,12 @@ export class RedisRateLimiter {
    * Handle rate limit error from API
    */
   async handleRateLimitError(error: any): Promise<void> {
+    // If rate limiter is disabled, just log the error
+    if (!this.enabled) {
+      console.error('[REDIS_RATE_LIMITER] Rate limit error detected (limiter disabled):', error);
+      return;
+    }
+
     try {
       console.error('[REDIS_RATE_LIMITER] Rate limit error detected:', error);
 

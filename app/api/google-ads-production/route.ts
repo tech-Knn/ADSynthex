@@ -1,6 +1,5 @@
 /**
  * Production-Ready Google Ads API Endpoint
- * Guarantees fast, consistent data without EVER hitting rate limits
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -86,8 +85,7 @@ export async function POST(request: NextRequest) {
     const loadTime = Date.now() - startTime;
     console.error('[PRODUCTION_API] Request failed:', error);
 
-    // Get system health for error response
-    const systemHealth = bulletproofAPI.getHealthStatus();
+    const systemHealth = await bulletproofAPI.getHealthStatus();
 
     return NextResponse.json({
       error: 'Internal server error',
@@ -113,7 +111,7 @@ export async function GET(request: NextRequest) {
     const systemHealth = bulletproofAPI.getHealthStatus();
     
     return NextResponse.json({
-      status: systemHealth.systemHealth,
+      status: (await systemHealth).systemHealth,
       version: '3.0.0-production',
       ...systemHealth,
       timestamp: new Date().toISOString()
@@ -151,7 +149,7 @@ function transformApiResponse(
     console.log(`[PRODUCTION_API] Filtered by customer ${customerId}: ${filteredAds.length}/${originalCount} ads`);
   }
   
-  // Remove any Taboola data (as per your requirements)
+  // Remove any Taboola data
   const preTaboolaCount = filteredAds.length;
   filteredAds = filteredAds.filter((ad: any) => {
     if (!ad.final_urls || !Array.isArray(ad.final_urls)) return true;
@@ -179,7 +177,7 @@ function transformApiResponse(
   return {
     ads: filteredAds,
     campaigns: data.campaigns || [],
-    total_cost: Math.round(totalCost * 100) / 100, // Round to 2 decimal places
+    total_cost: Math.round(totalCost * 100) / 100,
     _transformedAt: new Date().toISOString(),
     _adCount: filteredAds.length,
     _originalAdCount: data.ads?.length || 0

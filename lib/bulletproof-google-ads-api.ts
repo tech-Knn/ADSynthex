@@ -1,11 +1,12 @@
 /**
- * Bulletproof Google Ads API Wrapper
- * Guarantees we NEVER hit rate limits with intelligent retry and caching
+ * Bulletproof Google Ads API Wrapper (Redis-Enhanced)
+ * Guarantees we NEVER hit rate limits with persistent Redis-based protection
  */
 
 import { fetchGoogleAdsData, getMockGoogleAdsData } from './google-ads-api';
-import { unifiedCache } from './unified-cache-manager';
-import { productionRateManager } from './production-rate-manager';
+import { redisCacheManager } from './redis-cache-manager';
+import { googleAdsRateLimiter } from './redis-rate-limiter';
+import { redisClient } from './redis-client';
 
 interface ApiRequest {
   startDate: string;
@@ -28,8 +29,11 @@ export class BulletproofGoogleAdsAPI {
   private activeRequests: Set<string> = new Set();
   private maxRetries = 3;
 
+  // Request deduplication: Track in-flight requests
+  private inflightRequests: Map<string, Promise<ApiResponse>> = new Map();
+
   /**
-   * Main method to get Google Ads data with bulletproof guarantees
+   * Main method to get Google Ads data with bulletproof guarantees (Redis-Enhanced)
    */
   async getData(
     startDate: string,
@@ -42,126 +46,139 @@ export class BulletproofGoogleAdsAPI {
     } = {}
   ): Promise<ApiResponse> {
     const { priority = 5, allowStale = true, maxWait = 30000 } = options;
-    
-    console.log(`[BULLETPROOF_API] Request: ${startDate} to ${endDate}, customer: ${customerId || 'all'}`);
 
-    // Step 1: Try unified cache first (instant response)
-    const cacheResult = this.tryCache(startDate, endDate, customerId, allowStale);
-    if (cacheResult) {
-      return cacheResult;
+    // Step 0: Request deduplication - Check if same request is already in-flight
+    const cacheKey = redisCacheManager.generateKey({
+      dataType: 'google-ads',
+      accountId: customerId,
+      startDate,
+      endDate
+    });
+
+    const requestKey = `${cacheKey}:${priority}`;
+
+    // If this exact request is already being processed, wait for it
+    if (this.inflightRequests.has(requestKey)) {
+      console.log(`[BULLETPROOF_API] 🔄 Request deduplication: Waiting for in-flight request (${requestKey})`);
+      return this.inflightRequests.get(requestKey)!;
     }
 
-    // Step 2: Check if we can make API requests safely (following Google's official guidelines)
-    const quotaStatus = productionRateManager.getQuotaStatus();
-    
-    // Determine service type based on request (following Google's service-specific limits)
-    const serviceType = this.determineServiceType(startDate, endDate, customerId);
-    const canRequest = productionRateManager.canMakeRequest(customerId || undefined, serviceType);
+    // Create a promise for this request and store it
+    const requestPromise = this.executeRequest(startDate, endDate, customerId, cacheKey, { priority, allowStale, maxWait });
 
-    if (!canRequest.allowed) {
-      console.warn(`[BULLETPROOF_API] Cannot make ${serviceType} API request: ${canRequest.reason}`);
-      
-      // Try to serve stale cache as fallback
-      const staleResult = this.tryStaleCache(startDate, endDate, customerId);
-      if (staleResult) {
-        return staleResult;
-      }
+    // Store the promise so other concurrent requests can share it
+    this.inflightRequests.set(requestKey, requestPromise);
 
-      // Last resort: return error with quota status
+    try {
+      const result = await requestPromise;
+      return result;
+    } finally {
+      // Clean up after request completes (success or failure)
+      this.inflightRequests.delete(requestKey);
+    }
+  }
+
+  /**
+   * Internal method that actually executes the request
+   */
+  private async executeRequest(
+    startDate: string,
+    endDate: string,
+    customerId: string | null,
+    cacheKey: string,
+    options: { priority: number; allowStale: boolean; maxWait: number }
+  ): Promise<ApiResponse> {
+    const { priority, allowStale } = options;
+
+    console.log(`[BULLETPROOF_API] Redis-powered request: ${startDate} to ${endDate}, customer: ${customerId || 'all'}`);
+
+    // Step 1: Try Redis cache first (memory → Redis → null)
+    const cached = await redisCacheManager.get(cacheKey, {
+      dataType: 'google-ads',
+      forceRefresh: !allowStale
+    });
+
+    if (cached.data && !cached.isStale) {
+      const quotaStatus = await googleAdsRateLimiter.getQuotaStatus();
+
+      console.log(`[BULLETPROOF_API] ${cached.source} cache hit, age: ${Math.round(cached.age / 1000)}s`);
+
       return {
-        data: null,
-        source: 'fallback',
-        message: `API unavailable (${serviceType}): ${canRequest.reason}. Wait time: ${canRequest.waitTime || 'unknown'}ms`,
+        data: cached.data,
+        source: 'cache',
+        age: cached.age,
+        message: `Fresh data from ${cached.source} cache (${Math.round(cached.age / 1000)}s old)`,
         quotaStatus
       };
     }
 
-    // Step 3: Attempt safe API call
+    // Step 2: Check Redis-based rate limiter (persistent across restarts!)
+    const rateLimitCheck = await googleAdsRateLimiter.canMakeRequest(customerId || undefined);
+
+    if (!rateLimitCheck.allowed) {
+      console.warn(`[BULLETPROOF_API] Rate limit blocked: ${rateLimitCheck.reason}`);
+
+      // Try to serve stale cache as fallback
+      if (cached.data && allowStale) {
+        const quotaStatus = await googleAdsRateLimiter.getQuotaStatus();
+
+        console.log(`[BULLETPROOF_API] Serving stale cache due to rate limit, age: ${Math.round(cached.age / 1000)}s`);
+
+        return {
+          data: cached.data,
+          source: 'stale',
+          age: cached.age,
+          message: `Stale data from cache (API in cooldown: ${rateLimitCheck.reason})`,
+          quotaStatus
+        };
+      }
+
+      // Last resort: return error
+      const quotaStatus = await googleAdsRateLimiter.getQuotaStatus();
+      return {
+        data: null,
+        source: 'fallback',
+        message: `API unavailable: ${rateLimitCheck.reason}. ${rateLimitCheck.waitTime ? `Retry in ${Math.round(rateLimitCheck.waitTime / 1000)}s` : 'Retry later'}`,
+        quotaStatus
+      };
+    }
+
+    // Step 3: Attempt safe API call with Redis protection
     try {
-      return await this.makeGuardedApiCall(startDate, endDate, customerId, priority);
+      return await this.makeGuardedApiCall(startDate, endDate, customerId, priority, cacheKey);
     } catch (error) {
       console.error('[BULLETPROOF_API] API call failed:', error);
-      
-      // Handle rate limit errors
+
+      // Handle rate limit errors with Redis persistence
       if (this.isRateLimitError(error)) {
-        productionRateManager.handleRateLimitError(error);
+        await googleAdsRateLimiter.handleRateLimitError(error);
       }
 
-      // Fallback to stale cache or error
-      const staleResult = this.tryStaleCache(startDate, endDate, customerId);
-      if (staleResult) {
-        return staleResult;
+      // Fallback to stale cache
+      if (cached.data && allowStale) {
+        const quotaStatus = await googleAdsRateLimiter.getQuotaStatus();
+
+        console.log(`[BULLETPROOF_API] API error, serving stale cache, age: ${Math.round(cached.age / 1000)}s`);
+
+        return {
+          data: cached.data,
+          source: 'stale',
+          age: cached.age,
+          message: `Stale data (API error: ${error instanceof Error ? error.message : 'Unknown'})`,
+          quotaStatus
+        };
       }
 
+      const quotaStatus = await googleAdsRateLimiter.getQuotaStatus();
       return {
         data: null,
         source: 'fallback',
         message: `API failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        quotaStatus: productionRateManager.getQuotaStatus()
+        quotaStatus
       };
     }
   }
 
-  /**
-   * Try to get data from cache
-   */
-  private tryCache(
-    startDate: string,
-    endDate: string,
-    customerId: string | null,
-    allowStale: boolean
-  ): ApiResponse | null {
-    const cacheResult = unifiedCache.getWithFallback(
-      startDate,
-      endDate,
-      customerId,
-      ['individual', 'aggregated', 'cost']
-    );
-
-    if (cacheResult.data && (!cacheResult.isStale || allowStale)) {
-      console.log(`[BULLETPROOF_API] Cache hit: ${cacheResult.source}, age: ${Math.round(cacheResult.age / 1000)}s`);
-      
-      return {
-        data: cacheResult.data,
-        source: 'cache',
-        age: cacheResult.age,
-        message: `Fresh data from ${cacheResult.source} cache`,
-        quotaStatus: productionRateManager.getQuotaStatus()
-      };
-    }
-
-    return null;
-  }
-
-  /**
-   * Try to get stale data from cache as fallback
-   */
-  private tryStaleCache(
-    startDate: string,
-    endDate: string,
-    customerId: string | null
-  ): ApiResponse | null {
-    const cacheResult = unifiedCache.getWithFallback(
-      startDate,
-      endDate,
-      customerId,
-      ['individual', 'aggregated', 'cost']
-    );
-
-    if (cacheResult.data) {
-      console.log(`[BULLETPROOF_API] Serving stale cache as fallback, age: ${Math.round(cacheResult.age / 1000)}s`);
-      
-      return {
-        data: cacheResult.data,
-        source: 'stale',
-        age: cacheResult.age,
-        message: `Stale data from ${cacheResult.source} cache (API unavailable)`,
-        quotaStatus: productionRateManager.getQuotaStatus()
-      };
-    }
-
-    return null;
-  }
 
   /**
    * Determine service type based on request characteristics (following Google's documentation)
@@ -177,27 +194,20 @@ export class BulletproofGoogleAdsAPI {
   }
 
   /**
-   * Make a guarded API call with Google-compliant quota management
+   * Make a guarded API call with Redis-based quota management
    */
   private async makeGuardedApiCall(
     startDate: string,
     endDate: string,
     customerId: string | null,
-    priority: number
+    priority: number,
+    cacheKey: string
   ): Promise<ApiResponse> {
-    const serviceType = this.determineServiceType(startDate, endDate, customerId);
-    
-    // Wait for optimal timing (following Google's QPS recommendations)
-    const waitTime = productionRateManager.getOptimalWaitTime();
-    if (waitTime > 0) {
-      console.log(`[BULLETPROOF_API] Waiting ${waitTime}ms for optimal ${serviceType} request timing`);
-      await new Promise(resolve => setTimeout(resolve, waitTime));
-    }
+    console.log(`[BULLETPROOF_API] Making Redis-protected Google Ads API call for customer ${customerId || 'all'}`);
 
-    // Record the request for quota tracking (with Google-compliant parameters)
-    productionRateManager.recordRequest(customerId || undefined, serviceType);
+    // Record request in Redis (increments counters atomically)
+    await googleAdsRateLimiter.recordRequest(customerId || undefined);
 
-    console.log(`[BULLETPROOF_API] Making Google Ads ${serviceType} API call for customer ${customerId || 'all'}`);
     const startTime = Date.now();
 
     // Make the actual API call with specific account filtering
@@ -208,25 +218,24 @@ export class BulletproofGoogleAdsAPI {
       throw new Error('Invalid API response structure');
     }
 
-    // Store in unified cache
-    unifiedCache.set(
-      startDate,
-      endDate,
-      customerId,
-      apiData,
-      {
-        dataType: customerId ? 'individual' : 'aggregated',
-        priority: 1 // Highest priority for fresh API data
-      }
-    );
+    // Store in Redis cache (memory + Redis layers)
+    await redisCacheManager.set(cacheKey, apiData, {
+      dataType: 'google-ads',
+      priority: 'high'
+    });
 
-    console.log(`[BULLETPROOF_API] ${serviceType} API call successful in ${responseTime}ms, ${apiData.ads.length} ads`);
+    // Record successful API call
+    redisCacheManager.recordApiCall();
+
+    console.log(`[BULLETPROOF_API] API call successful in ${responseTime}ms, ${apiData.ads.length} ads (cached in Redis)`);
+
+    const quotaStatus = await googleAdsRateLimiter.getQuotaStatus();
 
     return {
       data: apiData,
       source: 'api',
-      message: `Fresh data from Google Ads ${serviceType} API (${responseTime}ms, following Google rate limits)`,
-      quotaStatus: productionRateManager.getQuotaStatus()
+      message: `Fresh data from Google Ads API (${responseTime}ms, Redis-protected)`,
+      quotaStatus
     };
   }
 
@@ -243,15 +252,16 @@ export class BulletproofGoogleAdsAPI {
   }
 
   /**
-   * Get system health status
+   * Get system health status (Redis-enhanced)
    */
-  getHealthStatus() {
-    const quotaStatus = productionRateManager.getQuotaStatus();
-    const cacheStats = unifiedCache.getStats();
+  async getHealthStatus() {
+    const quotaStatus = await googleAdsRateLimiter.getQuotaStatus();
+    const cacheStats = redisCacheManager.getStats();
 
     return {
       quota: quotaStatus,
       cache: cacheStats,
+      redis: redisClient.getHealthStatus(),
       canMakeRequests: quotaStatus.safeToOperate,
       systemHealth: quotaStatus.safeToOperate ? 'healthy' : 'degraded',
       recommendations: this.getRecommendations(quotaStatus, cacheStats)
@@ -286,17 +296,17 @@ export class BulletproofGoogleAdsAPI {
   }
 
   /**
-   * Manual cache warm-up (use during low-traffic periods)
+   * Manual cache warm-up (use during low-traffic periods) - Redis-enhanced
    */
   async warmUpCache(
     dateRanges: Array<{ startDate: string; endDate: string; customerId?: string | null }>
   ): Promise<void> {
-    console.log(`[BULLETPROOF_API] Starting cache warm-up for ${dateRanges.length} date ranges`);
+    console.log(`[BULLETPROOF_API] Starting Redis-powered cache warm-up for ${dateRanges.length} date ranges`);
 
     for (const range of dateRanges) {
-      const quotaStatus = productionRateManager.canMakeRequest();
-      if (!quotaStatus.allowed) {
-        console.log('[BULLETPROOF_API] Stopping warm-up due to quota limits');
+      const rateLimitCheck = await googleAdsRateLimiter.canMakeRequest();
+      if (!rateLimitCheck.allowed) {
+        console.log(`[BULLETPROOF_API] Stopping warm-up due to rate limits: ${rateLimitCheck.reason}`);
         break;
       }
 
@@ -305,8 +315,8 @@ export class BulletproofGoogleAdsAPI {
           priority: 1,
           allowStale: false
         });
-        
-        // Wait between requests
+
+        // Wait between requests to respect rate limits
         await new Promise(resolve => setTimeout(resolve, 3000));
       } catch (error) {
         console.error('[BULLETPROOF_API] Warm-up request failed:', error);

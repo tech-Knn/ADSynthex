@@ -40,25 +40,25 @@ export class RedisCacheManager {
     totalRequests: 0
   };
 
-  // TTL configuration (in seconds)
+  // TTL configuration optimized for 15-person team (in seconds)
   private ttlConfig = {
     'google-ads': {
-      current: 600,      // 10 minutes for current day
-      recent: 1800,      // 30 minutes for recent data
-      historical: 3600   // 1 hour for historical data
+      current: 1800,     // 30 min for today (balance freshness & API calls)
+      recent: 3600,      // 1 hour for last 7 days
+      historical: 7200   // 2 hours for older data
     },
     'adscom': {
-      current: 600,
-      recent: 1800,
-      historical: 3600
+      current: 1800,
+      recent: 3600,
+      historical: 7200
     },
     'compado': {
-      current: 600,
-      recent: 1800,
-      historical: 3600
+      current: 1800,     // 30 min for fresh conversion data
+      recent: 3600,
+      historical: 7200
     },
     'unified': {
-      current: 300,      // 5 minutes for unified (cost+revenue)
+      current: 900,      // 15 min for cost+revenue combined view (most accessed)
       recent: 900,       // 15 minutes
       historical: 1800   // 30 minutes
     }

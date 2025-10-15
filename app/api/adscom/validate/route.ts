@@ -8,12 +8,11 @@ const validateExactKey = (apiKey: string | null): boolean => {
   
   // Get the key from environment variable
   const envKey = process.env.ASX_LOGIN_KEY;
-  
-  // Debug output (will be removed in production)
+
   console.log('Validating key, env key length:', envKey ? envKey.length : 'not set');
-  
-  // Compare with environment variable - strict equality check
+
   return envKey === apiKey;
+
 };
 
 export async function POST(request: NextRequest) {

@@ -188,6 +188,14 @@ function buildAssetGroupQuery(startDate: string, endDate: string) {
     .replace('DATE_RANGE_END', endDate);
 }
 
+// Build click view query for GCLID data
+function buildClickViewQuery(startDate: string, endDate: string) {
+  // Replace date placeholders with actual dates
+  return config.queries.clickViewQuery
+    .replace('DATE_RANGE_START', startDate)
+    .replace('DATE_RANGE_END', endDate);
+}
+
 export interface GoogleAdsCampaign {
   customer_id: string;
   customer_name: string;
@@ -237,9 +245,22 @@ export interface GoogleAdsAd {
   };
 }
 
+export interface GoogleAdsClick {
+  gclid: string;
+  customer_id: string;
+  customer_name: string;
+  campaign_id: string;
+  campaign_name: string;
+  ad_group_id: string;
+  ad_group_name: string;
+  date: string;
+  click_type: string;
+}
+
 export interface GoogleAdsData {
   campaigns: GoogleAdsCampaign[];
   ads: GoogleAdsAd[];
+  clicks?: GoogleAdsClick[];
   total_cost?: number;
 }
 
@@ -427,12 +448,59 @@ function processAssetGroupData(response: any[], account: any): GoogleAdsAd[] {
   }).filter(Boolean) as GoogleAdsAd[];
 }
 
+// Process click view data to extract GCLIDs
+function processClickData(response: any[], account: any): GoogleAdsClick[] {
+  // Log the first item structure for debugging
+  if (response.length > 0) {
+    console.log(`[GOOGLE_ADS_API] Click view data structure (first item):`, {
+      click_view: response[0].click_view ? 'exists' : 'missing',
+      gclid: response[0].click_view?.gclid?.substring(0, 20) || 'missing',
+      campaign_id: response[0].campaign?.id || 'missing',
+      ad_group_id: response[0].ad_group?.id || 'missing',
+      date: response[0].segments?.date || 'missing'
+    });
+  }
+
+  return response.map(item => {
+    try {
+      const gclid = item.click_view?.gclid || '';
+      const campaignId = item.campaign?.id || 'unknown';
+      const campaignName = item.campaign?.name || 'Unknown Campaign';
+      const adGroupId = item.ad_group?.id || 'unknown';
+      const adGroupName = item.ad_group?.name || 'Unknown Ad Group';
+      const date = item.segments?.date || '';
+      const clickType = item.segments?.click_type || 'UNKNOWN';
+
+      // Skip if no GCLID
+      if (!gclid) {
+        return null;
+      }
+
+      return {
+        gclid,
+        customer_id: account.id,
+        customer_name: account.name,
+        campaign_id: campaignId,
+        campaign_name: campaignName,
+        ad_group_id: adGroupId,
+        ad_group_name: adGroupName,
+        date,
+        click_type: clickType
+      };
+    } catch (error) {
+      console.error('Error processing click data:', error);
+      return null;
+    }
+  }).filter(Boolean) as GoogleAdsClick[];
+}
+
 // Fetch all necessary data
 export async function fetchGoogleAdsData(startDate: string, endDate: string, specificAccountId?: string | null): Promise<GoogleAdsData> {
   const { client, customer } = initializeGoogleAdsClient();
   const data: GoogleAdsData = {
     campaigns: [],
-    ads: []
+    ads: [],
+    clicks: []
   };
 
   // Filter accounts based on specificAccountId
@@ -482,75 +550,133 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string, spe
         data.campaigns.push(...processedCampaigns);
       }
 
-      // Fetch all campaigns
-      const allCampaignsQuery = buildAllCampaignsQuery(startDate, endDate);
-      const allCampaignsResponse = await makeApiCall(allCampaignsQuery, 'All Campaigns');
-      if (allCampaignsResponse && allCampaignsResponse.length > 0) {
-        const allCampaigns = processCampaignData(allCampaignsResponse, account);
-        
-        // Merge campaign lists, prioritizing active campaigns
-        const campaignMap = new Map();
-        
-        // First add all campaigns
-        for (const campaign of allCampaigns) {
-          campaignMap.set(campaign.campaign_id, campaign);
-        }
-        
-        // Then override with active campaigns
-        for (const campaign of data.campaigns) {
-          if (campaign.customer_id === account.id) {
+      // Fetch all campaigns (with error handling to not block other queries)
+      try {
+        const allCampaignsQuery = buildAllCampaignsQuery(startDate, endDate);
+        const allCampaignsResponse = await makeApiCall(allCampaignsQuery, 'All Campaigns');
+        if (allCampaignsResponse && allCampaignsResponse.length > 0) {
+          const allCampaigns = processCampaignData(allCampaignsResponse, account);
+
+          // Merge campaign lists, prioritizing active campaigns
+          const campaignMap = new Map();
+
+          // First add all campaigns
+          for (const campaign of allCampaigns) {
             campaignMap.set(campaign.campaign_id, campaign);
           }
+
+          // Then override with active campaigns
+          for (const campaign of data.campaigns) {
+            if (campaign.customer_id === account.id) {
+              campaignMap.set(campaign.campaign_id, campaign);
+            }
+          }
+
+          // Update campaigns list
+          data.campaigns = data.campaigns.filter(c => c.customer_id !== account.id);
+          data.campaigns.push(...Array.from(campaignMap.values()));
         }
-        
-        // Update campaigns list
-        data.campaigns = data.campaigns.filter(c => c.customer_id !== account.id);
-        data.campaigns.push(...Array.from(campaignMap.values()));
+      } catch (error) {
+        console.warn(`[GOOGLE_ADS_API] All Campaigns query failed (continuing with active campaigns):`, error instanceof Error ? error.message : 'Unknown error');
+        // Continue with active campaigns data
       }
 
-      // Fetch active ad group ads
-      const activeAdQuery = buildActiveAdGroupAdQuery(startDate, endDate);
-      const activeAdResponse = await makeApiCall(activeAdQuery, 'Active Ads');
-      if (activeAdResponse && activeAdResponse.length > 0) {
-        const processedAds = processAdData(activeAdResponse, account);
-        data.ads.push(...processedAds);
+      // Fetch active ad group ads (with error handling to not block click queries)
+      try {
+        const activeAdQuery = buildActiveAdGroupAdQuery(startDate, endDate);
+        const activeAdResponse = await makeApiCall(activeAdQuery, 'Active Ads');
+        if (activeAdResponse && activeAdResponse.length > 0) {
+          const processedAds = processAdData(activeAdResponse, account);
+          data.ads.push(...processedAds);
+        }
+      } catch (error) {
+        console.warn(`[GOOGLE_ADS_API] Active Ads query failed (continuing):`, error instanceof Error ? error.message : 'Unknown error');
       }
 
-      // Fetch all ad group ads
-      const allAdQuery = buildAllAdGroupAdQuery(startDate, endDate);
-      const allAdResponse = await makeApiCall(allAdQuery, 'All Ads');
-      if (allAdResponse && allAdResponse.length > 0) {
-        const allAds = processAdData(allAdResponse, account);
-        
-        // Merge ad lists, prioritizing active ads
-        const adMap = new Map();
-        
-        // First add all ads
-        for (const ad of allAds) {
-          adMap.set(ad.ad_id, ad);
-        }
-        
-        // Then override with active ads
-        for (const ad of data.ads) {
-          if (ad.customer_id === account.id) {
+      // Fetch all ad group ads (with error handling to not block click queries)
+      try {
+        const allAdQuery = buildAllAdGroupAdQuery(startDate, endDate);
+        const allAdResponse = await makeApiCall(allAdQuery, 'All Ads');
+        if (allAdResponse && allAdResponse.length > 0) {
+          const allAds = processAdData(allAdResponse, account);
+
+          // Merge ad lists, prioritizing active ads
+          const adMap = new Map();
+
+          // First add all ads
+          for (const ad of allAds) {
             adMap.set(ad.ad_id, ad);
           }
+
+          // Then override with active ads
+          for (const ad of data.ads) {
+            if (ad.customer_id === account.id) {
+              adMap.set(ad.ad_id, ad);
+            }
+          }
+
+          // Update ads list
+          data.ads = data.ads.filter(a => a.customer_id !== account.id);
+          data.ads.push(...Array.from(adMap.values()));
         }
-        
-        // Update ads list
-        data.ads = data.ads.filter(a => a.customer_id !== account.id);
-        data.ads.push(...Array.from(adMap.values()));
+      } catch (error) {
+        console.warn(`[GOOGLE_ADS_API] All Ads query failed (continuing):`, error instanceof Error ? error.message : 'Unknown error');
       }
 
-      // Fetch Performance Max asset groups
-      const assetGroupQuery = buildAssetGroupQuery(startDate, endDate);
-      const assetGroupResponse = await makeApiCall(assetGroupQuery, 'Asset Groups');
-      if (assetGroupResponse && assetGroupResponse.length > 0) {
-        const assetGroupAds = processAssetGroupData(assetGroupResponse, account);
-        
-        // Add asset group ads to the list
-        data.ads.push(...assetGroupAds);
+      // Fetch Performance Max asset groups (with error handling to not block click queries)
+      try {
+        const assetGroupQuery = buildAssetGroupQuery(startDate, endDate);
+        const assetGroupResponse = await makeApiCall(assetGroupQuery, 'Asset Groups');
+        if (assetGroupResponse && assetGroupResponse.length > 0) {
+          const assetGroupAds = processAssetGroupData(assetGroupResponse, account);
+
+          // Add asset group ads to the list
+          data.ads.push(...assetGroupAds);
+        }
+      } catch (error) {
+        console.warn(`[GOOGLE_ADS_API] Asset Groups query failed (continuing):`, error instanceof Error ? error.message : 'Unknown error');
       }
+
+      // Fetch click view data with GCLIDs for revenue matching
+      // NOTE: Google Ads API requires click_view queries to be for ONE day at a time
+      // So we need to loop through each day in the date range
+      // IMPORTANT: This is critical for Compado conversion matching!
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const daysDiff = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+
+      console.log(`[GOOGLE_ADS_API] 🔍 Fetching click_view data with GCLIDs for ${daysDiff + 1} days (required for Compado conversion matching)...`);
+
+      for (let dayOffset = 0; dayOffset <= daysDiff; dayOffset++) {
+        const currentDate = new Date(start);
+        currentDate.setDate(start.getDate() + dayOffset);
+        const dateString = currentDate.toISOString().split('T')[0];
+
+        // Query for single day only (Google requirement)
+        const clickViewQuery = buildClickViewQuery(dateString, dateString);
+
+        try {
+          const clickViewResponse = await makeApiCall(clickViewQuery, `Click Views (GCLIDs) for ${dateString}`);
+          if (clickViewResponse && clickViewResponse.length > 0) {
+            const clicks = processClickData(clickViewResponse, account);
+
+            if (clicks.length > 0) {
+              console.log(`[GOOGLE_ADS_API] ${dateString}: Fetched ${clicks.length} clicks with GCLIDs`);
+              data.clicks!.push(...clicks);
+            }
+          }
+        } catch (error) {
+          console.warn(`[GOOGLE_ADS_API] Failed to fetch clicks for ${dateString}:`, error instanceof Error ? error.message : 'Unknown error');
+          // Continue with other days even if one fails
+        }
+
+        // Small delay between days to avoid rate limits
+        if (dayOffset < daysDiff) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+      }
+
+      console.log(`[GOOGLE_ADS_API] Total clicks with GCLIDs across all days: ${data.clicks!.length}`);
 
       // Add delay between accounts to prevent overwhelming the API
       if (i < accountsToProcess.length - 1) {
@@ -566,8 +692,8 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string, spe
     }
   }
 
-  console.log(`Google Ads API fetch completed. Total: ${data.campaigns.length} campaigns, ${data.ads.length} ads`);
-  
+  console.log(`Google Ads API fetch completed. Total: ${data.campaigns.length} campaigns, ${data.ads.length} ads, ${data.clicks?.length || 0} clicks with GCLIDs`);
+
   return data;
 }
 

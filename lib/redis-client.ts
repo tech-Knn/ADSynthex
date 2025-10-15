@@ -128,7 +128,13 @@ class RedisClient {
       // Fallback to in-memory increment
       return this.incrFallback(key);
     } catch (error) {
-      console.error(`[REDIS] Error incrementing key ${key}:`, error);
+      // Check if it's a permission error
+      const errorStr = String(error);
+      if (errorStr.includes('NOPERM') || errorStr.includes('no permissions')) {
+        console.error(`[REDIS] Permission denied for 'incr' command. Your Upstash token may be read-only. Please update your token or disable rate limiting with REDIS_RATE_LIMITER_ENABLED=false`);
+      } else {
+        console.error(`[REDIS] Error incrementing key ${key}:`, error);
+      }
       return this.incrFallback(key);
     }
   }
@@ -188,7 +194,13 @@ class RedisClient {
       // Fallback: execute commands sequentially
       return this.multiFallback(commands);
     } catch (error) {
-      console.error('[REDIS] Error executing multi commands:', error);
+      // Check if it's a permission error
+      const errorStr = String(error);
+      if (errorStr.includes('NOPERM') || errorStr.includes('no permissions')) {
+        console.error('[REDIS] Permission denied for pipeline commands. Your Upstash token may be read-only. Falling back to in-memory operations.');
+      } else {
+        console.error('[REDIS] Error executing multi commands:', error);
+      }
       return this.multiFallback(commands);
     }
   }
