@@ -64,7 +64,7 @@ export class RedisCacheManager {
     }
   };
 
-  private maxMemoryCacheSize = 100; // Max entries in memory cache
+  private maxMemoryCacheSize = 20; // Max entries in memory cache (reduced for production memory limits)
 
   /**
    * Get data from cache (memory → Redis → returns null)
@@ -333,12 +333,12 @@ export class RedisCacheManager {
       }
     }
 
-    // If still too large, remove oldest 20%
+    // AGGRESSIVE: If still too large, remove oldest 50% (was 20%)
     if (this.memoryCache.size > this.maxMemoryCacheSize) {
       const entries = Array.from(this.memoryCache.entries());
       entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
 
-      const toRemove = Math.floor(entries.length * 0.2);
+      const toRemove = Math.floor(entries.length * 0.5); // Increased from 0.2 to 0.5
       for (let i = 0; i < toRemove; i++) {
         this.memoryCache.delete(entries[i][0]);
         deletedCount++;

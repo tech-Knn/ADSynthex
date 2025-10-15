@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "NODE_OPTIONS='--max-old-space-size=512' next start",
     "lint": "next lint",
     "clean": "rimraf .next"
   },
