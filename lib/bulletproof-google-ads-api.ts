@@ -29,14 +29,7 @@ export class BulletproofGoogleAdsAPI {
 
   // Request deduplication: Track in-flight requests with cleanup
   private inflightRequests: Map<string, { promise: Promise<ApiResponse>; timestamp: number }> = new Map();
-  private cleanupInterval: NodeJS.Timeout;
-
-  constructor() {
-    // MEMORY PROTECTION: Cleanup stale requests every 2 minutes
-    this.cleanupInterval = setInterval(() => {
-      this.cleanupStaleRequests();
-    }, 120000); // 2 minutes
-  }
+  private lastCleanup: number = 0;
 
   /**
    * Main method to get Google Ads data with bulletproof guarantees (Redis-Enhanced)
@@ -78,6 +71,9 @@ export class BulletproofGoogleAdsAPI {
       promise: requestPromise,
       timestamp: Date.now()
     });
+
+    // MEMORY PROTECTION: Cleanup on-demand (no setInterval in serverless)
+    this.cleanupStaleRequestsIfNeeded();
 
     try {
       const result = await requestPromise;
@@ -334,6 +330,22 @@ export class BulletproofGoogleAdsAPI {
     }
 
     console.log('[BULLETPROOF_API] Cache warm-up completed');
+  }
+
+  /**
+   * MEMORY PROTECTION: Cleanup stale in-flight requests (on-demand, no intervals)
+   * Runs at most once every 2 minutes to avoid overhead
+   */
+  private cleanupStaleRequestsIfNeeded(): void {
+    const now = Date.now();
+
+    // Only cleanup every 2 minutes max
+    if (now - this.lastCleanup < 120000) {
+      return;
+    }
+
+    this.lastCleanup = now;
+    this.cleanupStaleRequests();
   }
 
   /**
