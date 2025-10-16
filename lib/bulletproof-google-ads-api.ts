@@ -25,12 +25,18 @@ interface ApiResponse {
 }
 
 export class BulletproofGoogleAdsAPI {
-  private requestQueue: Map<string, ApiRequest> = new Map();
-  private activeRequests: Set<string> = new Set();
   private maxRetries = 3;
 
-  // Request deduplication: Track in-flight requests
-  private inflightRequests: Map<string, Promise<ApiResponse>> = new Map();
+  // Request deduplication: Track in-flight requests with cleanup
+  private inflightRequests: Map<string, { promise: Promise<ApiResponse>; timestamp: number }> = new Map();
+  private cleanupInterval: NodeJS.Timeout;
+
+  constructor() {
+    // MEMORY PROTECTION: Cleanup stale requests every 2 minutes
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupStaleRequests();
+    }, 120000); // 2 minutes
+  }
 
   /**
    * Main method to get Google Ads data with bulletproof guarantees (Redis-Enhanced)
@@ -58,22 +64,26 @@ export class BulletproofGoogleAdsAPI {
     const requestKey = `${cacheKey}:${priority}`;
 
     // If this exact request is already being processed, wait for it
-    if (this.inflightRequests.has(requestKey)) {
+    const existing = this.inflightRequests.get(requestKey);
+    if (existing) {
       console.log(`[BULLETPROOF_API] 🔄 Request deduplication: Waiting for in-flight request (${requestKey})`);
-      return this.inflightRequests.get(requestKey)!;
+      return existing.promise;
     }
 
-    // Create a promise for this request and store it
+    // Create a promise for this request and store it with timestamp
     const requestPromise = this.executeRequest(startDate, endDate, customerId, cacheKey, { priority, allowStale, maxWait });
 
-    // Store the promise so other concurrent requests can share it
-    this.inflightRequests.set(requestKey, requestPromise);
+    // Store the promise with timestamp for cleanup
+    this.inflightRequests.set(requestKey, {
+      promise: requestPromise,
+      timestamp: Date.now()
+    });
 
     try {
       const result = await requestPromise;
       return result;
     } finally {
-      // Clean up after request completes (success or failure)
+      // CRITICAL: Clean up after request completes (success or failure)
       this.inflightRequests.delete(requestKey);
     }
   }
@@ -324,6 +334,42 @@ export class BulletproofGoogleAdsAPI {
     }
 
     console.log('[BULLETPROOF_API] Cache warm-up completed');
+  }
+
+  /**
+   * MEMORY PROTECTION: Cleanup stale in-flight requests
+   * Removes requests stuck for >5 minutes (likely failed/timed out)
+   */
+  private cleanupStaleRequests(): void {
+    const now = Date.now();
+    const maxAge = 5 * 60 * 1000; // 5 minutes
+    let cleaned = 0;
+
+    for (const [key, entry] of this.inflightRequests.entries()) {
+      if (now - entry.timestamp > maxAge) {
+        this.inflightRequests.delete(key);
+        cleaned++;
+      }
+    }
+
+    if (cleaned > 0) {
+      console.log(`[BULLETPROOF_API] 🧹 Cleaned up ${cleaned} stale in-flight requests (memory protection)`);
+    }
+
+    // Log memory status if map is getting large
+    if (this.inflightRequests.size > 10) {
+      console.warn(`[BULLETPROOF_API] ⚠️  Large inflightRequests map: ${this.inflightRequests.size} entries`);
+    }
+  }
+
+  /**
+   * Get current memory status
+   */
+  getMemoryStatus() {
+    return {
+      inflightRequests: this.inflightRequests.size,
+      memoryUsage: process.memoryUsage()
+    };
   }
 }
 

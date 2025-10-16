@@ -52,18 +52,34 @@ export async function POST(request: NextRequest) {
     let message = '';
 
     try {
-      // 1. Fetch Google Ads cost data with GCLID
-      console.log('[COMPADO_COST_REVENUE] Fetching Google Ads click data with GCLIDs...');
-      const googleAdsResult = await bulletproofAPI.getData(startDate, endDate, customerId, {
-        priority: 8,
-        allowStale: true,
-        maxWait: 20000
-      });
+      // PERFORMANCE OPTIMIZATION: Fetch Google Ads and Compado data IN PARALLEL
+      console.log('[COMPADO_COST_REVENUE] 🚀 Fetching Google Ads + Compado data in PARALLEL...');
+      const fetchStartTime = Date.now();
 
-      const googleAdsData = googleAdsResult.data;
-      message += `Google Ads: ${googleAdsResult.message}. `;
+      const [googleAdsResult, compadoConversions] = await Promise.allSettled([
+        // 1. Google Ads data with reduced timeout
+        bulletproofAPI.getData(startDate, endDate, customerId, {
+          priority: 8,
+          allowStale: true,
+          maxWait: 10000 // Reduced from 20s to 10s
+        }),
+        // 2. Compado conversions (fetched simultaneously)
+        fetchAllCompadoConversions(startDate, endDate)
+      ]);
 
-      // Validate that we have real API data (not hardcoded/dummy)
+      const fetchTime = Date.now() - fetchStartTime;
+      console.log(`[COMPADO_COST_REVENUE] ⚡ Parallel fetch completed in ${fetchTime}ms`);
+
+      // Handle Google Ads result
+      if (googleAdsResult.status === 'rejected') {
+        console.error('[COMPADO_COST_REVENUE] ❌ Google Ads fetch failed:', googleAdsResult.reason);
+        throw new Error(`Google Ads API failed: ${googleAdsResult.reason}`);
+      }
+
+      const googleAdsData = googleAdsResult.value.data;
+      message += `Google Ads: ${googleAdsResult.value.message} (${fetchTime}ms). `;
+
+      // Validate Google Ads data
       if (!googleAdsData || (!googleAdsData.campaigns && !googleAdsData.clicks)) {
         console.error('[COMPADO_COST_REVENUE] ❌ No Google Ads data received from API!');
         throw new Error('Failed to fetch Google Ads data - API returned empty response');
@@ -73,189 +89,40 @@ export async function POST(request: NextRequest) {
         campaigns: googleAdsData?.campaigns?.length || 0,
         ads: googleAdsData?.ads?.length || 0,
         clicks: googleAdsData?.clicks?.length || 0,
-        dataSource: 'bulletproofAPI.getData() - LIVE API',
-        timestamp: new Date().toISOString()
+        fetchTime: `${fetchTime}ms`
       });
 
-      // Build campaign-level cost metrics from LIVE Google Ads API data
-      console.log('[COMPADO_COST_REVENUE] Building campaign metrics from LIVE API data...');
-      const campaignMetricsMap = new Map<string, any>();
-      (googleAdsData?.campaigns || []).forEach((campaign: any, index: number) => {
-        const campaignId = String(campaign.campaign_id); // Ensure string type
-        if (campaignId && campaignId !== 'undefined') {
-          const totalCost = campaign.metrics?.cost || 0;
-          const totalClicks = campaign.metrics?.clicks || 0;
-          const cpc = totalClicks > 0 ? totalCost / totalClicks : 0;
-
-          campaignMetricsMap.set(campaignId, {
-            campaign_name: campaign.campaign_name,
-            total_cost: totalCost,
-            total_clicks: totalClicks,
-            cpc: cpc,
-            impressions: campaign.metrics?.impressions || 0
-          });
-
-          // Log first campaign to verify real data
-          if (index === 0) {
-            console.log(`[COMPADO_COST_REVENUE] ✓ Sample campaign from LIVE API: ${campaign.campaign_name} | ID: ${campaignId} | Cost: $${totalCost.toFixed(2)} | Clicks: ${totalClicks}`);
-          }
-        }
-      });
-
-      // Build ad-group-level metrics (middle tier)
-      const adGroupMetricsMap = new Map<string, any>();
-      (googleAdsData?.ads || []).forEach((ad: any) => {
-        const adGroupId = String(ad.ad_group_id); // Ensure string type
-        if (adGroupId && adGroupId !== 'undefined') {
-          // If we already have this ad group, sum the metrics
-          const existing = adGroupMetricsMap.get(adGroupId);
-          const totalCost = (existing?.cost || 0) + (ad.metrics?.cost || 0);
-          const totalClicks = (existing?.clicks || 0) + (ad.metrics?.clicks || 1);
-          const cpc = totalClicks > 0 ? totalCost / totalClicks : 0;
-
-          adGroupMetricsMap.set(adGroupId, {
-            campaign_id: String(ad.campaign_id),
-            campaign_name: ad.campaign_name,
-            ad_group_name: ad.ad_group_name,
-            cost: totalCost,
-            clicks: totalClicks,
-            impressions: (existing?.impressions || 0) + (ad.metrics?.impressions || 0),
-            cpc: cpc
-          });
-        }
-      });
-
-      console.log(`[COMPADO_COST_REVENUE] Built metrics maps:`, {
-        campaigns: campaignMetricsMap.size,
-        adGroups: adGroupMetricsMap.size,
-        ads: googleAdsData?.ads?.length || 0
-      });
-
-      // Log sample IDs from each map for debugging
-      if (campaignMetricsMap.size > 0) {
-        const sampleCampaignIds = Array.from(campaignMetricsMap.keys()).slice(0, 3);
-        console.log(`[COMPADO_COST_REVENUE] Sample campaign IDs in map:`, sampleCampaignIds);
-      }
-      if (adGroupMetricsMap.size > 0) {
-        const sampleAdGroupIds = Array.from(adGroupMetricsMap.keys()).slice(0, 3);
-        console.log(`[COMPADO_COST_REVENUE] Sample ad group IDs in map:`, sampleAdGroupIds);
-      }
-      if (googleAdsData?.clicks && googleAdsData.clicks.length > 0) {
-        const sampleClickIds = googleAdsData.clicks.slice(0, 3).map((c: any) => ({
-          ad_group_id: c.ad_group_id,
-          campaign_id: c.campaign_id
-        }));
-        console.log(`[COMPADO_COST_REVENUE] Sample ad_group/campaign IDs from clicks:`, sampleClickIds);
+      // Handle Compado result
+      let compadoData: any[] = [];
+      if (compadoConversions.status === 'fulfilled') {
+        compadoData = compadoConversions.value;
+        message += `Compado: ${compadoData.length} conversions. `;
+        console.log(`[COMPADO_COST_REVENUE] ✓ Compado conversions: ${compadoData.length}`);
+      } else {
+        console.warn('[COMPADO_COST_REVENUE] ⚠️  Compado fetch failed:', compadoConversions.reason);
+        message += 'Compado: API error. ';
       }
 
-      // Extract actual GCLID clicks from Google Ads click_view data and enrich with cost data
-      const googleAdsClicks = (googleAdsData?.clicks || []).map((click: any) => {
-        // Try to get metrics: ad_group level first, then campaign level
-        const adGroupIdStr = String(click.ad_group_id);
-        const campaignIdStr = String(click.campaign_id);
+      // MEMORY OPTIMIZATION: Build metrics maps
+      const processingStart = Date.now();
+      const campaignMetricsMap = buildCampaignMetricsMap(googleAdsData?.campaigns || []);
+      const adGroupMetricsMap = buildAdGroupMetricsMap(googleAdsData?.ads || []);
 
-        let metrics = adGroupMetricsMap.get(adGroupIdStr);
-        let costPerClick = 0;
-        let source = 'none';
+      // Extract and enrich clicks
+      const googleAdsClicks = enrichClicksWithCost(
+        googleAdsData?.clicks || [],
+        campaignMetricsMap,
+        adGroupMetricsMap,
+        startDate
+      );
 
-        if (metrics && metrics.cpc > 0) {
-          costPerClick = metrics.cpc;
-          source = 'ad-group-level';
-        } else {
-          // Fallback to campaign-level metrics
-          const campaignMetrics = campaignMetricsMap.get(campaignIdStr);
-          if (campaignMetrics && campaignMetrics.cpc > 0) {
-            costPerClick = campaignMetrics.cpc;
-            metrics = {
-              campaign_id: campaignIdStr,
-              campaign_name: campaignMetrics.campaign_name,
-              ad_group_id: adGroupIdStr,
-              ad_group_name: click.ad_group_name,
-              cost: campaignMetrics.total_cost,
-              clicks: campaignMetrics.total_clicks,
-              impressions: campaignMetrics.impressions,
-              cpc: campaignMetrics.cpc
-            };
-            source = 'campaign-level';
-          } else {
-            // No metrics found
-            metrics = {
-              campaign_id: campaignIdStr,
-              campaign_name: click.campaign_name,
-              ad_group_id: adGroupIdStr,
-              ad_group_name: click.ad_group_name,
-              cost: 0,
-              clicks: 1,
-              impressions: 0,
-              cpc: 0
-            };
-            source = 'none';
-          }
-        }
+      const processingTime = Date.now() - processingStart;
+      console.log(`[COMPADO_COST_REVENUE] ⚡ Data processing completed in ${processingTime}ms`);
 
-        return {
-          gclid: click.gclid,
-          campaign_id: String(click.campaign_id || metrics.campaign_id || 'unknown'),
-          campaign_name: click.campaign_name || metrics.campaign_name || `Campaign ${click.campaign_id}`,
-          ad_group_id: String(click.ad_group_id || 'unknown'),
-          ad_group_name: click.ad_group_name || metrics.ad_group_name || 'unknown',
-          cost: costPerClick, // Cost for this individual click
-          clicks: 1, // Each row represents 1 click
-          impressions: 1, // Approximation
-          date: click.date || startDate,
-          _costSource: source // For debugging
-        };
-      });
-
-      // Log cost statistics
+      // Simplified cost statistics logging (performance optimization)
       const clicksWithCost = googleAdsClicks.filter((c: any) => c.cost > 0);
       const totalCost = googleAdsClicks.reduce((sum: number, c: any) => sum + c.cost, 0);
-      console.log(`[COMPADO_COST_REVENUE] Cost mapping results:`, {
-        total_clicks: googleAdsClicks.length,
-        clicks_with_cost: clicksWithCost.length,
-        total_cost: `$${totalCost.toFixed(2)}`,
-        avg_cpc: googleAdsClicks.length > 0 ? `$${(totalCost / googleAdsClicks.length).toFixed(4)}` : '$0',
-        cost_sources: {
-          'ad-group-level': googleAdsClicks.filter((c: any) => c._costSource === 'ad-group-level').length,
-          'campaign-level': googleAdsClicks.filter((c: any) => c._costSource === 'campaign-level').length,
-          'none': googleAdsClicks.filter((c: any) => c._costSource === 'none').length
-        }
-      });
-
-      // Log sample clicks for debugging
-      if (googleAdsClicks.length > 0) {
-        console.log(`[COMPADO_COST_REVENUE] Sample clicks (first 3):`,
-          googleAdsClicks.slice(0, 3).map((c: any) => ({
-            gclid: c.gclid.substring(0, 20) + '...',
-            campaign: c.campaign_name?.substring(0, 30),
-            cost: `$${c.cost.toFixed(4)}`,
-            source: c._costSource
-          }))
-        );
-      }
-
-      // 2. Fetch Compado conversion data (LIVE API)
-      console.log('[COMPADO_COST_REVENUE] Fetching LIVE Compado conversion data from API...');
-      let compadoConversions: any[] = [];
-
-      try {
-        compadoConversions = await fetchAllCompadoConversions(startDate, endDate);
-        message += `Compado: ${compadoConversions.length} conversions fetched. `;
-        console.log(`[COMPADO_COST_REVENUE] ✓ Live Compado API data received:`, {
-          conversions: compadoConversions.length,
-          dataSource: 'fetchAllCompadoConversions() - LIVE API',
-          timestamp: new Date().toISOString()
-        });
-
-        // Log first conversion to verify real data
-        if (compadoConversions.length > 0) {
-          const firstConv = compadoConversions[0];
-          console.log(`[COMPADO_COST_REVENUE] ✓ Sample conversion from LIVE API: GCLID: ${firstConv.gclid?.substring(0, 20)}... | Revenue: €${firstConv.revenue?.toFixed(2)} ($${firstConv.revenueUsd?.toFixed(2)} USD)`);
-        }
-      } catch (compadoError) {
-        console.warn('[COMPADO_COST_REVENUE] ⚠️  Compado API error:', compadoError);
-        message += 'Compado: API error (no conversions available). ';
-      }
+      console.log(`[COMPADO_COST_REVENUE] Cost mapping: ${googleAdsClicks.length} clicks, ${clicksWithCost.length} with cost, total: $${totalCost.toFixed(2)}`);
 
       // 3. Map cost and revenue by GCLID
       console.log('[COMPADO_COST_REVENUE] Creating cost-revenue mapping...');
@@ -297,7 +164,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const costRevenueMapping = mapCompadoCostRevenue(googleAdsClicks, compadoConversions, campaignNamesMap);
+      const costRevenueMapping = mapCompadoCostRevenue(googleAdsClicks, compadoData, campaignNamesMap);
 
       // 4. Aggregate by campaign for easier viewing (using LIVE data only)
       console.log('[COMPADO_COST_REVENUE] Aggregating by campaign using LIVE API data...');
@@ -347,12 +214,12 @@ export async function POST(request: NextRequest) {
         google_ads_data: {
           clicks: googleAdsClicks,
           total_clicks: googleAdsClicks.length,
-          total_cost: googleAdsClicks.reduce((sum: number, c: any) => sum + c.cost, 0)
+          total_cost: totalCost
         },
         compado_data: {
-          conversions: compadoConversions,
-          total_conversions: compadoConversions.length,
-          total_revenue: compadoConversions.reduce((sum: number, c: any) => sum + c.revenue, 0)
+          conversions: compadoData,
+          total_conversions: compadoData.length,
+          total_revenue: compadoData.reduce((sum: number, c: any) => sum + (c.revenueUsd || 0), 0)
         },
         cost_revenue_mapping: costRevenueMapping,
         campaign_aggregated: campaignAggregated,
@@ -437,4 +304,136 @@ export async function GET(request: NextRequest) {
       timestamp: new Date().toISOString()
     }, { status: 500 });
   }
+}
+
+/**
+ * MEMORY OPTIMIZED: Build campaign metrics map
+ */
+function buildCampaignMetricsMap(campaigns: any[]): Map<string, any> {
+  const map = new Map<string, any>();
+
+  for (let i = 0; i < campaigns.length; i++) {
+    const campaign = campaigns[i];
+    const campaignId = String(campaign.campaign_id);
+
+    if (campaignId && campaignId !== 'undefined') {
+      const totalCost = campaign.metrics?.cost || 0;
+      const totalClicks = campaign.metrics?.clicks || 0;
+      const cpc = totalClicks > 0 ? totalCost / totalClicks : 0;
+
+      map.set(campaignId, {
+        campaign_name: campaign.campaign_name,
+        total_cost: totalCost,
+        total_clicks: totalClicks,
+        cpc: cpc,
+        impressions: campaign.metrics?.impressions || 0
+      });
+    }
+  }
+
+  console.log(`[COMPADO_COST_REVENUE] Built ${map.size} campaign metrics`);
+  return map;
+}
+
+/**
+ * MEMORY OPTIMIZED: Build ad group metrics map
+ */
+function buildAdGroupMetricsMap(ads: any[]): Map<string, any> {
+  const map = new Map<string, any>();
+
+  for (let i = 0; i < ads.length; i++) {
+    const ad = ads[i];
+    const adGroupId = String(ad.ad_group_id);
+
+    if (adGroupId && adGroupId !== 'undefined') {
+      const existing = map.get(adGroupId);
+      const totalCost = (existing?.cost || 0) + (ad.metrics?.cost || 0);
+      const totalClicks = (existing?.clicks || 0) + (ad.metrics?.clicks || 1);
+      const cpc = totalClicks > 0 ? totalCost / totalClicks : 0;
+
+      map.set(adGroupId, {
+        campaign_id: String(ad.campaign_id),
+        campaign_name: ad.campaign_name,
+        ad_group_name: ad.ad_group_name,
+        cost: totalCost,
+        clicks: totalClicks,
+        impressions: (existing?.impressions || 0) + (ad.metrics?.impressions || 0),
+        cpc: cpc
+      });
+    }
+  }
+
+  console.log(`[COMPADO_COST_REVENUE] Built ${map.size} ad group metrics`);
+  return map;
+}
+
+/**
+ * MEMORY OPTIMIZED: Enrich clicks with cost data
+ */
+function enrichClicksWithCost(
+  clicks: any[],
+  campaignMetricsMap: Map<string, any>,
+  adGroupMetricsMap: Map<string, any>,
+  startDate: string
+): any[] {
+  const enriched = [];
+
+  for (let i = 0; i < clicks.length; i++) {
+    const click = clicks[i];
+    const adGroupIdStr = String(click.ad_group_id);
+    const campaignIdStr = String(click.campaign_id);
+
+    let metrics = adGroupMetricsMap.get(adGroupIdStr);
+    let costPerClick = 0;
+    let source = 'none';
+
+    if (metrics && metrics.cpc > 0) {
+      costPerClick = metrics.cpc;
+      source = 'ad-group-level';
+    } else {
+      const campaignMetrics = campaignMetricsMap.get(campaignIdStr);
+      if (campaignMetrics && campaignMetrics.cpc > 0) {
+        costPerClick = campaignMetrics.cpc;
+        metrics = {
+          campaign_id: campaignIdStr,
+          campaign_name: campaignMetrics.campaign_name,
+          ad_group_id: adGroupIdStr,
+          ad_group_name: click.ad_group_name,
+          cost: campaignMetrics.total_cost,
+          clicks: campaignMetrics.total_clicks,
+          impressions: campaignMetrics.impressions,
+          cpc: campaignMetrics.cpc
+        };
+        source = 'campaign-level';
+      } else {
+        metrics = {
+          campaign_id: campaignIdStr,
+          campaign_name: click.campaign_name,
+          ad_group_id: adGroupIdStr,
+          ad_group_name: click.ad_group_name,
+          cost: 0,
+          clicks: 1,
+          impressions: 0,
+          cpc: 0
+        };
+        source = 'none';
+      }
+    }
+
+    enriched.push({
+      gclid: click.gclid,
+      campaign_id: String(click.campaign_id || metrics.campaign_id || 'unknown'),
+      campaign_name: click.campaign_name || metrics.campaign_name || `Campaign ${click.campaign_id}`,
+      ad_group_id: String(click.ad_group_id || 'unknown'),
+      ad_group_name: click.ad_group_name || metrics.ad_group_name || 'unknown',
+      cost: costPerClick,
+      clicks: 1,
+      impressions: 1,
+      date: click.date || startDate,
+      _costSource: source
+    });
+  }
+
+  console.log(`[COMPADO_COST_REVENUE] Enriched ${enriched.length} clicks`);
+  return enriched;
 }
