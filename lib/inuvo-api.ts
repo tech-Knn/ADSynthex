@@ -99,8 +99,18 @@ const INUVO_CONFIG: InuvoApiConfig = {
       timezone: 'GMT'
     },
     {
-      id: '2420687578', 
+      id: '2420687578',
       name: 'Inuvo - Account - 05 - GMT',
+      timezone: 'GMT'
+    },
+    {
+      id: '8277852439',
+      name: 'Inuvo - Account 4 - PST (GMT -8:00)',
+      timezone: 'GMT'
+    },
+    {
+      id: '3882415196',
+      name: 'Inuvo - Account 6 - PST (GMT -8:00)',
       timezone: 'GMT'
     }
   ]
@@ -136,7 +146,8 @@ export async function fetchInuvoRealtimeData(
       const params = new URLSearchParams({
         accessToken: INUVO_CONFIG.accessToken,
         startDate: formatDateForInuvo(startDate),
-        endDate: formatDateForInuvo(endDate)
+        endDate: formatDateForInuvo(endDate),
+        agid: account.id  // Add account ID to fetch account-specific data
       });
 
       const response = await fetch(`${realtimeUrl}?${params}`, {
@@ -236,7 +247,8 @@ export async function fetchInuvoDailyData(
       const dailyUrl = `${INUVO_CONFIG.baseUrl}/GetAdsenseOnlineDailyByChannel`;
       const params = new URLSearchParams({
         accessToken: INUVO_CONFIG.accessToken,
-        startDate: formatDateForInuvo(startDate)
+        startDate: formatDateForInuvo(startDate),
+        agid: account.id  // Add account ID to fetch account-specific data
       });
 
       const response = await fetch(`${dailyUrl}?${params}`, {
@@ -586,35 +598,45 @@ export function getMockInuvoData(startDate: string, endDate: string): InuvoRespo
     total_clicks: totalClicks,
     total_impressions: totalImpressions,
     account_summary: {
-      '7195529443': { 
-        earnings: totalEarnings * 0.25, 
-        clicks: Math.floor(totalClicks * 0.25), 
-        impressions: Math.floor(totalImpressions * 0.25) 
+      '7195529443': {
+        earnings: totalEarnings * 0.20,
+        clicks: Math.floor(totalClicks * 0.20),
+        impressions: Math.floor(totalImpressions * 0.20)
       },
-      '7616718892': { 
-        earnings: totalEarnings * 0.15, 
-        clicks: Math.floor(totalClicks * 0.15), 
-        impressions: Math.floor(totalImpressions * 0.15) 
+      '7616718892': {
+        earnings: totalEarnings * 0.12,
+        clicks: Math.floor(totalClicks * 0.12),
+        impressions: Math.floor(totalImpressions * 0.12)
       },
-      '9833281050': { 
-        earnings: totalEarnings * 0.20, 
-        clicks: Math.floor(totalClicks * 0.20), 
-        impressions: Math.floor(totalImpressions * 0.20) 
+      '9833281050': {
+        earnings: totalEarnings * 0.15,
+        clicks: Math.floor(totalClicks * 0.15),
+        impressions: Math.floor(totalImpressions * 0.15)
       },
-      '9790364217': { 
-        earnings: totalEarnings * 0.15, 
-        clicks: Math.floor(totalClicks * 0.15), 
-        impressions: Math.floor(totalImpressions * 0.15) 
+      '9790364217': {
+        earnings: totalEarnings * 0.12,
+        clicks: Math.floor(totalClicks * 0.12),
+        impressions: Math.floor(totalImpressions * 0.12)
       },
-      '9835231086': { 
-        earnings: totalEarnings * 0.15, 
-        clicks: Math.floor(totalClicks * 0.15), 
-        impressions: Math.floor(totalImpressions * 0.15) 
+      '9835231086': {
+        earnings: totalEarnings * 0.12,
+        clicks: Math.floor(totalClicks * 0.12),
+        impressions: Math.floor(totalImpressions * 0.12)
       },
-      '2420687578': { 
-        earnings: totalEarnings * 0.10, 
-        clicks: Math.floor(totalClicks * 0.10), 
-        impressions: Math.floor(totalImpressions * 0.10) 
+      '2420687578': {
+        earnings: totalEarnings * 0.09,
+        clicks: Math.floor(totalClicks * 0.09),
+        impressions: Math.floor(totalImpressions * 0.09)
+      },
+      '8277852439': {
+        earnings: totalEarnings * 0.10,
+        clicks: Math.floor(totalClicks * 0.10),
+        impressions: Math.floor(totalImpressions * 0.10)
+      },
+      '3882415196': {
+        earnings: totalEarnings * 0.10,
+        clicks: Math.floor(totalClicks * 0.10),
+        impressions: Math.floor(totalImpressions * 0.10)
       }
     },
     _source: 'inuvo_api',

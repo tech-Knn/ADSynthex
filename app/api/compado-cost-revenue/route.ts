@@ -176,8 +176,32 @@ export async function POST(request: NextRequest) {
         console.log(`[COMPADO_COST_REVENUE] ✓ Using ${campaignMetricsMap.size} campaigns from LIVE Google Ads API`);
       }
 
+      // Log campaign-level totals before aggregation (for validation)
+      let totalCampaignLevelCost = 0;
+      if (campaignMetricsMap) {
+        campaignMetricsMap.forEach((data, id) => {
+          totalCampaignLevelCost += data.total_cost || 0;
+        });
+        console.log(`[COMPADO_COST_REVENUE] Campaign-level total cost (from Google Ads): $${totalCampaignLevelCost.toFixed(2)}`);
+      }
+
       const campaignAggregated = aggregateMappingsByCampaign(costRevenueMapping, campaignMetricsMap);
       console.log(`[COMPADO_COST_REVENUE] ✓ Campaign aggregation complete: ${campaignAggregated.length} campaigns with LIVE data`);
+
+      // VALIDATION: Check if aggregated costs match campaign-level costs
+      const aggregatedTotalCost = campaignAggregated.reduce((sum, c) => sum + c.cost, 0);
+      const campaignLevelCost = totalCampaignLevelCost || 0;
+      const costDifference = aggregatedTotalCost - campaignLevelCost;
+      const costDifferencePercent = campaignLevelCost > 0 ? (costDifference / campaignLevelCost) * 100 : 0;
+
+      console.log(`[COMPADO_COST_REVENUE] Cost validation:`);
+      console.log(`[COMPADO_COST_REVENUE]   - Campaign-level total: $${campaignLevelCost.toFixed(2)}`);
+      console.log(`[COMPADO_COST_REVENUE]   - Aggregated total: $${aggregatedTotalCost.toFixed(2)}`);
+      console.log(`[COMPADO_COST_REVENUE]   - Difference: $${costDifference.toFixed(2)} (${costDifferencePercent.toFixed(1)}%)`);
+
+      if (Math.abs(costDifferencePercent) > 5) {
+        console.warn(`[COMPADO_COST_REVENUE] ⚠️⚠️⚠️  COST MISMATCH > 5% - Check aggregation logic!`);
+      }
 
       // Log what campaigns we're returning
       if (campaignAggregated.length > 0) {

@@ -13,7 +13,8 @@ import {
   DollarOutlined,
   ApiOutlined,
   RocketOutlined,
-  ThunderboltOutlined
+  ThunderboltOutlined,
+  GoogleOutlined
 } from '@ant-design/icons';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -246,6 +247,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     if (pathname === '/inuvo-dashboard') return '2';
     if (pathname === '/analytics') return '3';
     if (pathname === '/compado') return '4';
+    if (pathname === '/predicto-dashboard') return '5';
     return '1'; // Default to dashboard
   };
   
@@ -421,6 +423,11 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
               },
               // {
               //   key: '5',
+              //   icon: <GoogleOutlined />,
+              //   label: <Link href="/predicto-dashboard">Predicto GDN</Link>,
+              // },
+              // {
+              //   key: '6',
               //   icon: <RocketOutlined />,
               //   label: <Link href="/google-ads-launcher">🚀 Google Ads Launcher</Link>,
               // }

@@ -191,8 +191,13 @@ export async function GET(request: NextRequest) {
       },
       accounts: [
         { id: '7195529443', name: 'Inuvo - Account - 02 - GMT' },
-        {id: '9833281050', name: 'Inuvo - Account 3 - PST (GMT -8:00)' },
-        { id: '7616718892', name: 'Inuvo - Account 2 - PST (GMT -8:00)' }
+        { id: '7616718892', name: 'Inuvo - Account 2 - PST (GMT -8:00)' },
+        { id: '9833281050', name: 'Inuvo - Account 3 - PST (GMT -8:00)' },
+        { id: '9790364217', name: 'Inuvo - Account - 03 - GMT' },
+        { id: '9835231086', name: 'Inuvo - Account - 04 - GMT' },
+        { id: '2420687578', name: 'Inuvo - Account - 05 - GMT' },
+        { id: '8277852439', name: 'Inuvo - Account 4 - PST (GMT -8:00)' },
+        { id: '3882415196', name: 'Inuvo - Account 6 - PST (GMT -8:00)' }
       ],
       endpoints: {
         realtime: '/api/inuvo (POST with dataType: "realtime")',

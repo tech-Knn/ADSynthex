@@ -594,9 +594,38 @@ export function aggregateMappingsByCampaign(
   console.log(`[COMPADO_AGGREGATION] Added ${totalConversionsAdded} total conversions and $${totalRevenueAdded.toFixed(2)} total revenue to campaigns`);
 
   console.log(`[COMPADO_AGGREGATION] Aggregated into ${campaignMap.size} unique campaigns`);
-  campaignMap.forEach((campaign) => {
-    console.log(`[COMPADO_AGGREGATION]   - ${campaign.campaign_name}: ${campaign.clicks} clicks, $${campaign.cost.toFixed(2)} cost, ${campaign.conversions} conversions, $${campaign.revenue.toFixed(2)} revenue`);
-  });
+
+  // COST VALIDATION: Check for inflation and correct it
+  if (allCampaignsMap) {
+    campaignMap.forEach((campaign, campaignId) => {
+      const originalCampaignData = allCampaignsMap.get(campaignId);
+
+      if (originalCampaignData && originalCampaignData.total_cost > 0) {
+        const inflationAmount = campaign.cost - originalCampaignData.total_cost;
+        const inflationPercent = (inflationAmount / originalCampaignData.total_cost) * 100;
+
+        // If aggregated cost is more than 5% higher than campaign-level cost, it's inflated
+        if (inflationPercent > 5) {
+          console.warn(`[COMPADO_AGGREGATION] ⚠️  Cost inflation detected for ${campaign.campaign_name}:`);
+          console.warn(`[COMPADO_AGGREGATION]     Campaign-level cost: $${originalCampaignData.total_cost.toFixed(2)}`);
+          console.warn(`[COMPADO_AGGREGATION]     Aggregated cost: $${campaign.cost.toFixed(2)}`);
+          console.warn(`[COMPADO_AGGREGATION]     Inflation: +$${inflationAmount.toFixed(2)} (+${inflationPercent.toFixed(1)}%)`);
+          console.warn(`[COMPADO_AGGREGATION]     CORRECTING: Using campaign-level cost instead`);
+
+          // Correct the inflation by using campaign-level cost
+          campaign.cost = originalCampaignData.total_cost;
+          campaign.clicks = originalCampaignData.total_clicks;
+          campaign.impressions = originalCampaignData.impressions;
+        }
+      }
+
+      console.log(`[COMPADO_AGGREGATION]   - ${campaign.campaign_name}: ${campaign.clicks} clicks, $${campaign.cost.toFixed(2)} cost, ${campaign.conversions} conversions, $${campaign.revenue.toFixed(2)} revenue`);
+    });
+  } else {
+    campaignMap.forEach((campaign) => {
+      console.log(`[COMPADO_AGGREGATION]   - ${campaign.campaign_name}: ${campaign.clicks} clicks, $${campaign.cost.toFixed(2)} cost, ${campaign.conversions} conversions, $${campaign.revenue.toFixed(2)} revenue`);
+    });
+  }
 
   // Convert to array with calculated metrics
   return Array.from(campaignMap.values()).map(campaign => {
