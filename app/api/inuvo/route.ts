@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
   try {
     // Parse request body
     const body = await request.json();
-    const { startDate, endDate, customerId, dataType = 'realtime', useMockData = false } = body;
+    const { startDate, endDate, customerId, dataType = 'realtime', useMockData = false, forceRefresh = false } = body;
 
     // Validate required parameters
     if (!startDate || !endDate) {
@@ -39,18 +39,36 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`[INUVO_ENDPOINT] Cost/Revenue mapping request: ${startDate} to ${endDate}, type: ${dataType}`);
+    console.log(`[INUVO_ENDPOINT] Cost/Revenue mapping request: ${startDate} to ${endDate}, type: ${dataType}, forceRefresh: ${forceRefresh}`);
 
     let inuvoData;
     let googleAdsData;
     let message = '';
 
     try {
+      // Clear cache for new Inuvo accounts (8277852439, 3882415196) or if forceRefresh is requested
+      const newInuvoAccounts = ['8277852439', '3882415196'];
+      const shouldClearCache = forceRefresh || (customerId && newInuvoAccounts.includes(customerId));
+
+      if (shouldClearCache && customerId) {
+        console.log(`[INUVO_ENDPOINT] ⚡ Clearing cache for account ${customerId} to ensure fresh data...`);
+        try {
+          const { redisCacheManager } = await import('@/lib/redis-cache-manager');
+          const keys = await redisCacheManager.getKeysByPattern(`*${customerId}*`);
+          for (const key of keys) {
+            await redisCacheManager.delete(key);
+          }
+          console.log(`[INUVO_ENDPOINT] ✓ Cleared ${keys.length} cache entries for account ${customerId}`);
+        } catch (cacheError) {
+          console.warn(`[INUVO_ENDPOINT] ⚠️  Failed to clear cache:`, cacheError);
+        }
+      }
+
       // Fetch Google Ads cost data using bulletproof API
       console.log('[INUVO_ENDPOINT] Fetching Google Ads cost data...');
       const googleAdsResult = await bulletproofAPI.getData(startDate, endDate, customerId, {
         priority: 8,
-        allowStale: true,
+        allowStale: !forceRefresh, // Don't allow stale data if forceRefresh is true
         maxWait: 20000
       });
 

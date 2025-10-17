@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { startDate, endDate, customerId } = body;
+    const { startDate, endDate, customerId, forceRefresh = false } = body;
 
     // Validate required parameters
     if (!startDate || !endDate) {
@@ -47,11 +47,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`[COMPADO_COST_REVENUE] Mapping request: ${startDate} to ${endDate}, Customer: ${customerId || 'all'}`);
+    console.log(`[COMPADO_COST_REVENUE] Mapping request: ${startDate} to ${endDate}, Customer: ${customerId || 'all'}, forceRefresh: ${forceRefresh}`);
 
     let message = '';
 
     try {
+      // Clear cache if forceRefresh is requested
+      if (forceRefresh && customerId) {
+        console.log(`[COMPADO_COST_REVENUE] ⚡ Clearing cache for account ${customerId} to ensure fresh data...`);
+        try {
+          const { redisClient } = await import('@/lib/redis-client');
+          const cacheKey = `cache:google-ads:${customerId}:${startDate}:${endDate}`;
+          await redisClient.del(cacheKey);
+          console.log(`[COMPADO_COST_REVENUE] ✓ Cleared cache key: ${cacheKey}`);
+        } catch (cacheError) {
+          console.warn(`[COMPADO_COST_REVENUE] ⚠️  Failed to clear cache:`, cacheError);
+        }
+      }
+
       // PERFORMANCE OPTIMIZATION: Fetch Google Ads and Compado data IN PARALLEL
       console.log('[COMPADO_COST_REVENUE] 🚀 Fetching Google Ads + Compado data in PARALLEL...');
       const fetchStartTime = Date.now();
@@ -60,7 +73,7 @@ export async function POST(request: NextRequest) {
         // 1. Google Ads data with reduced timeout
         bulletproofAPI.getData(startDate, endDate, customerId, {
           priority: 8,
-          allowStale: true,
+          allowStale: !forceRefresh, // Don't allow stale if forceRefresh
           maxWait: 10000 // Reduced from 20s to 10s
         }),
         // 2. Compado conversions (fetched simultaneously)

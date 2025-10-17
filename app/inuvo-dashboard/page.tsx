@@ -79,6 +79,10 @@ export default function InuvoDashboard() {
       
       console.log(`[INUVO_DASHBOARD] Fetching data: ${startDate} to ${endDate}, Account: ${selectedAccount}, Type: ${dataType}`);
       
+      // Auto force-refresh for new Inuvo accounts to ensure fresh data
+      const newAccounts = ['8277852439', '3882415196'];
+      const shouldForceRefresh = selectedAccount && newAccounts.includes(selectedAccount);
+
       const response = await fetch('/api/inuvo', {
         method: 'POST',
         headers: {
@@ -90,7 +94,8 @@ export default function InuvoDashboard() {
           endDate,
           customerId: selectedAccount, // Always use the specific account
           dataType,
-          useMockData: false // Always use live data
+          useMockData: false, // Always use live data
+          forceRefresh: shouldForceRefresh // Auto clear cache for new accounts
         })
       });
       
