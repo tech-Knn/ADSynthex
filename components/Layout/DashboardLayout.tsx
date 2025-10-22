@@ -32,6 +32,16 @@ const CUSTOMER_ACCOUNTS = [
     value: null
   },
   {
+    id: 'CID_5416418019',
+    name: 'Compado - UTC - 01',
+    value: '5416418019'
+  },
+  {
+    id: 'CID_5108802445',
+    name: 'Compado - UTC - 02',
+    value: '5108802445'
+  },
+  {
     id: 'CID_8677814915',
     name: 'Ads.com - RSOC - IST',
     value: '8677814915'

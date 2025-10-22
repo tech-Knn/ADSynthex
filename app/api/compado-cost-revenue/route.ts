@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { startDate, endDate, customerId, forceRefresh = false } = body;
+    const { startDate, endDate, customerId, accountIds, forceRefresh = false } = body;
 
     // Validate required parameters
     if (!startDate || !endDate) {
@@ -47,21 +47,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`[COMPADO_COST_REVENUE] Mapping request: ${startDate} to ${endDate}, Customer: ${customerId || 'all'}, forceRefresh: ${forceRefresh}`);
+    // Determine if we're processing multiple accounts
+    const isMultiAccount = accountIds && Array.isArray(accountIds) && accountIds.length > 0;
+    const accountsToProcess = isMultiAccount ? accountIds : (customerId ? [customerId] : []);
+
+    console.log(`[COMPADO_COST_REVENUE] Mapping request: ${startDate} to ${endDate}, Accounts: ${isMultiAccount ? accountIds.join(', ') : (customerId || 'all')}, forceRefresh: ${forceRefresh}`);
 
     let message = '';
 
     try {
       // Clear cache if forceRefresh is requested
-      if (forceRefresh && customerId) {
-        console.log(`[COMPADO_COST_REVENUE] ⚡ Clearing cache for account ${customerId} to ensure fresh data...`);
-        try {
-          const { redisClient } = await import('@/lib/redis-client');
-          const cacheKey = `cache:google-ads:${customerId}:${startDate}:${endDate}`;
-          await redisClient.del(cacheKey);
-          console.log(`[COMPADO_COST_REVENUE] ✓ Cleared cache key: ${cacheKey}`);
-        } catch (cacheError) {
-          console.warn(`[COMPADO_COST_REVENUE] ⚠️  Failed to clear cache:`, cacheError);
+      if (forceRefresh) {
+        const accountsToClear = isMultiAccount ? accountIds : (customerId ? [customerId] : []);
+        for (const accId of accountsToClear) {
+          console.log(`[COMPADO_COST_REVENUE] ⚡ Clearing cache for account ${accId} to ensure fresh data...`);
+          try {
+            const { redisClient } = await import('@/lib/redis-client');
+            const cacheKey = `cache:google-ads:${accId}:${startDate}:${endDate}`;
+            await redisClient.del(cacheKey);
+            console.log(`[COMPADO_COST_REVENUE] ✓ Cleared cache key: ${cacheKey}`);
+          } catch (cacheError) {
+            console.warn(`[COMPADO_COST_REVENUE] ⚠️  Failed to clear cache:`, cacheError);
+          }
         }
       }
 
@@ -69,14 +76,31 @@ export async function POST(request: NextRequest) {
       console.log('[COMPADO_COST_REVENUE] 🚀 Fetching Google Ads + Compado data in PARALLEL...');
       const fetchStartTime = Date.now();
 
-      const [googleAdsResult, compadoConversions] = await Promise.allSettled([
-        // 1. Google Ads data with reduced timeout
-        bulletproofAPI.getData(startDate, endDate, customerId, {
+      let googleAdsDataPromises;
+
+      if (isMultiAccount) {
+        // Fetch data for all accounts in parallel
+        console.log(`[COMPADO_COST_REVENUE] Fetching data for ${accountIds.length} accounts in parallel...`);
+        googleAdsDataPromises = Promise.all(
+          accountIds.map(accId =>
+            bulletproofAPI.getData(startDate, endDate, accId, {
+              priority: 8,
+              allowStale: !forceRefresh,
+              maxWait: 10000
+            })
+          )
+        );
+      } else {
+        // Single account fetch
+        googleAdsDataPromises = bulletproofAPI.getData(startDate, endDate, customerId, {
           priority: 8,
-          allowStale: !forceRefresh, // Don't allow stale if forceRefresh
-          maxWait: 10000 // Reduced from 20s to 10s
-        }),
-        // 2. Compado conversions (fetched simultaneously)
+          allowStale: !forceRefresh,
+          maxWait: 10000
+        });
+      }
+
+      const [googleAdsResult, compadoConversions] = await Promise.allSettled([
+        googleAdsDataPromises,
         fetchAllCompadoConversions(startDate, endDate)
       ]);
 
@@ -89,8 +113,56 @@ export async function POST(request: NextRequest) {
         throw new Error(`Google Ads API failed: ${googleAdsResult.reason}`);
       }
 
-      const googleAdsData = googleAdsResult.value.data;
-      message += `Google Ads: ${googleAdsResult.value.message} (${fetchTime}ms). `;
+      // Aggregate data from multiple accounts if needed
+      let googleAdsData;
+      if (isMultiAccount) {
+        const accountsData = googleAdsResult.value;
+        console.log(`[COMPADO_COST_REVENUE] Aggregating data from ${accountsData.length} accounts...`);
+
+        // Merge all accounts' data
+        googleAdsData = {
+          campaigns: [],
+          ads: [],
+          clicks: []
+        };
+
+        accountsData.forEach((accountResult: any, index: number) => {
+          const accData = accountResult.data;
+          const accountId = accountIds[index];
+          console.log(`[COMPADO_COST_REVENUE]   Account ${index + 1} (${accountId}): ${accData?.campaigns?.length || 0} campaigns, ${accData?.clicks?.length || 0} clicks`);
+
+          // Tag campaigns with account_id for tracking
+          if (accData?.campaigns) {
+            accData.campaigns.forEach((c: any) => c.account_id = accountId);
+            googleAdsData.campaigns.push(...accData.campaigns);
+          }
+
+          // Tag ads with account_id for tracking
+          if (accData?.ads) {
+            accData.ads.forEach((a: any) => a.account_id = accountId);
+            googleAdsData.ads.push(...accData.ads);
+          }
+
+          // Tag clicks with account_id for tracking
+          if (accData?.clicks) {
+            accData.clicks.forEach((c: any) => c.account_id = accountId);
+            googleAdsData.clicks.push(...accData.clicks);
+          }
+        });
+
+        message += `Google Ads: ${accountsData.length} accounts aggregated (${fetchTime}ms). `;
+      } else {
+        googleAdsData = googleAdsResult.value.data;
+        message += `Google Ads: ${googleAdsResult.value.message} (${fetchTime}ms). `;
+
+        // For single account, log campaign details to verify account separation
+        if (googleAdsData?.campaigns && googleAdsData.campaigns.length > 0) {
+          console.log(`[COMPADO_COST_REVENUE] Single account (${customerId}) campaigns:`);
+          googleAdsData.campaigns.slice(0, 3).forEach((c: any, i: number) => {
+            console.log(`[COMPADO_COST_REVENUE]   ${i + 1}. ${c.campaign_name} (ID: ${c.campaign_id}) - Cost: $${c.metrics?.cost || 0}`);
+          });
+        }
+      }
 
       // Validate Google Ads data
       if (!googleAdsData || (!googleAdsData.campaigns && !googleAdsData.clicks)) {
@@ -118,8 +190,19 @@ export async function POST(request: NextRequest) {
 
       // MEMORY OPTIMIZATION: Build metrics maps
       const processingStart = Date.now();
-      const campaignMetricsMap = buildCampaignMetricsMap(googleAdsData?.campaigns || []);
+      const campaignMetricsMap = buildCampaignMetricsMap(googleAdsData?.campaigns || [], customerId || 'multi');
       const adGroupMetricsMap = buildAdGroupMetricsMap(googleAdsData?.ads || []);
+
+      // DIAGNOSTIC: Log if we have zero-cost campaigns
+      if (campaignMetricsMap.size > 0) {
+        let zeroCostCampaigns = 0;
+        campaignMetricsMap.forEach((metrics, id) => {
+          if (metrics.total_cost === 0) zeroCostCampaigns++;
+        });
+        if (zeroCostCampaigns > 0) {
+          console.warn(`[COMPADO_COST_REVENUE] ⚠️  ${zeroCostCampaigns}/${campaignMetricsMap.size} campaigns have zero cost`);
+        }
+      }
 
       // Extract and enrich clicks
       const googleAdsClicks = enrichClicksWithCost(
@@ -151,7 +234,10 @@ export async function POST(request: NextRequest) {
       // Cache campaign names in Redis for 7 days (persist across rate limits)
       if (campaignNamesMap.size > 0) {
         try {
-          const cacheKey = `campaign-names:${customerId}`;
+          // For multi-account, cache under a combined key
+          const cacheKey = isMultiAccount
+            ? `campaign-names:multi:${accountIds.join('-')}`
+            : `campaign-names:${customerId}`;
           const campaignNamesObj = Object.fromEntries(campaignNamesMap);
           await redisCacheManager.set(cacheKey, campaignNamesObj, {
             dataType: 'google-ads',
@@ -164,7 +250,9 @@ export async function POST(request: NextRequest) {
       } else {
         // Try to load cached campaign names if no fresh data
         try {
-          const cacheKey = `campaign-names:${customerId}`;
+          const cacheKey = isMultiAccount
+            ? `campaign-names:multi:${accountIds.join('-')}`
+            : `campaign-names:${customerId}`;
           const cached = await redisCacheManager.get(cacheKey, { dataType: 'google-ads' });
           if (cached.data) {
             Object.entries(cached.data).forEach(([id, name]) => {
@@ -346,7 +434,7 @@ export async function GET(request: NextRequest) {
 /**
  * MEMORY OPTIMIZED: Build campaign metrics map
  */
-function buildCampaignMetricsMap(campaigns: any[]): Map<string, any> {
+function buildCampaignMetricsMap(campaigns: any[], accountContext: string = 'unknown'): Map<string, any> {
   const map = new Map<string, any>();
 
   for (let i = 0; i < campaigns.length; i++) {
@@ -363,12 +451,13 @@ function buildCampaignMetricsMap(campaigns: any[]): Map<string, any> {
         total_cost: totalCost,
         total_clicks: totalClicks,
         cpc: cpc,
-        impressions: campaign.metrics?.impressions || 0
+        impressions: campaign.metrics?.impressions || 0,
+        account_id: campaign.account_id || accountContext  // Track which account this came from
       });
     }
   }
 
-  console.log(`[COMPADO_COST_REVENUE] Built ${map.size} campaign metrics`);
+  console.log(`[COMPADO_COST_REVENUE] Built ${map.size} campaign metrics for account context: ${accountContext}`);
   return map;
 }
 

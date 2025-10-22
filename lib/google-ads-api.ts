@@ -544,7 +544,9 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string, spe
       
       // Fetch active campaigns
       const activeCampaignQuery = buildActiveCampaignQuery(startDate, endDate);
+      console.log(`[GOOGLE_ADS_API] Query for account ${account.id}:`, activeCampaignQuery.substring(0, 200));
       const activeCampaignResponse = await makeApiCall(activeCampaignQuery, 'Active Campaigns');
+      console.log(`[GOOGLE_ADS_API] Account ${account.id} returned ${activeCampaignResponse?.length || 0} campaigns`);
       if (activeCampaignResponse && activeCampaignResponse.length > 0) {
         const processedCampaigns = processCampaignData(activeCampaignResponse, account);
         data.campaigns.push(...processedCampaigns);

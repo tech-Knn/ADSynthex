@@ -44,8 +44,12 @@ interface Account {
 
 // Compado-enabled accounts only (accounts with Compado tracking setup)
 const COMPADO_ENABLED_ACCOUNTS = [
-  { id: '5416418019', name: 'Campado - UTC - 01' }
+  { id: '5416418019', name: 'Compado - UTC - 01' },
+  { id: '5108802445', name: 'Compado - UTC - 02' }
 ];
+
+// Special "All Accounts" option for aggregated view
+const ALL_ACCOUNTS_OPTION = { id: 'ALL_ACCOUNTS', name: 'All Accounts (Total)' };
 
 export default function CompadoPage() {
   const [loading, setLoading] = useState(false);
@@ -55,8 +59,9 @@ export default function CompadoPage() {
   const [loadingAccounts, setLoadingAccounts] = useState(true);
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
 
+  // Default to today's date for both start and end
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>([
-    dayjs().subtract(7, 'days'),
+    dayjs(),
     dayjs()
   ]);
 
@@ -72,15 +77,14 @@ export default function CompadoPage() {
 
   const fetchAccounts = async () => {
     try {
-      // Only show Compado-enabled accounts, not all Google Ads accounts
-      setAccounts(COMPADO_ENABLED_ACCOUNTS);
+      // Add "All Accounts" option at the beginning
+      const accountsWithAll = [ALL_ACCOUNTS_OPTION, ...COMPADO_ENABLED_ACCOUNTS];
+      setAccounts(accountsWithAll);
 
-      // Auto-select the first account if only one exists
-      if (COMPADO_ENABLED_ACCOUNTS.length === 1) {
-        setSelectedAccount(COMPADO_ENABLED_ACCOUNTS[0].id);
-      }
+      // Auto-select "All Accounts" by default
+      setSelectedAccount(ALL_ACCOUNTS_OPTION.id);
 
-      console.log(`[COMPADO_DASHBOARD] Loaded ${COMPADO_ENABLED_ACCOUNTS.length} Compado-enabled accounts`);
+      console.log(`[COMPADO_DASHBOARD] Loaded ${COMPADO_ENABLED_ACCOUNTS.length} Compado-enabled accounts + 'All Accounts' option`);
 
     } catch (err) {
       console.error('[COMPADO_DASHBOARD] Error loading accounts:', err);
@@ -102,7 +106,13 @@ export default function CompadoPage() {
       const startDate = dateRange[0].format('YYYY-MM-DD');
       const endDate = dateRange[1].format('YYYY-MM-DD');
 
-      console.log(`[COMPADO_DASHBOARD] Fetching data: ${startDate} to ${endDate} for account ${selectedAccount}`);
+      // Determine if we're fetching all accounts or a single account
+      const isAllAccounts = selectedAccount === ALL_ACCOUNTS_OPTION.id;
+      const accountIds = isAllAccounts
+        ? COMPADO_ENABLED_ACCOUNTS.map(acc => acc.id)
+        : [selectedAccount];
+
+      console.log(`[COMPADO_DASHBOARD] Fetching data: ${startDate} to ${endDate} for ${isAllAccounts ? 'all accounts' : `account ${selectedAccount}`}`);
 
       const response = await fetch('/api/compado-cost-revenue', {
         method: 'POST',
@@ -113,7 +123,9 @@ export default function CompadoPage() {
         body: JSON.stringify({
           startDate,
           endDate,
-          customerId: selectedAccount
+          customerId: isAllAccounts ? undefined : selectedAccount,
+          accountIds: isAllAccounts ? accountIds : undefined,
+          forceRefresh: true  // Always force refresh to get fresh data
         })
       });
 

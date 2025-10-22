@@ -304,6 +304,9 @@ export interface CompadoCostRevenueSummary {
 /**
  * Map Google Ads cost data with Compado conversion revenue
  * Matches by GCLID for accurate attribution
+ *
+ * IMPORTANT: Only conversions with GCLIDs matching the provided Google Ads clicks will be included.
+ * This ensures account-specific filtering when viewing individual accounts.
  */
 export function mapCompadoCostRevenue(
   googleAdsClicks: Array<{
@@ -320,11 +323,37 @@ export function mapCompadoCostRevenue(
 ): CompadoCostRevenueMapping[] {
   console.log(`[COMPADO_MAPPING] Mapping ${googleAdsClicks.length} clicks with ${compadoConversions.length} conversions`);
 
+  // Build a Set of campaign IDs from Google Ads clicks to identify account-specific campaigns
+  const googleAdsCampaignIds = new Set(
+    googleAdsClicks.map(click => String(click.campaign_id))
+  );
+
+  console.log(`[COMPADO_MAPPING] Account has ${googleAdsCampaignIds.size} unique campaign IDs`);
+  if (googleAdsCampaignIds.size > 0 && googleAdsCampaignIds.size <= 5) {
+    console.log(`[COMPADO_MAPPING] Campaign IDs: ${Array.from(googleAdsCampaignIds).join(', ')}`);
+  }
+
+  // Build a Set of GCLIDs from Google Ads clicks for fast filtering
+  const googleAdsGclids = new Set(
+    googleAdsClicks.map(click => click.gclid.toLowerCase().trim())
+  );
+
+  // Filter Compado conversions to only include those with matching GCLIDs from this account
+  // NOTE: We filter by GCLID only since Compado might not have accurate campaign_id mapping
+  const accountSpecificConversions = compadoConversions.filter(conv =>
+    googleAdsGclids.has(conv.gclid.toLowerCase().trim())
+  );
+
+  console.log(`[COMPADO_MAPPING] Filtered to ${accountSpecificConversions.length} account-specific conversions (from ${compadoConversions.length} total)`);
+
+  // Use filtered conversions for mapping
+  const conversionsToUse = googleAdsClicks.length > 0 ? accountSpecificConversions : compadoConversions;
+
   const mappings: CompadoCostRevenueMapping[] = [];
 
-  // Create a map of conversions by GCLID
+  // Create a map of conversions by GCLID (using filtered conversions)
   const conversionMap = new Map<string, CompadoConversion[]>();
-  compadoConversions.forEach(conv => {
+  conversionsToUse.forEach(conv => {
     const gclid = conv.gclid.toLowerCase().trim();
     if (!conversionMap.has(gclid)) {
       conversionMap.set(gclid, []);
@@ -408,7 +437,8 @@ export function mapCompadoCostRevenue(
     console.log(`[COMPADO_MAPPING] Summary: ${totalMatchedConversions} conversions matched with $${totalMatchedRevenue.toFixed(2)} total revenue`);
 
     // Log unmatched conversions for debugging (but don't add them)
-    const unmatchedConversions = compadoConversions.filter(conv =>
+    // Only check within the filtered account-specific conversions
+    const unmatchedConversions = conversionsToUse.filter(conv =>
       !matchedConversionGclids.has(conv.gclid.toLowerCase().trim())
     );
 
@@ -421,10 +451,10 @@ export function mapCompadoCostRevenue(
         console.log(`[COMPADO_MAPPING]    ... and ${unmatchedConversions.length - 3} more`);
       }
     }
-  } else if (compadoConversions.length > 0) {
+  } else if (conversionsToUse.length > 0) {
     // No Google Ads clicks, but we have Compado conversions
     // Create revenue-only mappings grouped by ad_id (campaign)
-    console.log(`[COMPADO_MAPPING] ⚠️  No Google Ads clicks found, but ${compadoConversions.length} Compado conversions exist`);
+    console.log(`[COMPADO_MAPPING] ⚠️  No Google Ads clicks found, but ${conversionsToUse.length} Compado conversions exist`);
     console.log(`[COMPADO_MAPPING] Creating revenue-only campaign mappings from Compado data...`);
 
     // Group conversions by ad_id (campaign)
@@ -434,7 +464,7 @@ export function mapCompadoCostRevenue(
       totalRevenueUsd: number;
     }>();
 
-    compadoConversions.forEach(conv => {
+    conversionsToUse.forEach(conv => {
       const campaignId = conv.ad_id || conv.campaign_id || 'unknown';
 
       if (!campaignRevenueMap.has(campaignId)) {
@@ -494,6 +524,10 @@ export function mapCompadoCostRevenue(
  * Aggregate click-level mappings to campaign-level summaries
  * @param mappings - Click-level cost/revenue mappings
  * @param allCampaignsMap - Optional: All campaigns from Google Ads (includes campaigns with zero clicks)
+ *
+ * NOTE: When aggregating across multiple accounts, campaigns are grouped by campaign_id.
+ * If the same campaign_id exists in multiple accounts, they will be merged into one row.
+ * This is the intended behavior for multi-account aggregation.
  */
 export function aggregateMappingsByCampaign(
   mappings: CompadoCostRevenueMapping[],
