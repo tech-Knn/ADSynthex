@@ -50,7 +50,7 @@ interface CompadoCostRevenueMapping {
   clicks: number;
   impressions: number;
   cpc: number;
-  ctr: number;
+  cpa: number;
   // Compado Metrics
   conversions: number;
   revenue: number;
@@ -170,16 +170,16 @@ export default function CompadoCostRevenueMapping({
           sorter: (a, b) => a.cpc - b.cpc,
         },
         {
-          title: 'CTR',
-          dataIndex: 'ctr',
-          key: 'ctr',
+          title: 'CPA',
+          dataIndex: 'cpa',
+          key: 'cpa',
           width: 70,
-          render: (ctr: number) => (
+          render: (cpa: number) => (
             <Text style={{ color: '#1890ff', fontWeight: 600 }}>
-              {ctr.toFixed(2)}%
+              ${cpa.toFixed(2)}
             </Text>
           ),
-          sorter: (a, b) => a.ctr - b.ctr,
+          sorter: (a, b) => a.cpa - b.cpa,
         },
       ]
     },

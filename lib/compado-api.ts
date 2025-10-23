@@ -273,7 +273,7 @@ export interface CompadoCostRevenueMapping {
   clicks: number;
   impressions: number;
   cpc: number;
-  ctr: number;
+  cpa: number;
   // Compado Metrics
   conversions: number;
   revenue: number;
@@ -399,7 +399,7 @@ export function mapCompadoCostRevenue(
       const roi = cost > 0 ? (profit / cost) * 100 : 0;
       const roas = cost > 0 ? totalRevenueUsd / cost : 0;
       const cpc = clicks > 0 ? cost / clicks : 0;
-      const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
+      const cpa = conversionCount > 0 ? cost / conversionCount : 0;
       const conversionRate = clicks > 0 ? (conversionCount / clicks) * 100 : 0;
       const revenuePerClick = clicks > 0 ? totalRevenueUsd / clicks : 0;
 
@@ -411,7 +411,7 @@ export function mapCompadoCostRevenue(
         clicks,
         impressions,
         cpc,
-        ctr,
+        cpa,
         conversions: conversionCount,
         revenue: totalRevenueUsd,
         conversion_rate: conversionRate,
@@ -499,7 +499,7 @@ export function mapCompadoCostRevenue(
         clicks: conversionCount, // Use conversion count as proxy
         impressions: conversionCount,
         cpc: 0,
-        ctr: 0,
+        cpa: 0,
         conversions: conversionCount,
         revenue: revenueUsd,
         conversion_rate: 100, // All clicks converted (since we only have conversions)
@@ -667,7 +667,7 @@ export function aggregateMappingsByCampaign(
     const roi = campaign.cost > 0 ? (profit / campaign.cost) * 100 : 0;
     const roas = campaign.cost > 0 ? campaign.revenue / campaign.cost : 0;
     const cpc = campaign.clicks > 0 ? campaign.cost / campaign.clicks : 0;
-    const ctr = campaign.impressions > 0 ? (campaign.clicks / campaign.impressions) * 100 : 0;
+    const cpa = campaign.conversions > 0 ? campaign.cost / campaign.conversions : 0;
     const conversionRate = campaign.clicks > 0 ? (campaign.conversions / campaign.clicks) * 100 : 0;
     const revenuePerClick = campaign.clicks > 0 ? campaign.revenue / campaign.clicks : 0;
 
@@ -679,7 +679,7 @@ export function aggregateMappingsByCampaign(
       clicks: campaign.clicks,
       impressions: campaign.impressions,
       cpc: parseFloat(cpc.toFixed(4)),
-      ctr: parseFloat(ctr.toFixed(2)),
+      cpa: parseFloat(cpa.toFixed(2)),
       conversions: campaign.conversions,
       revenue: parseFloat(campaign.revenue.toFixed(2)),
       conversion_rate: parseFloat(conversionRate.toFixed(2)),
