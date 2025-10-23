@@ -6,6 +6,7 @@
 export const TARGET_ACCOUNTS = [
   { id: '5416418019', name: 'Compado - UTC - 01' },
   { id: '5108802445', name: 'Compado - UTC - 02' },
+  { id: '1671699399', name: 'Compado - UTC - 03' },
   { id: '8677814915', name: 'Ads.com - RSOC - IST' },
   { id: '9071440966', name: 'Ads.com - RSOC - UTC - 02' },
   { id: '5723554317', name: 'Ads.com - RSOC - UTC - 03' },

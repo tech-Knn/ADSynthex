@@ -347,7 +347,9 @@ export function mapCompadoCostRevenue(
   console.log(`[COMPADO_MAPPING] Filtered to ${accountSpecificConversions.length} account-specific conversions (from ${compadoConversions.length} total)`);
 
   // Use filtered conversions for mapping
-  const conversionsToUse = googleAdsClicks.length > 0 ? accountSpecificConversions : compadoConversions;
+  // IMPORTANT: Always use account-specific conversions, even if no clicks exist
+  // If account has no clicks (zero spend), show zero revenue (not all Compado data)
+  const conversionsToUse = accountSpecificConversions;
 
   const mappings: CompadoCostRevenueMapping[] = [];
 
@@ -451,69 +453,9 @@ export function mapCompadoCostRevenue(
         console.log(`[COMPADO_MAPPING]    ... and ${unmatchedConversions.length - 3} more`);
       }
     }
-  } else if (conversionsToUse.length > 0) {
-    // No Google Ads clicks, but we have Compado conversions
-    // Create revenue-only mappings grouped by ad_id (campaign)
-    console.log(`[COMPADO_MAPPING] ⚠️  No Google Ads clicks found, but ${conversionsToUse.length} Compado conversions exist`);
-    console.log(`[COMPADO_MAPPING] Creating revenue-only campaign mappings from Compado data...`);
-
-    // Group conversions by ad_id (campaign)
-    const campaignRevenueMap = new Map<string, {
-      conversions: CompadoConversion[];
-      totalRevenue: number;
-      totalRevenueUsd: number;
-    }>();
-
-    conversionsToUse.forEach(conv => {
-      const campaignId = conv.ad_id || conv.campaign_id || 'unknown';
-
-      if (!campaignRevenueMap.has(campaignId)) {
-        campaignRevenueMap.set(campaignId, {
-          conversions: [],
-          totalRevenue: 0,
-          totalRevenueUsd: 0
-        });
-      }
-
-      const campaign = campaignRevenueMap.get(campaignId)!;
-      campaign.conversions.push(conv);
-      campaign.totalRevenue += conv.revenue;
-      campaign.totalRevenueUsd += (conv.revenueUsd || conv.revenue);
-    });
-
-    console.log(`[COMPADO_MAPPING] Grouped into ${campaignRevenueMap.size} campaigns by ad_id`);
-
-    // Create mappings for each campaign
-    campaignRevenueMap.forEach((campaignData, campaignId) => {
-      const conversionCount = campaignData.conversions.length;
-      const revenueUsd = campaignData.totalRevenueUsd;
-
-      // Try to get real campaign name from map, fallback to ID
-      const campaignName = campaignNamesMap?.get(campaignId) || `Campaign ${campaignId} (Revenue Only)`;
-
-      mappings.push({
-        gclid: `${conversionCount} GCLIDs`,
-        campaign_id: campaignId,
-        campaign_name: campaignName,
-        cost: 0,
-        clicks: conversionCount, // Use conversion count as proxy
-        impressions: conversionCount,
-        cpc: 0,
-        cpa: 0,
-        conversions: conversionCount,
-        revenue: revenueUsd,
-        conversion_rate: 100, // All clicks converted (since we only have conversions)
-        revenue_per_click: revenueUsd / conversionCount,
-        profit: revenueUsd, // All revenue is profit when cost is 0
-        roi: 0,
-        roas: 0,
-        date: new Date().toISOString().split('T')[0]
-      });
-
-      console.log(`[COMPADO_MAPPING]   - Campaign ${campaignName}: ${conversionCount} conversions, $${revenueUsd.toFixed(2)} revenue`);
-    });
-
-    console.log(`[COMPADO_MAPPING] Created ${mappings.length} revenue-only campaign mappings (no cost data available)`);
+  } else {
+    // No Google Ads clicks means no data to map
+    console.log(`[COMPADO_MAPPING] ℹ️  No Google Ads clicks found for this account - returning empty mappings`);
   }
 
   console.log(`[COMPADO_MAPPING] Total mappings created: ${mappings.length}`);

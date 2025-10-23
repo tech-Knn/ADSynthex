@@ -45,7 +45,8 @@ interface Account {
 // Compado-enabled accounts only (accounts with Compado tracking setup)
 const COMPADO_ENABLED_ACCOUNTS = [
   { id: '5416418019', name: 'Compado - UTC - 01' },
-  { id: '5108802445', name: 'Compado - UTC - 02' }
+  { id: '5108802445', name: 'Compado - UTC - 02' },
+  { id: '1671699399', name: 'Compado - UTC - 03' }
 ];
 
 // Special "All Accounts" option for aggregated view
@@ -58,6 +59,7 @@ export default function CompadoPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   // Default to today's date for both start and end
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>([
@@ -77,12 +79,35 @@ export default function CompadoPage() {
 
   const fetchAccounts = async () => {
     try {
+      // Check if user is logged in as regular user
+      const getCookie = (name: string): string | null => {
+        if (typeof document === 'undefined') return null;
+        const cookieValue = document.cookie
+          .split('; ')
+          .find(row => row.startsWith(name + '='));
+        return cookieValue ? cookieValue.split('=')[1] : null;
+      };
+
+      const authType = getCookie('auth_type');
+      const userAccountId = getCookie('account_id');
+
+      // Set admin flag
+      setIsAdmin(authType === 'admin');
+
       // Add "All Accounts" option at the beginning
       const accountsWithAll = [ALL_ACCOUNTS_OPTION, ...COMPADO_ENABLED_ACCOUNTS];
       setAccounts(accountsWithAll);
 
-      // Auto-select "All Accounts" by default
-      setSelectedAccount(ALL_ACCOUNTS_OPTION.id);
+      // For regular users, auto-select their account (without CID_ prefix for API calls)
+      if (authType === 'user' && userAccountId) {
+        const accountValue = userAccountId.replace('CID_', '');
+        setSelectedAccount(accountValue);
+        console.log(`[COMPADO_DASHBOARD] User account auto-selected: ${accountValue}`);
+      } else {
+        // Admin: Auto-select "All Accounts" by default
+        setSelectedAccount(ALL_ACCOUNTS_OPTION.id);
+        console.log(`[COMPADO_DASHBOARD] Admin mode: All Accounts selected`);
+      }
 
       console.log(`[COMPADO_DASHBOARD] Loaded ${COMPADO_ENABLED_ACCOUNTS.length} Compado-enabled accounts + 'All Accounts' option`);
 
@@ -205,33 +230,36 @@ export default function CompadoPage() {
           {/* Controls */}
           <Card style={{ marginBottom: '24px' }}>
             <Row gutter={[16, 16]} align="middle">
-              <Col xs={24} sm={12} md={8}>
-                <div>
-                  <Text strong style={{ display: 'block', marginBottom: '8px' }}>
-                    Account
-                  </Text>
-                  <Select
-                    value={selectedAccount}
-                    onChange={setSelectedAccount}
-                    style={{ width: '100%' }}
-                    placeholder="Select an account"
-                    loading={loadingAccounts}
-                    disabled={loadingAccounts}
-                    showSearch
-                    filterOption={(input, option) =>
-                      (option?.children as unknown as string)
-                        .toLowerCase()
-                        .includes(input.toLowerCase())
-                    }
-                  >
-                    {accounts.map(account => (
-                      <Option key={account.id} value={account.id}>
-                        {account.name}
-                      </Option>
-                    ))}
-                  </Select>
-                </div>
-              </Col>
+              {/* Only show account selector for admins */}
+              {isAdmin && (
+                <Col xs={24} sm={12} md={8}>
+                  <div>
+                    <Text strong style={{ display: 'block', marginBottom: '8px' }}>
+                      Account
+                    </Text>
+                    <Select
+                      value={selectedAccount}
+                      onChange={setSelectedAccount}
+                      style={{ width: '100%' }}
+                      placeholder="Select an account"
+                      loading={loadingAccounts}
+                      disabled={loadingAccounts}
+                      showSearch
+                      filterOption={(input, option) =>
+                        (option?.children as unknown as string)
+                          .toLowerCase()
+                          .includes(input.toLowerCase())
+                      }
+                    >
+                      {accounts.map(account => (
+                        <Option key={account.id} value={account.id}>
+                          {account.name}
+                        </Option>
+                      ))}
+                    </Select>
+                  </div>
+                </Col>
+              )}
 
               <Col xs={24} sm={12} md={8}>
                 <div>
