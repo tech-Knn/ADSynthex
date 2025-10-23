@@ -44,10 +44,10 @@ export class RedisRateLimiter {
   constructor(apiName: string = 'google', config?: Partial<RateLimiterConfig>) {
     this.apiName = apiName;
     this.config = {
-      dailyLimit: 12000, // 80% of 15K (conservative)
-      hourlyLimit: 500,  // Conservative hourly limit
+      dailyLimit: 10000, // ~67% of 15K daily quota (more conservative)
+      hourlyLimit: 400,  // Max 400 requests per hour (~6-7 per minute)
       qps: 1,            // 1 query per second (Google standard)
-      cooldownBuffer: 300, // 5 minutes safety buffer
+      cooldownBuffer: 600, // 10 minutes safety buffer (increased from 5)
       ...config
     };
 
@@ -236,10 +236,18 @@ export class RedisRateLimiter {
         const match = errorString.match(pattern);
         if (match) {
           retrySeconds = parseInt(match[1]);
-          console.log(`[REDIS_RATE_LIMITER] Extracted retry time: ${retrySeconds}s`);
+          console.log(`[REDIS_RATE_LIMITER] ⚠️ EXTRACTED COOLDOWN: ${retrySeconds}s (~${Math.round(retrySeconds / 3600)} hours)`);
           break;
         }
       }
+
+      // Log the full error for debugging
+      console.error(`[REDIS_RATE_LIMITER] 🔴 RATE LIMIT ERROR DETAILS:`, {
+        retrySeconds,
+        retryHours: Math.round(retrySeconds / 3600),
+        cooldownUntil: new Date(Date.now() + retrySeconds * 1000).toISOString(),
+        errorMessage: error.message || errorString.substring(0, 200)
+      });
 
       // Add safety buffer
       retrySeconds += this.config.cooldownBuffer;

@@ -14,6 +14,10 @@ import {
 } from '@/lib/compado-api';
 import { bulletproofAPI } from '@/lib/bulletproof-google-ads-api';
 import { redisCacheManager } from '@/lib/redis-cache-manager';
+import { productionCache } from '@/lib/production-cache-strategy';
+import { userRateLimiter } from '@/lib/user-rate-limiter';
+import { googleAdsRateLimiter } from '@/lib/redis-rate-limiter';
+import { cookies } from 'next/headers';
 
 interface CompadoCostRevenueResponse {
   google_ads_data: any;
@@ -47,6 +51,50 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Authorization: Check if user has access to requested account(s)
+    const cookieStore = cookies();
+    const authType = cookieStore.get('auth_type')?.value;
+    const userAccountId = cookieStore.get('account_id')?.value;
+
+    // For regular users (not admins), enforce account-level access control
+    if (authType === 'user' && userAccountId) {
+      // Normalize account ID format (ensure CID_ prefix)
+      const normalizedUserAccountId = userAccountId.startsWith('CID_') ? userAccountId : `CID_${userAccountId}`;
+      const accountValue = normalizedUserAccountId.replace('CID_', '');
+
+      // Determine requested accounts
+      const requestedAccounts = accountIds && Array.isArray(accountIds) && accountIds.length > 0
+        ? accountIds
+        : (customerId ? [customerId] : []);
+
+      // Check if user is requesting data for accounts they don't own
+      const unauthorizedAccess = requestedAccounts.some(accId => {
+        const normalizedRequestedId = accId.startsWith('CID_') ? accId : `CID_${accId}`;
+        const requestedValue = accId.toString();
+        return normalizedRequestedId !== normalizedUserAccountId && requestedValue !== accountValue;
+      });
+
+      if (unauthorizedAccess) {
+        console.log(`[COMPADO_COST_REVENUE] ⚠️  Access denied: User ${userAccountId} attempted to access unauthorized accounts`);
+        return NextResponse.json(
+          { error: 'Access denied: You can only view data for your own account' },
+          { status: 403 }
+        );
+      }
+
+      // Force the request to only include the user's account
+      // Override any requested accounts with the user's account
+      const requestBody = {
+        ...body,
+        customerId: accountValue,
+        accountIds: undefined // Clear accountIds to prevent multi-account access
+      };
+      body.customerId = accountValue;
+      body.accountIds = undefined;
+
+      console.log(`[COMPADO_COST_REVENUE] 🔒 User ${userAccountId} accessing their own account data`);
+    }
+
     // Determine if we're processing multiple accounts
     const isMultiAccount = accountIds && Array.isArray(accountIds) && accountIds.length > 0;
     const accountsToProcess = isMultiAccount ? accountIds : (customerId ? [customerId] : []);
@@ -56,8 +104,19 @@ export async function POST(request: NextRequest) {
     let message = '';
 
     try {
-      // Clear cache if forceRefresh is requested
-      if (forceRefresh) {
+      // Check if we're in cooldown BEFORE clearing cache
+      const quotaCheck = await googleAdsRateLimiter.canMakeRequest();
+
+      // CRITICAL: If in cooldown, IGNORE forceRefresh to prevent errors
+      let actualForceRefresh = forceRefresh;
+      if (forceRefresh && !quotaCheck.allowed) {
+        console.warn(`[COMPADO_COST_REVENUE] 🛡️ COOLDOWN ACTIVE - Ignoring forceRefresh to serve cached data`);
+        console.warn(`[COMPADO_COST_REVENUE] Reason: ${quotaCheck.reason}`);
+        actualForceRefresh = false; // Override to protect user experience
+      }
+
+      // Clear cache if forceRefresh is requested AND we're not in cooldown
+      if (actualForceRefresh) {
         const accountsToClear = isMultiAccount ? accountIds : (customerId ? [customerId] : []);
         for (const accId of accountsToClear) {
           console.log(`[COMPADO_COST_REVENUE] ⚡ Clearing cache for account ${accId} to ensure fresh data...`);
@@ -85,7 +144,7 @@ export async function POST(request: NextRequest) {
           accountIds.map(accId =>
             bulletproofAPI.getData(startDate, endDate, accId, {
               priority: 8,
-              allowStale: !forceRefresh,
+              allowStale: !actualForceRefresh, // Use actualForceRefresh (cooldown-aware)
               maxWait: 10000
             })
           )
@@ -94,7 +153,7 @@ export async function POST(request: NextRequest) {
         // Single account fetch
         googleAdsDataPromises = bulletproofAPI.getData(startDate, endDate, customerId, {
           priority: 8,
-          allowStale: !forceRefresh,
+          allowStale: !actualForceRefresh, // Use actualForceRefresh (cooldown-aware)
           maxWait: 10000
         });
       }

@@ -4,14 +4,15 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { 
-  fetchInuvoRealtimeData, 
-  fetchInuvoDailyData, 
-  mapCostRevenue, 
+import {
+  fetchInuvoRealtimeData,
+  fetchInuvoDailyData,
+  mapCostRevenue,
   getCostRevenueSummary,
-  getMockInuvoData 
+  getMockInuvoData
 } from '@/lib/inuvo-api';
 import { bulletproofAPI } from '@/lib/bulletproof-google-ads-api';
+import { cookies } from 'next/headers';
 
 interface CostRevenueApiResponse {
   inuvo_data: any;
@@ -25,11 +26,11 @@ interface CostRevenueApiResponse {
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
-  
+
   try {
     // Parse request body
     const body = await request.json();
-    const { startDate, endDate, customerId, dataType = 'realtime', useMockData = false, forceRefresh = false } = body;
+    let { startDate, endDate, customerId, dataType = 'realtime', useMockData = false, forceRefresh = false } = body;
 
     // Validate required parameters
     if (!startDate || !endDate) {
@@ -39,6 +40,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Authorization: Check if user has access to requested account
+    const cookieStore = cookies();
+    const authType = cookieStore.get('auth_type')?.value;
+    const userAccountId = cookieStore.get('account_id')?.value;
+
+    // For regular users (not admins), enforce account-level access control
+    if (authType === 'user' && userAccountId) {
+      // Normalize account ID format
+      const normalizedUserAccountId = userAccountId.startsWith('CID_') ? userAccountId : `CID_${userAccountId}`;
+      const accountValue = normalizedUserAccountId.replace('CID_', '');
+
+      // Check if user is requesting a different account
+      if (customerId && customerId !== accountValue) {
+        console.log(`[INUVO_ENDPOINT] ⚠️  Access denied: User ${userAccountId} attempted to access account ${customerId}`);
+        return NextResponse.json(
+          { error: 'Access denied: You can only view data for your own account' },
+          { status: 403 }
+        );
+      }
+
+      // Force the request to use the user's account
+      customerId = accountValue;
+      console.log(`[INUVO_ENDPOINT] 🔒 User ${userAccountId} accessing their own account data`);
+    }
+
     console.log(`[INUVO_ENDPOINT] Cost/Revenue mapping request: ${startDate} to ${endDate}, type: ${dataType}, forceRefresh: ${forceRefresh}`);
 
     let inuvoData;
@@ -46,9 +72,20 @@ export async function POST(request: NextRequest) {
     let message = '';
 
     try {
-      // Clear cache for new Inuvo accounts (8277852439, 3882415196) or if forceRefresh is requested
+      // COOLDOWN PROTECTION: Check before clearing cache
+      const { googleAdsRateLimiter } = await import('@/lib/redis-rate-limiter');
+      const quotaCheck = await googleAdsRateLimiter.canMakeRequest();
+
+      let actualForceRefresh = forceRefresh;
+      if (forceRefresh && !quotaCheck.allowed) {
+        console.warn(`[INUVO_ENDPOINT] 🛡️ COOLDOWN ACTIVE - Ignoring forceRefresh to serve cached data`);
+        console.warn(`[INUVO_ENDPOINT] Reason: ${quotaCheck.reason}`);
+        actualForceRefresh = false;
+      }
+
+      // Clear cache for new Inuvo accounts or if forceRefresh (and not in cooldown)
       const newInuvoAccounts = ['8277852439', '3882415196'];
-      const shouldClearCache = forceRefresh || (customerId && newInuvoAccounts.includes(customerId));
+      const shouldClearCache = actualForceRefresh || (customerId && newInuvoAccounts.includes(customerId));
 
       if (shouldClearCache && customerId) {
         console.log(`[INUVO_ENDPOINT] ⚡ Clearing cache for account ${customerId} to ensure fresh data...`);
@@ -68,7 +105,7 @@ export async function POST(request: NextRequest) {
       console.log('[INUVO_ENDPOINT] Fetching Google Ads cost data...');
       const googleAdsResult = await bulletproofAPI.getData(startDate, endDate, customerId, {
         priority: 8,
-        allowStale: !forceRefresh, // Don't allow stale data if forceRefresh is true
+        allowStale: !actualForceRefresh,
         maxWait: 20000
       });
 

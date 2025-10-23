@@ -640,45 +640,29 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string, spe
       }
 
       // Fetch click view data with GCLIDs for revenue matching
-      // NOTE: Google Ads API requires click_view queries to be for ONE day at a time
-      // So we need to loop through each day in the date range
-      // IMPORTANT: This is critical for Compado conversion matching!
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      const daysDiff = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      // OPTIMIZED: Fetch entire date range in ONE API call (Google Ads API supports BETWEEN)
+      // This reduces API quota usage from N calls (one per day) to just 1 call per account
+      console.log(`[GOOGLE_ADS_API] 🔍 Fetching click_view data with GCLIDs for date range ${startDate} to ${endDate} (Compado conversion matching)...`);
 
-      console.log(`[GOOGLE_ADS_API] 🔍 Fetching click_view data with GCLIDs for ${daysDiff + 1} days (required for Compado conversion matching)...`);
+      try {
+        // Use full date range in a single query
+        const clickViewQuery = buildClickViewQuery(startDate, endDate);
+        const clickViewResponse = await makeApiCall(clickViewQuery, `Click Views (GCLIDs) for ${startDate} to ${endDate}`);
 
-      for (let dayOffset = 0; dayOffset <= daysDiff; dayOffset++) {
-        const currentDate = new Date(start);
-        currentDate.setDate(start.getDate() + dayOffset);
-        const dateString = currentDate.toISOString().split('T')[0];
+        if (clickViewResponse && clickViewResponse.length > 0) {
+          const clicks = processClickData(clickViewResponse, account);
 
-        // Query for single day only (Google requirement)
-        const clickViewQuery = buildClickViewQuery(dateString, dateString);
-
-        try {
-          const clickViewResponse = await makeApiCall(clickViewQuery, `Click Views (GCLIDs) for ${dateString}`);
-          if (clickViewResponse && clickViewResponse.length > 0) {
-            const clicks = processClickData(clickViewResponse, account);
-
-            if (clicks.length > 0) {
-              console.log(`[GOOGLE_ADS_API] ${dateString}: Fetched ${clicks.length} clicks with GCLIDs`);
-              data.clicks!.push(...clicks);
-            }
+          if (clicks.length > 0) {
+            console.log(`[GOOGLE_ADS_API] ✓ Fetched ${clicks.length} clicks with GCLIDs in single API call`);
+            data.clicks!.push(...clicks);
           }
-        } catch (error) {
-          console.warn(`[GOOGLE_ADS_API] Failed to fetch clicks for ${dateString}:`, error instanceof Error ? error.message : 'Unknown error');
-          // Continue with other days even if one fails
+        } else {
+          console.log(`[GOOGLE_ADS_API] No clicks found for date range ${startDate} to ${endDate}`);
         }
-
-        // Small delay between days to avoid rate limits
-        if (dayOffset < daysDiff) {
-          await new Promise(resolve => setTimeout(resolve, 200));
-        }
+      } catch (error) {
+        console.warn(`[GOOGLE_ADS_API] Failed to fetch clicks for date range ${startDate} to ${endDate}:`, error instanceof Error ? error.message : 'Unknown error');
+        // Continue with other queries even if click fetch fails
       }
-
-      console.log(`[GOOGLE_ADS_API] Total clicks with GCLIDs across all days: ${data.clicks!.length}`);
 
       // Add delay between accounts to prevent overwhelming the API
       if (i < accountsToProcess.length - 1) {
