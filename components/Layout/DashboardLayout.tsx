@@ -11,7 +11,6 @@ import {
   BulbOutlined,
   BulbFilled,
   DollarOutlined,
-  ApiOutlined,
   RocketOutlined,
   ThunderboltOutlined,
   GoogleOutlined
@@ -19,6 +18,7 @@ import {
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTheme } from '../Providers/AntdProvider';
+import { getAllowedFeeds, type FeedType } from '@/lib/account-access-control';
 
 const { Header, Sider, Content } = Layout;
 const { Title, Text } = Typography;
@@ -248,6 +248,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   const router = useRouter();
   const [isAdmin, setIsAdmin] = useState(false);
   const [userAccountId, setUserAccountId] = useState<string | null>(null);
+  const [allowedFeeds, setAllowedFeeds] = useState<FeedType[]>([]);
   const { theme, toggleTheme } = useTheme();
   
   // Get current active menu key based on pathname
@@ -255,7 +256,6 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     if (typeof window === 'undefined') return '1';
     const pathname = window.location.pathname;
     if (pathname === '/inuvo-dashboard') return '2';
-    if (pathname === '/analytics') return '3';
     if (pathname === '/compado') return '4';
     if (pathname === '/predicto-dashboard') return '5';
     return '1'; // Default to dashboard
@@ -278,10 +278,20 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
       // Get auth type from cookie
       const authType = getCookie('auth_type');
       const accountId = getCookie('account_id');
-      
+
       setIsAdmin(authType === 'admin');
       setUserAccountId(accountId);
-      
+
+      // Get allowed feeds for this user
+      if (authType !== 'admin' && accountId) {
+        const feeds = getAllowedFeeds(accountId);
+        setAllowedFeeds(feeds);
+        console.log(`[DashboardLayout] User ${accountId} has access to feeds:`, feeds);
+      } else if (authType === 'admin') {
+        // Admin has access to all feeds
+        setAllowedFeeds(['adscom', 'compado', 'inuvo']);
+      }
+
       // If not admin and we have an account ID, select it by default
       if (authType !== 'admin' && accountId && onAccountChange) {
         // Get the numeric customer ID
@@ -389,16 +399,18 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                   ))}
                 </Select>
               ) : (
-                <div style={{ 
+                // For regular users, show their account without selector
+                <div style={{
                   padding: '8px 12px',
-                  border: '1px solid #f0f0f0',
+                  border: '1px solid #d9d9d9',
                   borderRadius: '8px',
                   background: '#fafafa'
                 }}>
-                  <div style={{ fontWeight: 'bold' }}>{getAccountName(userAccountId)}</div>
-                  {userAccountId && userAccountId !== 'all' && (
-                    <div style={{ fontSize: 12, opacity: 0.8 }}>{userAccountId}</div>
-                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
+                    <UserOutlined style={{ marginRight: 6, color: '#1890ff' }} />
+                    <Text strong style={{ fontSize: 13 }}>Your Account</Text>
+                  </div>
+                  <div style={{ fontSize: 11, opacity: 0.7, marginLeft: 22 }}>{userAccountId}</div>
                 </div>
               )}
             </div>
@@ -411,26 +423,24 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
             selectedKeys={[getActiveMenuKey()]}
             mode="inline"
             items={[
-              {
+              // Ads.com Dashboard - Only show if user has 'adscom' access
+              ...(allowedFeeds.includes('adscom') ? [{
                 key: '1',
                 icon: <DashboardOutlined />,
                 label: <Link href="/dashboard">Dashboard</Link>,
-              },
-              {
+              }] : []),
+              // Inuvo Cost vs Revenue - Only show if user has 'inuvo' access
+              ...(allowedFeeds.includes('inuvo') ? [{
                 key: '2',
                 icon: <DollarOutlined />,
                 label: <Link href="/inuvo-dashboard">Cost vs Revenue</Link>,
-              },
-              {
-                key: '3',
-                icon: <ApiOutlined />,
-                label: <Link href="/analytics">Analytics</Link>,
-              },
-              {
+              }] : []),
+              // Compado - Only show if user has 'compado' access
+              ...(allowedFeeds.includes('compado') ? [{
                 key: '4',
                 icon: <ThunderboltOutlined />,
                 label: <Link href="/compado">Compado</Link>,
-              },
+              }] : []),
               // {
               //   key: '5',
               //   icon: <GoogleOutlined />,

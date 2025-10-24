@@ -1,172 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { getAllowedFeeds, ACCOUNT_FEED_ACCESS } from '@/lib/account-access-control';
 
 // Define a fallback admin key only if environment variables fail
 const ADMIN_FALLBACK_KEY = "admin@2024#secure";
 
-// Customer accounts list to validate against
-const CUSTOMER_ACCOUNTS = [
-  {
-    id: 'CID_8677814915',
-    name: 'Ads.com - RSOC - IST',
-    value: '8677814915'
-  },
-  {
-    id: 'CID_9071440966',
-    name: 'Ads.com - RSOC - UTC - 02',
-    value: '9071440966'
-  },
-  {
-    id: 'CID_5723554317',
-    name: 'Ads.com - RSOC - UTC - 03',
-    value: '5723554317'
-  },
-  {
-    id: 'CID_3146253756',
-    name: 'Ads.com - RSOC - UTC - 04',
-    value: '3146253756'
-  },
-  {
-    id: 'CID_5857090949',
-    name: 'Ads.com - RSOC - UTC - 05',
-    value: '5857090949'
-  },
-  {
-    id: 'CID_6201189752',
-    name: 'Ads.com - RSOC - UTC - 06',
-    value: '6201189752'
-  },
-  {
-    id: 'CID_4071621621',
-    name: 'Ads.com - RSOC - UTC - 07',
-    value: '4071621621'
-  },
-  {
-    id: 'CID_7579121709',
-    name: 'Ads.com - RSOC - UTC - 08',
-    value: '7579121709'
-  },
-  {
-    id: 'CID_1918795911',
-    name: 'Ads.com - RSOC - UTC - 09',
-    value: '1918795911'
-  },
-  {
-    id: 'CID_2849704713',
-    name: 'Ads.com - RSOC - UTC - 10',
-    value: '2849704713'
-  },
-  {
-    id: 'CID_7605096292',
-    name: 'Ads.com - RSOC - UTC - 11',
-    value: '7605096292'
-  },
-  {
-    id: 'CID_5719842337',
-    name: 'Ads.com - RSOC - UTC - 12',
-    value: '5719842337'
-  },
-  {
-    id: 'CID_9341614254',
-    name: 'Ads.com - RSOC - UTC - 13',
-    value: '9341614254'
-  },
-  {
-    id: 'CID_9790364217',
-    name: 'Ads.com - UTC - 14',
-    value: '9790364217'
-  },
-  {
-    id: 'CID_2420687578',
-    name: 'Ads.com - UTC - 16',
-    value: '2420687578'
-  },
-  {
-    id: 'CID_6324595978',
-    name: 'Ads.com - RSOC - UTC - 17',
-    value: '6324595978'
-  },
-  {
-    id: 'CID_5133038944',
-    name: 'Ads.com - RSOC - UTC - 18',
-    value: '5133038944'
-  },
-  {
-    id: 'CID_9084731648',
-    name: 'Ads.com - RSOC - UTC - 19',
-    value: '9084731648'
-  },
-  {
-    id: 'CID_5109995931',
-    name: 'Ads.com - RSOC - UTC - 20',
-    value: '5109995931'
-  },
-  {
-    id: 'CID_3218250684',
-    name: 'Ads.com - UTC - 21',
-    value: '3218250684'
-  },
-  {
-    id: 'CID_7035336235',
-    name: 'Ads.com - UTC - 22',
-    value: '7035336235'
-  },
-  {
-    id: 'CID_5343981146',
-    name: 'Ads.com - UTC - 23',
-    value: '5343981146'
-  },
-  {
-    id: 'CID_1908857409',
-    name: 'Ads.com - UTC - 24',
-    value: '1908857409'
-  },
-  {
-    id: 'CID_3848887282',
-    name: 'Ads.com - UTC - 25',
-    value: '3848887282'
-  },
-  {
-    id: 'CID_4213092623',
-    name: 'Ads.com - UTC - 26',
-    value: '4213092623'
-  },
-  {
-    id: 'CID_6626619603',
-    name: 'Ads.com - RSOC - UTC - 27',
-    value: '6626619603'
-  },
-  {
-    id: 'CID_8914190629',
-    name: 'Ads.com - RSOC - UTC - 28',
-    value: '8914190629'
-  },
-  {
-    id: 'CID_9876515601',
-    name: 'Ads.com - RSOC - UTC - 29',
-    value: '9876515601'
-  },
-  {
-    id: 'CID_8600545272',
-    name: 'Ads.com - UTC - 30',
-    value: '8600545272'
-  },
-  {
-    id: 'CID_3118222043',
-    name: 'Ads.com - UTC - 31',
-    value: '3118222043'
-  },
-  {
-    id: 'CID_8807720960',
-    name: 'Ads.com - RSOC - UTC - Yahoo',
-    value: '8807720960'
-  },
-  {
-    id: 'CID_4277350349',
-    name: 'RSOC - UTC - Ads.com',
-    value: '4277350349'
-  }
-];
+// Build customer accounts list from ACCOUNT_FEED_ACCESS
+const CUSTOMER_ACCOUNTS = Object.keys(ACCOUNT_FEED_ACCESS).map(accountId => ({
+  id: accountId,
+  value: accountId.replace('CID_', '')
+}));
 
 export async function POST(request: NextRequest) {
   try {
@@ -238,20 +81,24 @@ export async function POST(request: NextRequest) {
         }
       }
       
+      // Get allowed feeds for this account
+      const allowedFeeds = getAllowedFeeds(normalizedAccountId);
+
       // Set cookies/session for user
       const sessionId = Math.random().toString(36).substring(2, 15);
       const cookieStore = cookies();
       cookieStore.set('auth_type', 'user', { path: '/' });
       cookieStore.set('account_id', normalizedAccountId, { path: '/' });
       cookieStore.set('session_id', sessionId, { path: '/' });
-      
+
       // No longer using Supabase
-      console.log('User login successful for account:', normalizedAccountId);
-      
-      return NextResponse.json({ 
-        success: true, 
-        type: 'user', 
-        accountId: normalizedAccountId
+      console.log('User login successful for account:', normalizedAccountId, 'with feeds:', allowedFeeds);
+
+      return NextResponse.json({
+        success: true,
+        type: 'user',
+        accountId: normalizedAccountId,
+        allowedFeeds
       });
     }
     

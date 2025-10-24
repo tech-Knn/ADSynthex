@@ -53,7 +53,7 @@ export default function LoginPage() {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           type: 'user',
           accountId: values.accountId
         })
@@ -62,8 +62,28 @@ export default function LoginPage() {
       if (response.ok) {
         const data = await response.json();
         antdMessage.success('Login successful!');
-        // Redirect to the specific account dashboard
-        router.push(`/dashboard?account=${data.accountId || values.accountId}`);
+
+        // Redirect based on allowed feeds for this account
+        const { allowedFeeds, accountId } = data;
+
+        if (allowedFeeds && allowedFeeds.length > 0) {
+          // Redirect to the first allowed feed
+          const firstFeed = allowedFeeds[0];
+
+          if (firstFeed === 'adscom') {
+            router.push(`/dashboard?account=${accountId}`);
+          } else if (firstFeed === 'compado') {
+            router.push('/compado');
+          } else if (firstFeed === 'inuvo') {
+            router.push('/inuvo-dashboard');
+          } else {
+            // Fallback
+            router.push('/dashboard');
+          }
+        } else {
+          // No feeds allowed - redirect to dashboard (will be blocked by middleware)
+          router.push('/dashboard');
+        }
       } else {
         antdMessage.error('Invalid account ID');
       }

@@ -150,7 +150,15 @@ export function initializeGoogleAdsClient() {
 
 // Build campaign query without restricting by status so we capture ENABLED, PAUSED, REMOVED etc.
 function buildActiveCampaignQuery(startDate: string, endDate: string) {
-  // Replace date placeholders with actual dates
+  const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+  if (!datePattern.test(startDate) || !datePattern.test(endDate)) {
+    throw new Error(`Invalid date format. Expected YYYY-MM-DD, got: start="${startDate}", end="${endDate}"`);
+  }
+
+  if (endDate < startDate) {
+    throw new Error(`Invalid date range: end date (${endDate}) is before start date (${startDate})`);
+  }
+
   return config.queries.activeCampaignQuery
     .replace('DATE_RANGE_START', startDate)
     .replace('DATE_RANGE_END', endDate);
@@ -503,7 +511,8 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string, spe
     clicks: []
   };
 
-  // Filter accounts based on specificAccountId
+  console.log(`[GOOGLE_ADS_API] Fetching data for date range: ${startDate} to ${endDate}`);
+
   let accountsToProcess = TARGET_ACCOUNTS;
   if (specificAccountId && specificAccountId !== 'all') {
     console.log(`[GOOGLE_ADS_API] Filtering for specific account: ${specificAccountId}`);
@@ -542,11 +551,10 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string, spe
         });
       };
       
-      // Fetch active campaigns
       const activeCampaignQuery = buildActiveCampaignQuery(startDate, endDate);
-      console.log(`[GOOGLE_ADS_API] Query for account ${account.id}:`, activeCampaignQuery.substring(0, 200));
       const activeCampaignResponse = await makeApiCall(activeCampaignQuery, 'Active Campaigns');
       console.log(`[GOOGLE_ADS_API] Account ${account.id} returned ${activeCampaignResponse?.length || 0} campaigns`);
+
       if (activeCampaignResponse && activeCampaignResponse.length > 0) {
         const processedCampaigns = processCampaignData(activeCampaignResponse, account);
         data.campaigns.push(...processedCampaigns);
@@ -583,7 +591,6 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string, spe
         // Continue with active campaigns data
       }
 
-      // Fetch active ad group ads (with error handling to not block click queries)
       try {
         const activeAdQuery = buildActiveAdGroupAdQuery(startDate, endDate);
         const activeAdResponse = await makeApiCall(activeAdQuery, 'Active Ads');
@@ -592,7 +599,7 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string, spe
           data.ads.push(...processedAds);
         }
       } catch (error) {
-        console.warn(`[GOOGLE_ADS_API] Active Ads query failed (continuing):`, error instanceof Error ? error.message : 'Unknown error');
+        console.warn(`[GOOGLE_ADS_API] Active Ads query failed:`, error instanceof Error ? error.message : 'Unknown error');
       }
 
       // Fetch all ad group ads (with error handling to not block click queries)
@@ -639,29 +646,39 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string, spe
         console.warn(`[GOOGLE_ADS_API] Asset Groups query failed (continuing):`, error instanceof Error ? error.message : 'Unknown error');
       }
 
-      // Fetch click view data with GCLIDs for revenue matching
-      // OPTIMIZED: Fetch entire date range in ONE API call (Google Ads API supports BETWEEN)
-      // This reduces API quota usage from N calls (one per day) to just 1 call per account
-      console.log(`[GOOGLE_ADS_API] 🔍 Fetching click_view data with GCLIDs for date range ${startDate} to ${endDate} (Compado conversion matching)...`);
-
+      // Fetch click_view data (requires day-by-day queries per Google API limitation)
       try {
-        // Use full date range in a single query
-        const clickViewQuery = buildClickViewQuery(startDate, endDate);
-        const clickViewResponse = await makeApiCall(clickViewQuery, `Click Views (GCLIDs) for ${startDate} to ${endDate}`);
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        const daysDiff = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
 
-        if (clickViewResponse && clickViewResponse.length > 0) {
-          const clicks = processClickData(clickViewResponse, account);
+        for (let dayOffset = 0; dayOffset <= daysDiff; dayOffset++) {
+          const currentDate = new Date(start);
+          currentDate.setDate(start.getDate() + dayOffset);
+          const dateString = currentDate.toISOString().split('T')[0];
 
-          if (clicks.length > 0) {
-            console.log(`[GOOGLE_ADS_API] ✓ Fetched ${clicks.length} clicks with GCLIDs in single API call`);
-            data.clicks!.push(...clicks);
+          try {
+            const clickViewQuery = buildClickViewQuery(dateString, dateString);
+            const clickViewResponse = await makeApiCall(clickViewQuery, `Click Views (GCLIDs) for ${dateString}`);
+
+            if (clickViewResponse && clickViewResponse.length > 0) {
+              const clicks = processClickData(clickViewResponse, account);
+              if (clicks.length > 0) {
+                data.clicks!.push(...clicks);
+              }
+            }
+
+            if (dayOffset < daysDiff) {
+              await new Promise(resolve => setTimeout(resolve, 200));
+            }
+          } catch (dayError: any) {
+            console.warn(`[GOOGLE_ADS_API] Failed to fetch clicks for ${dateString}`);
           }
-        } else {
-          console.log(`[GOOGLE_ADS_API] No clicks found for date range ${startDate} to ${endDate}`);
         }
-      } catch (error) {
-        console.warn(`[GOOGLE_ADS_API] Failed to fetch clicks for date range ${startDate} to ${endDate}:`, error instanceof Error ? error.message : 'Unknown error');
-        // Continue with other queries even if click fetch fails
+
+        console.log(`[GOOGLE_ADS_API] Fetched ${data.clicks!.length} total clicks`);
+      } catch (error: any) {
+        console.warn(`[GOOGLE_ADS_API] Click view fetch failed:`, error?.message || 'Unknown error');
       }
 
       // Add delay between accounts to prevent overwhelming the API

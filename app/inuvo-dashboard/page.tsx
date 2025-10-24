@@ -47,7 +47,8 @@ export default function InuvoDashboard() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<InuvoApiResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  
+  const [isAdmin, setIsAdmin] = useState(false);
+
   // Configuration state
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>([
     dayjs(), // Today's start
@@ -56,6 +57,29 @@ export default function InuvoDashboard() {
   const [selectedAccount, setSelectedAccount] = useState<string>('7195529443');
   const [dataType, setDataType] = useState<'realtime' | 'daily'>('realtime');
 
+  // Check authentication and set user's account
+  useEffect(() => {
+    const getCookie = (name: string): string | null => {
+      if (typeof document === 'undefined') return null;
+      const cookieValue = document.cookie
+        .split('; ')
+        .find(row => row.startsWith(name + '='));
+      return cookieValue ? cookieValue.split('=')[1] : null;
+    };
+
+    const authType = getCookie('auth_type');
+    const userAccountId = getCookie('account_id');
+
+    setIsAdmin(authType === 'admin');
+
+    // For regular users, auto-select their account (without CID_ prefix for API calls)
+    if (authType === 'user' && userAccountId) {
+      const accountValue = userAccountId.replace('CID_', '');
+      setSelectedAccount(accountValue);
+      console.log(`[INUVO_DASHBOARD] User account auto-selected: ${accountValue}`);
+    }
+  }, []);
+
   // Initial data fetch
   useEffect(() => {
     console.log('[INUVO_DASHBOARD] useEffect triggered - fetching data...', {
@@ -63,7 +87,7 @@ export default function InuvoDashboard() {
       dataType,
       dateRange: [dateRange[0].format('YYYY-MM-DD'), dateRange[1].format('YYYY-MM-DD')]
     });
-    
+
     // Always fetch data when dependencies change
     fetchData();
   }, [dateRange, selectedAccount, dataType]);
@@ -198,25 +222,28 @@ export default function InuvoDashboard() {
                   />
                 </div>
               </Col>
-              
-              <Col xs={24} sm={12} md={8} lg={4}>
-                <div>
-                  <Text strong style={{ display: 'block', marginBottom: '8px' }}>
-                    Account
-                  </Text>
-                  <Select
-                    value={selectedAccount}
-                    onChange={handleAccountChange}
-                    style={{ width: '100%' }}
-                  >
-                    {accounts.map(account => (
-                      <Option key={account.id} value={account.id}>
-                        {account.name}
-                      </Option>
-                    ))}
-                  </Select>
-                </div>
-              </Col>
+
+              {/* Only show account selector for admins */}
+              {isAdmin && (
+                <Col xs={24} sm={12} md={8} lg={4}>
+                  <div>
+                    <Text strong style={{ display: 'block', marginBottom: '8px' }}>
+                      Account
+                    </Text>
+                    <Select
+                      value={selectedAccount}
+                      onChange={handleAccountChange}
+                      style={{ width: '100%' }}
+                    >
+                      {accounts.map(account => (
+                        <Option key={account.id} value={account.id}>
+                          {account.name}
+                        </Option>
+                      ))}
+                    </Select>
+                  </div>
+                </Col>
+              )}
               
               <Col xs={24} sm={12} md={8} lg={4}>
                 <div>

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { hasAccessToRoute, getFeedTypeFromRoute } from './lib/account-access-control';
 
 // Define paths that don't require authentication
 const publicPaths = [
@@ -8,10 +9,7 @@ const publicPaths = [
   '/api/auth/logout',
   '/api/google-ads/accounts',
   '/api/google-ads-production',
-  '/api/compado',
-  '/api/compado-cost-revenue',
   '/api/test',
-  '/api/inuvo',
   '/api/currency/refresh',
   '/logout'
 ];
@@ -46,25 +44,40 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // For Dashboard access, apply different rule for users vs admins
-  if (pathname.includes('/dashboard')) {
+  // For regular users (not admins), enforce feed-level access control
+  if (authType === 'user') {
     const accountId = request.cookies.get('account_id')?.value;
-    
-    // If user is not an admin, force their account parameter
-    if (authType === 'user' && accountId) {
-      // Get the current requested account from query params
-      const params = new URL(request.url).searchParams;
-      const requestedAccount = params.get('account');
-      
-      // If no account requested or different account requested, redirect to user's account
-      if (!requestedAccount || requestedAccount !== accountId) {
-        const accountUrl = new URL(`/dashboard?account=${accountId}`, request.url);
-        return NextResponse.redirect(accountUrl);
+
+    if (accountId) {
+      // Check if user has access to the requested feed/route
+      const feedType = getFeedTypeFromRoute(pathname);
+
+      if (feedType) {
+        // This is a feed route - check access
+        if (!hasAccessToRoute(accountId, pathname)) {
+          console.log(`[MIDDLEWARE] Access denied: Account ${accountId} attempted to access ${pathname}`);
+
+          // Redirect to unauthorized page or login
+          const unauthorizedUrl = new URL('/login?error=unauthorized', request.url);
+          return NextResponse.redirect(unauthorizedUrl);
+        }
+      }
+
+      // For Ads.com dashboard, enforce account parameter
+      if (pathname.includes('/dashboard')) {
+        const params = new URL(request.url).searchParams;
+        const requestedAccount = params.get('account');
+
+        // If no account requested or different account requested, redirect to user's account
+        if (!requestedAccount || requestedAccount !== accountId) {
+          const accountUrl = new URL(`/dashboard?account=${accountId}`, request.url);
+          return NextResponse.redirect(accountUrl);
+        }
       }
     }
   }
-  
-  // If authenticated, proceed with the request
+
+  // If authenticated and authorized, proceed with the request
   return NextResponse.next();
 }
 
