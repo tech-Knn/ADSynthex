@@ -145,7 +145,8 @@ export async function POST(request: NextRequest) {
             bulletproofAPI.getData(startDate, endDate, accId, {
               priority: 8,
               allowStale: !actualForceRefresh, // Use actualForceRefresh (cooldown-aware)
-              maxWait: 10000
+              maxWait: 10000,
+              feedType: 'compado' // CRITICAL: ONLY fetch Compado accounts
             })
           )
         );
@@ -154,7 +155,8 @@ export async function POST(request: NextRequest) {
         googleAdsDataPromises = bulletproofAPI.getData(startDate, endDate, customerId, {
           priority: 8,
           allowStale: !actualForceRefresh, // Use actualForceRefresh (cooldown-aware)
-          maxWait: 10000
+          maxWait: 10000,
+          feedType: 'compado' // CRITICAL: ONLY fetch Compado accounts
         });
       }
 

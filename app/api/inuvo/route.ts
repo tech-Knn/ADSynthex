@@ -102,11 +102,12 @@ export async function POST(request: NextRequest) {
       }
 
       // Fetch Google Ads cost data using bulletproof API
-      console.log('[INUVO_ENDPOINT] Fetching Google Ads cost data...');
+      console.log('[INUVO_ENDPOINT] Fetching Google Ads cost data (Inuvo accounts only)...');
       const googleAdsResult = await bulletproofAPI.getData(startDate, endDate, customerId, {
         priority: 8,
         allowStale: !actualForceRefresh,
-        maxWait: 20000
+        maxWait: 20000,
+        feedType: 'inuvo' // CRITICAL: ONLY fetch Inuvo accounts
       });
 
       googleAdsData = googleAdsResult.data;

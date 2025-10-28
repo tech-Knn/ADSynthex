@@ -3,9 +3,38 @@ import path from 'path';
 import { GoogleAdsApi } from 'google-ads-api';
 import config from './google-ads-config';
 import * as utils from './google-ads-utils';
+import { ACCOUNT_FEED_ACCESS, FeedType } from './account-access-control';
 
 // Target accounts configuration
 const TARGET_ACCOUNTS = config.TARGET_ACCOUNTS;
+
+/**
+ * Filter accounts by feed type to prevent data mixing between feeds
+ * @param feedType - The feed type to filter for ('adscom', 'compado', 'inuvo')
+ * @returns Filtered list of accounts belonging to the specified feed
+ */
+function filterAccountsByFeed(feedType?: FeedType | null): typeof TARGET_ACCOUNTS {
+  // If no feed type specified, return all accounts (backward compatibility)
+  if (!feedType) {
+    return TARGET_ACCOUNTS;
+  }
+
+  console.log(`[GOOGLE_ADS_API] Filtering accounts for feed type: ${feedType}`);
+
+  // Filter accounts based on ACCOUNT_FEED_ACCESS mapping
+  const filteredAccounts = TARGET_ACCOUNTS.filter(account => {
+    const accountKey = `CID_${account.id}`;
+    const allowedFeeds = ACCOUNT_FEED_ACCESS[accountKey];
+
+    // Include account if it has access to this feed
+    return allowedFeeds && allowedFeeds.includes(feedType);
+  });
+
+  console.log(`[GOOGLE_ADS_API] Filtered ${filteredAccounts.length}/${TARGET_ACCOUNTS.length} accounts for ${feedType} feed`);
+  console.log(`[GOOGLE_ADS_API] Accounts: ${filteredAccounts.map(a => `${a.name} (${a.id})`).join(', ')}`);
+
+  return filteredAccounts;
+}
 
 // Retry configuration
 const RETRY_CONFIG = {
@@ -503,7 +532,12 @@ function processClickData(response: any[], account: any): GoogleAdsClick[] {
 }
 
 // Fetch all necessary data
-export async function fetchGoogleAdsData(startDate: string, endDate: string, specificAccountId?: string | null): Promise<GoogleAdsData> {
+export async function fetchGoogleAdsData(
+  startDate: string,
+  endDate: string,
+  specificAccountId?: string | null,
+  feedType?: FeedType | null
+): Promise<GoogleAdsData> {
   const { client, customer } = initializeGoogleAdsClient();
   const data: GoogleAdsData = {
     campaigns: [],
@@ -511,22 +545,28 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string, spe
     clicks: []
   };
 
-  console.log(`[GOOGLE_ADS_API] Fetching data for date range: ${startDate} to ${endDate}`);
+  console.log(`[GOOGLE_ADS_API] Fetching data for date range: ${startDate} to ${endDate}${feedType ? ` (feed: ${feedType})` : ''}`);
 
-  let accountsToProcess = TARGET_ACCOUNTS;
+  // CRITICAL FIX: Filter accounts by feed type FIRST to prevent data mixing
+  const feedFilteredAccounts = filterAccountsByFeed(feedType);
+
+  let accountsToProcess = feedFilteredAccounts;
   if (specificAccountId && specificAccountId !== 'all') {
     console.log(`[GOOGLE_ADS_API] Filtering for specific account: ${specificAccountId}`);
-    console.log(`[GOOGLE_ADS_API] Available accounts: ${TARGET_ACCOUNTS.map(acc => acc.id).join(', ')}`);
-    accountsToProcess = TARGET_ACCOUNTS.filter(acc => acc.id === specificAccountId);
+    console.log(`[GOOGLE_ADS_API] Available accounts in ${feedType || 'all'} feed: ${feedFilteredAccounts.map(acc => acc.id).join(', ')}`);
+    accountsToProcess = feedFilteredAccounts.filter(acc => acc.id === specificAccountId);
     if (accountsToProcess.length === 0) {
-      console.warn(`[GOOGLE_ADS_API] Account ${specificAccountId} not found in TARGET_ACCOUNTS`);
-      console.warn(`[GOOGLE_ADS_API] Available account IDs: ${TARGET_ACCOUNTS.map(acc => `"${acc.id}"`).join(', ')}`);
+      console.warn(`[GOOGLE_ADS_API] Account ${specificAccountId} not found in ${feedType || 'all'} feed`);
+      console.warn(`[GOOGLE_ADS_API] Available account IDs: ${feedFilteredAccounts.map(acc => `"${acc.id}"`).join(', ')}`);
       return data; // Return empty data if account not found
     }
     console.log(`[GOOGLE_ADS_API] Found matching account: ${accountsToProcess[0].name}`);
   }
 
-  console.log(`Starting Google Ads API fetch for ${accountsToProcess.length} accounts${specificAccountId ? ` (filtered for ${specificAccountId})` : ''}`);
+  console.log(`Starting Google Ads API fetch for ${accountsToProcess.length} accounts in ${feedType || 'all'} feed${specificAccountId ? ` (filtered for ${specificAccountId})` : ''}`);
+  if (accountsToProcess.length > 0) {
+    console.log(`[GOOGLE_ADS_API] Processing accounts: ${accountsToProcess.map(a => a.name).join(', ')}`);
+  }
 
   for (let i = 0; i < accountsToProcess.length; i++) {
     const account = accountsToProcess[i];
@@ -646,39 +686,47 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string, spe
         console.warn(`[GOOGLE_ADS_API] Asset Groups query failed (continuing):`, error instanceof Error ? error.message : 'Unknown error');
       }
 
-      // Fetch click_view data (requires day-by-day queries per Google API limitation)
-      try {
-        const start = new Date(startDate);
-        const end = new Date(endDate);
-        const daysDiff = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      // CRITICAL FIX: Only fetch click_view data for Compado feed
+      // Ads.com uses campaign-level URL slug matching, NOT GCLID
+      // Inuvo uses TKID matching, NOT GCLID
+      // This also prevents Redis payload size errors from 14,000+ clicks
+      if (feedType === 'compado') {
+        console.log(`[GOOGLE_ADS_API] Fetching click_view data (GCLIDs) for Compado feed...`);
+        try {
+          const start = new Date(startDate);
+          const end = new Date(endDate);
+          const daysDiff = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
 
-        for (let dayOffset = 0; dayOffset <= daysDiff; dayOffset++) {
-          const currentDate = new Date(start);
-          currentDate.setDate(start.getDate() + dayOffset);
-          const dateString = currentDate.toISOString().split('T')[0];
+          for (let dayOffset = 0; dayOffset <= daysDiff; dayOffset++) {
+            const currentDate = new Date(start);
+            currentDate.setDate(start.getDate() + dayOffset);
+            const dateString = currentDate.toISOString().split('T')[0];
 
-          try {
-            const clickViewQuery = buildClickViewQuery(dateString, dateString);
-            const clickViewResponse = await makeApiCall(clickViewQuery, `Click Views (GCLIDs) for ${dateString}`);
+            try {
+              const clickViewQuery = buildClickViewQuery(dateString, dateString);
+              const clickViewResponse = await makeApiCall(clickViewQuery, `Click Views (GCLIDs) for ${dateString}`);
 
-            if (clickViewResponse && clickViewResponse.length > 0) {
-              const clicks = processClickData(clickViewResponse, account);
-              if (clicks.length > 0) {
-                data.clicks!.push(...clicks);
+              if (clickViewResponse && clickViewResponse.length > 0) {
+                const clicks = processClickData(clickViewResponse, account);
+                if (clicks.length > 0) {
+                  data.clicks!.push(...clicks);
+                }
               }
-            }
 
-            if (dayOffset < daysDiff) {
-              await new Promise(resolve => setTimeout(resolve, 200));
+              if (dayOffset < daysDiff) {
+                await new Promise(resolve => setTimeout(resolve, 200));
+              }
+            } catch (dayError: any) {
+              console.warn(`[GOOGLE_ADS_API] Failed to fetch clicks for ${dateString}`);
             }
-          } catch (dayError: any) {
-            console.warn(`[GOOGLE_ADS_API] Failed to fetch clicks for ${dateString}`);
           }
-        }
 
-        console.log(`[GOOGLE_ADS_API] Fetched ${data.clicks!.length} total clicks`);
-      } catch (error: any) {
-        console.warn(`[GOOGLE_ADS_API] Click view fetch failed:`, error?.message || 'Unknown error');
+          console.log(`[GOOGLE_ADS_API] Fetched ${data.clicks!.length} total clicks for Compado`);
+        } catch (error: any) {
+          console.warn(`[GOOGLE_ADS_API] Click view fetch failed:`, error?.message || 'Unknown error');
+        }
+      } else {
+        console.log(`[GOOGLE_ADS_API] Skipping click_view data (not needed for ${feedType || 'this'} feed)`);
       }
 
       // Add delay between accounts to prevent overwhelming the API
@@ -695,7 +743,8 @@ export async function fetchGoogleAdsData(startDate: string, endDate: string, spe
     }
   }
 
-  console.log(`Google Ads API fetch completed. Total: ${data.campaigns.length} campaigns, ${data.ads.length} ads, ${data.clicks?.length || 0} clicks with GCLIDs`);
+  const clicksMsg = feedType === 'compado' ? `, ${data.clicks?.length || 0} clicks with GCLIDs` : '';
+  console.log(`Google Ads API fetch completed for ${feedType || 'all'} feed. Total: ${data.campaigns.length} campaigns, ${data.ads.length} ads${clicksMsg}`);
 
   return data;
 }

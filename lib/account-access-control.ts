@@ -27,6 +27,7 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_5416418019': ['compado'],
   'CID_5108802445': ['compado'],
   'CID_1671699399': ['compado'],
+  'CID_9197380684': ['compado'],
 
   // Ads.com Accounts - Only access Ads.com feed
   'CID_8677814915': ['adscom'],

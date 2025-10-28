@@ -33,13 +33,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`[PRODUCTION_API] Request: ${startDate} to ${endDate}, customer: ${customerId || 'all'}`);
+    console.log(`[PRODUCTION_API] Request: ${startDate} to ${endDate}, customer: ${customerId || 'all'} (Ads.com feed only)`);
 
-    // MEMORY PROTECTION: Force timeout to prevent OOM
+    // CRITICAL FIX: Pass feedType to filter only Ads.com accounts
     const result = await bulletproofAPI.getData(startDate, endDate, customerId, {
       priority: customerId ? 8 : 10,
       allowStale: true, // CRITICAL: Use cache whenever possible
-      maxWait: 15000 // Reduced from 30s to 15s to fail faster
+      maxWait: 15000, // Reduced from 30s to 15s to fail faster
+      feedType: 'adscom' // ONLY fetch Ads.com accounts, NOT Compado or Inuvo
     });
 
     // If result is too large, fail fast

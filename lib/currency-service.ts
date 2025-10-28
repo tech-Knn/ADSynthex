@@ -2,12 +2,15 @@ import { redisClient } from './redis-client';
 import axios, { AxiosError } from 'axios';
 
 const CONFIG = {
-  REDIS_KEY: 'currency:eur-to-usd:v1',
+  REDIS_KEY: 'currency:eur-to-usd:v2',
   CACHE_TTL_SECONDS: 24 * 60 * 60,
   FALLBACK_CACHE_TTL: 60 * 60,
-  ECB_API_URL: 'https://data.ecb.europa.eu/data-detail-api/EXR.D.USD.EUR.SP00.A',
-  ECB_TIMEOUT_MS: 10000,
-  FALLBACK_RATE: 1.09,
+  // Multiple API sources for reliability
+  FRANKFURTER_API: 'https://api.frankfurter.app/latest?from=EUR&to=USD',
+  EXCHANGERATE_API: 'https://api.exchangerate-api.com/v4/latest/EUR',
+  ECB_DIRECT_API: 'https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml',
+  TIMEOUT_MS: 8000,
+  FALLBACK_RATE: 1.164, // Last updated: 2025-10-28 (update this periodically if all APIs fail)
   MIN_RATE: 0.80,
   MAX_RATE: 1.50,
   MIN_FETCH_INTERVAL_MS: 60000,
@@ -16,32 +19,15 @@ const CONFIG = {
 interface ExchangeRateCache {
   rate: number;
   fetchedAt: string;
-  source: 'ecb' | 'fallback';
+  source: 'frankfurter' | 'exchangerate-api' | 'ecb' | 'fallback';
   expiresAt: string;
 }
 
-interface ECBApiResponse {
-  dataSets?: Array<{
-    series?: {
-      [key: string]: {
-        observations?: {
-          [key: string]: [number];
-        };
-      };
-    };
-  }>;
-  structure?: {
-    dimensions?: {
-      observation?: Array<{
-        values?: Array<{ id: string; name: string }>;
-      }>;
-    };
-  };
-}
+// Removed old ECBApiResponse interface - now using simpler JSON/XML APIs
 
 interface FetchResult {
   rate: number;
-  source: 'ecb' | 'fallback';
+  source: 'frankfurter' | 'exchangerate-api' | 'ecb' | 'fallback';
   success: boolean;
   error?: string;
 }
@@ -127,101 +113,98 @@ class CurrencyService {
   }
 
   private async fetchAndCacheRate(): Promise<FetchResult> {
-    try {
-      const rate = await this.fetchFromEcb();
-      await this.cacheRate(rate, 'ecb', CONFIG.CACHE_TTL_SECONDS);
-      return { rate, source: 'ecb', success: true };
+    // Try multiple APIs in order of preference
+    const apis = [
+      { name: 'frankfurter' as const, fetcher: () => this.fetchFromFrankfurter() },
+      { name: 'exchangerate-api' as const, fetcher: () => this.fetchFromExchangeRateAPI() },
+      { name: 'ecb' as const, fetcher: () => this.fetchFromECBXML() },
+    ];
 
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      console.error('[CURRENCY] ECB fetch failed:', errorMsg);
-
-      await this.cacheRate(CONFIG.FALLBACK_RATE, 'fallback', CONFIG.FALLBACK_CACHE_TTL);
-
-      return {
-        rate: CONFIG.FALLBACK_RATE,
-        source: 'fallback',
-        success: false,
-        error: errorMsg
-      };
+    for (const api of apis) {
+      try {
+        console.log(`[CURRENCY] Trying ${api.name}...`);
+        const rate = await api.fetcher();
+        await this.cacheRate(rate, api.name, CONFIG.CACHE_TTL_SECONDS);
+        console.log(`[CURRENCY] ✅ ${api.name} succeeded: ${rate}`);
+        return { rate, source: api.name, success: true };
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+        console.warn(`[CURRENCY] ⚠️ ${api.name} failed: ${errorMsg}`);
+      }
     }
+
+    // All APIs failed, use fallback
+    console.error('[CURRENCY] ❌ All APIs failed, using fallback rate');
+    await this.cacheRate(CONFIG.FALLBACK_RATE, 'fallback', CONFIG.FALLBACK_CACHE_TTL);
+
+    return {
+      rate: CONFIG.FALLBACK_RATE,
+      source: 'fallback',
+      success: false,
+      error: 'All exchange rate APIs failed'
+    };
   }
 
-  private async fetchFromEcb(): Promise<number> {
-    const now = Date.now();
-    const timeSinceLastFetch = now - this.lastFetchAttempt;
+  /**
+   * Fetch from Frankfurter API (free, fast, uses ECB data)
+   */
+  private async fetchFromFrankfurter(): Promise<number> {
+    const response = await axios.get(CONFIG.FRANKFURTER_API, {
+      timeout: CONFIG.TIMEOUT_MS,
+      headers: { 'User-Agent': 'AdSyntheX/1.0' },
+    });
 
-    if (timeSinceLastFetch < CONFIG.MIN_FETCH_INTERVAL_MS) {
-      throw new Error(`Rate limit: Wait ${Math.ceil((CONFIG.MIN_FETCH_INTERVAL_MS - timeSinceLastFetch) / 1000)}s`);
+    const rate = response.data?.rates?.USD;
+    if (!rate || !this.isValidRate(rate)) {
+      throw new Error(`Invalid Frankfurter rate: ${rate}`);
     }
 
-    this.lastFetchAttempt = now;
-
-    try {
-      const response = await axios.get<ECBApiResponse>(CONFIG.ECB_API_URL, {
-        timeout: CONFIG.ECB_TIMEOUT_MS,
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'AdSyntheX/1.0',
-        },
-        maxRedirects: 0,
-        validateStatus: (status) => status === 200,
-      });
-
-      const rate = this.parseEcbResponse(response.data);
-
-      if (!this.isValidRate(rate)) {
-        throw new Error(`Invalid rate: ${rate}`);
-      }
-
-      console.log(`[CURRENCY] ECB API: 1 EUR = ${rate} USD`);
-      return rate;
-
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        const axiosErr = error as AxiosError;
-        throw new Error(`ECB API error: ${axiosErr.response?.status || axiosErr.code}`);
-      }
-      throw error;
-    }
+    return parseFloat(rate.toFixed(4));
   }
 
-  private parseEcbResponse(data: ECBApiResponse): number {
-    try {
-      const dataSets = data?.dataSets;
-      if (!dataSets || dataSets.length === 0) {
-        throw new Error('No dataSets in response');
-      }
+  /**
+   * Fetch from ExchangeRate-API (free tier, reliable)
+   */
+  private async fetchFromExchangeRateAPI(): Promise<number> {
+    const response = await axios.get(CONFIG.EXCHANGERATE_API, {
+      timeout: CONFIG.TIMEOUT_MS,
+      headers: { 'User-Agent': 'AdSyntheX/1.0' },
+    });
 
-      const series = dataSets[0]?.series;
-      if (!series) {
-        throw new Error('No series in response');
-      }
-
-      const seriesKey = Object.keys(series)[0];
-      const observations = series[seriesKey]?.observations;
-
-      if (!observations) {
-        throw new Error('No observations in response');
-      }
-
-      const observationKeys = Object.keys(observations)
-        .map(k => parseInt(k))
-        .sort((a, b) => b - a);
-
-      const latestKey = observationKeys[0].toString();
-      const latestValue = observations[latestKey]?.[0];
-
-      if (typeof latestValue !== 'number' || isNaN(latestValue)) {
-        throw new Error(`Invalid value: ${latestValue}`);
-      }
-
-      return parseFloat(latestValue.toFixed(4));
-
-    } catch (error) {
-      throw new Error(`Parse error: ${error instanceof Error ? error.message : 'Unknown'}`);
+    const rate = response.data?.rates?.USD;
+    if (!rate || !this.isValidRate(rate)) {
+      throw new Error(`Invalid ExchangeRate-API rate: ${rate}`);
     }
+
+    return parseFloat(rate.toFixed(4));
   }
+
+  /**
+   * Fetch from ECB XML (official source, slower)
+   */
+  private async fetchFromECBXML(): Promise<number> {
+    const response = await axios.get(CONFIG.ECB_DIRECT_API, {
+      timeout: CONFIG.TIMEOUT_MS,
+      headers: { 'User-Agent': 'AdSyntheX/1.0' },
+    });
+
+    // Parse XML to find USD rate
+    const xmlData = response.data as string;
+    const usdMatch = xmlData.match(/<Cube currency=['"]USD['"] rate=['"]([0-9.]+)['"]/);
+
+    if (!usdMatch || !usdMatch[1]) {
+      throw new Error('USD rate not found in ECB XML');
+    }
+
+    const rate = parseFloat(usdMatch[1]);
+    if (!this.isValidRate(rate)) {
+      throw new Error(`Invalid ECB XML rate: ${rate}`);
+    }
+
+    return parseFloat(rate.toFixed(4));
+  }
+
+  // Removed old parseEcbResponse - now using simpler fetchers
 
   private isValidRate(rate: number): boolean {
     return (
@@ -232,7 +215,7 @@ class CurrencyService {
     );
   }
 
-  private async cacheRate(rate: number, source: 'ecb' | 'fallback', ttlSeconds: number): Promise<void> {
+  private async cacheRate(rate: number, source: 'frankfurter' | 'exchangerate-api' | 'ecb' | 'fallback', ttlSeconds: number): Promise<void> {
     const cacheData: ExchangeRateCache = {
       rate,
       source,

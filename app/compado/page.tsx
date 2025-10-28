@@ -46,7 +46,8 @@ interface Account {
 const COMPADO_ENABLED_ACCOUNTS = [
   { id: '5416418019', name: 'Compado - UTC - 01' },
   { id: '5108802445', name: 'Compado - UTC - 02' },
-  { id: '1671699399', name: 'Compado - UTC - 03' }
+  { id: '1671699399', name: 'Compado - UTC - 03' },
+  { id: '9197380684', name: 'Compado - UTC - 04' }
 ];
 
 // Special "All Accounts" option for aggregated view

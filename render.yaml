@@ -1,4 +1,5 @@
 services:
+  # Main Web Service
   - type: web
     name: adsynthe-x
     env: node
@@ -20,4 +21,24 @@ services:
       - key: ADSCOM_API_KEY
         sync: false
       - key: ADSCOM_API_SECRET
-        sync: false 
+        sync: false
+
+  # Cron Job: Daily Exchange Rate Refresh
+  # Automatically refreshes EUR/USD exchange rate every day at midnight UTC
+  - type: cron
+    name: exchange-rate-refresh
+    env: node
+    schedule: "0 0 * * *"  # Daily at 00:00 UTC (midnight)
+    buildCommand: npm install
+    startCommand: node scripts/refresh-exchange-rate.js
+    envVars:
+      - key: APP_URL
+        sync: false  # Set this to your web service URL (e.g., https://adsynthe-x.onrender.com)
+      - key: NODE_ENV
+        value: production
+
+# Schedule Options:
+# "0 0 * * *"     - Daily at midnight UTC (00:00)
+# "0 2 * * *"     - Daily at 2 AM UTC (recommended for Europe)
+# "0 6 * * *"     - Daily at 6 AM UTC
+# "0 */12 * * *"  - Every 12 hours 

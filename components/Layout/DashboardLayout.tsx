@@ -16,9 +16,9 @@ import {
   GoogleOutlined
 } from '@ant-design/icons';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useTheme } from '../Providers/AntdProvider';
-import { getAllowedFeeds, type FeedType } from '@/lib/account-access-control';
+import { getAllowedFeeds, hasAccessToFeed, type FeedType } from '@/lib/account-access-control';
 
 const { Header, Sider, Content } = Layout;
 const { Title, Text } = Typography;
@@ -229,8 +229,38 @@ const sortAccounts = (accounts: typeof CUSTOMER_ACCOUNTS) => {
   });
 };
 
-// Pre-sorted list for rendering
-const DISPLAY_ACCOUNTS = sortAccounts(CUSTOMER_ACCOUNTS);
+/**
+ * Get current feed type based on pathname
+ */
+const getFeedTypeFromPathname = (pathname: string): FeedType | null => {
+  if (pathname === '/dashboard') return 'adscom';
+  if (pathname === '/compado') return 'compado';
+  if (pathname === '/inuvo-dashboard') return 'inuvo';
+  return null;
+};
+
+/**
+ * Filter accounts by feed type to prevent cross-feed data mixing
+ */
+const filterAccountsByFeedType = (feedType: FeedType | null): typeof CUSTOMER_ACCOUNTS => {
+  if (!feedType) {
+    return CUSTOMER_ACCOUNTS; // Return all if no feed type specified
+  }
+
+  // Always include "All Accounts" option
+  const allAccountsOption = CUSTOMER_ACCOUNTS.find(acc => acc.id === 'all');
+
+  // Filter accounts that belong to this feed
+  const feedAccounts = CUSTOMER_ACCOUNTS.filter(account => {
+    if (account.id === 'all') return false; // Skip "All Accounts" in filter
+
+    // Check if this account has access to this feed type
+    return hasAccessToFeed(account.id, feedType);
+  });
+
+  // Return with "All Accounts" at the beginning
+  return allAccountsOption ? [allAccountsOption, ...feedAccounts] : feedAccounts;
+};
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -238,19 +268,32 @@ interface DashboardLayoutProps {
   selectedAccountId?: string | null;
 }
 
-const DashboardLayout: React.FC<DashboardLayoutProps> = ({ 
-  children, 
+const DashboardLayout: React.FC<DashboardLayoutProps> = ({
+  children,
   onAccountChange,
   selectedAccountId = 'all'
 }) => {
   const [collapsed, setCollapsed] = React.useState(false);
   const [accountSelectOpen, setAccountSelectOpen] = useState(false);
   const router = useRouter();
+  const pathname = usePathname();
   const [isAdmin, setIsAdmin] = useState(false);
   const [userAccountId, setUserAccountId] = useState<string | null>(null);
   const [allowedFeeds, setAllowedFeeds] = useState<FeedType[]>([]);
   const { theme, toggleTheme } = useTheme();
-  
+
+  // Get current feed type and filter accounts accordingly
+  const currentFeedType = getFeedTypeFromPathname(pathname || '');
+  const filteredAccounts = filterAccountsByFeedType(currentFeedType);
+  const DISPLAY_ACCOUNTS = sortAccounts(filteredAccounts);
+
+  // Log filtered accounts for debugging
+  useEffect(() => {
+    console.log(`[DashboardLayout] Current pathname: ${pathname}`);
+    console.log(`[DashboardLayout] Current feed type: ${currentFeedType}`);
+    console.log(`[DashboardLayout] Showing ${DISPLAY_ACCOUNTS.length} accounts for ${currentFeedType} feed:`, DISPLAY_ACCOUNTS.map(a => a.name));
+  }, [pathname, currentFeedType]);
+
   // Get current active menu key based on pathname
   const getActiveMenuKey = () => {
     if (typeof window === 'undefined') return '1';

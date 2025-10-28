@@ -7,6 +7,7 @@ import { fetchGoogleAdsData, getMockGoogleAdsData } from './google-ads-api';
 import { redisCacheManager } from './redis-cache-manager';
 import { googleAdsRateLimiter } from './redis-rate-limiter';
 import { redisClient } from './redis-client';
+import { FeedType } from './account-access-control';
 
 interface ApiRequest {
   startDate: string;
@@ -33,6 +34,7 @@ export class BulletproofGoogleAdsAPI {
 
   /**
    * Main method to get Google Ads data with bulletproof guarantees (Redis-Enhanced)
+   * @param feedType - Filter accounts by feed type ('adscom', 'compado', 'inuvo') to prevent data mixing
    */
   async getData(
     startDate: string,
@@ -42,16 +44,19 @@ export class BulletproofGoogleAdsAPI {
       priority?: number;
       allowStale?: boolean;
       maxWait?: number;
+      feedType?: FeedType | null;
     } = {}
   ): Promise<ApiResponse> {
-    const { priority = 5, allowStale = true, maxWait = 30000 } = options;
+    const { priority = 5, allowStale = true, maxWait = 30000, feedType = null } = options;
 
     // Step 0: Request deduplication - Check if same request is already in-flight
+    // Include feedType in cache key to prevent cross-feed cache pollution
     const cacheKey = redisCacheManager.generateKey({
       dataType: 'google-ads',
       accountId: customerId,
       startDate,
-      endDate
+      endDate,
+      metadata: feedType ? { feedType } : undefined
     });
 
     const requestKey = `${cacheKey}:${priority}`;
@@ -64,7 +69,7 @@ export class BulletproofGoogleAdsAPI {
     }
 
     // Create a promise for this request and store it with timestamp
-    const requestPromise = this.executeRequest(startDate, endDate, customerId, cacheKey, { priority, allowStale, maxWait });
+    const requestPromise = this.executeRequest(startDate, endDate, customerId, cacheKey, { priority, allowStale, maxWait, feedType });
 
     // Store the promise with timestamp for cleanup
     this.inflightRequests.set(requestKey, {
@@ -92,11 +97,11 @@ export class BulletproofGoogleAdsAPI {
     endDate: string,
     customerId: string | null,
     cacheKey: string,
-    options: { priority: number; allowStale: boolean; maxWait: number }
+    options: { priority: number; allowStale: boolean; maxWait: number; feedType?: FeedType | null }
   ): Promise<ApiResponse> {
-    const { priority, allowStale } = options;
+    const { priority, allowStale, feedType } = options;
 
-    console.log(`[BULLETPROOF_API] Redis-powered request: ${startDate} to ${endDate}, customer: ${customerId || 'all'}`);
+    console.log(`[BULLETPROOF_API] Redis-powered request: ${startDate} to ${endDate}, customer: ${customerId || 'all'}${feedType ? `, feed: ${feedType}` : ''}`);
 
     // Step 1: Try Redis cache first (memory → Redis → null)
     const cached = await redisCacheManager.get(cacheKey, {
@@ -149,9 +154,9 @@ export class BulletproofGoogleAdsAPI {
       };
     }
 
-    // Step 3: Attempt safe API call with Redis protection
+    // Step 3: Attempt safe API call with Redis protection (with feed filtering)
     try {
-      return await this.makeGuardedApiCall(startDate, endDate, customerId, priority, cacheKey);
+      return await this.makeGuardedApiCall(startDate, endDate, customerId, priority, cacheKey, feedType);
     } catch (error) {
       console.error('[BULLETPROOF_API] API call failed:', error);
 
@@ -207,17 +212,18 @@ export class BulletproofGoogleAdsAPI {
     endDate: string,
     customerId: string | null,
     priority: number,
-    cacheKey: string
+    cacheKey: string,
+    feedType?: FeedType | null
   ): Promise<ApiResponse> {
-    console.log(`[BULLETPROOF_API] Making Redis-protected Google Ads API call for customer ${customerId || 'all'}`);
+    console.log(`[BULLETPROOF_API] Making Redis-protected Google Ads API call for customer ${customerId || 'all'}${feedType ? `, feed: ${feedType}` : ''}`);
 
     // Record request in Redis (increments counters atomically)
     await googleAdsRateLimiter.recordRequest(customerId || undefined);
 
     const startTime = Date.now();
 
-    // Make the actual API call with specific account filtering
-    const apiData = await fetchGoogleAdsData(startDate, endDate, customerId);
+    // Make the actual API call with feed type filtering to prevent data mixing
+    const apiData = await fetchGoogleAdsData(startDate, endDate, customerId, feedType);
     const responseTime = Date.now() - startTime;
 
     if (!apiData || !apiData.ads) {
