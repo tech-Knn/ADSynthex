@@ -28,6 +28,9 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_5108802445': ['compado'],
   'CID_1671699399': ['compado'],
   'CID_9197380684': ['compado'],
+  'CID_9669088480': ['compado'],
+  'CID_6725067013': ['compado'],
+  'CID_9299147464': ['compado'],
 
   // Ads.com Accounts - Only access Ads.com feed
   'CID_8677814915': ['adscom'],
@@ -60,6 +63,7 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_9876515601': ['adscom'],
   'CID_8600545272': ['adscom'],
   'CID_3118222043': ['adscom'],
+  'CID_7824950746': ['adscom'],
   'CID_8807720960': ['adscom'],
   'CID_4277350349': ['adscom', 'inuvo'], // Special: Has both Ads.com and Inuvo access
 };
