@@ -50,7 +50,13 @@ const COMPADO_ENABLED_ACCOUNTS = [
   { id: '9197380684', name: 'Compado - UTC - 04' },
   { id: '9669088480', name: 'Compado - UTC - 05' },
   { id: '6725067013', name: 'Compado - UTC - 06' },
-  { id: '9299147464', name: 'Compado - UTC - 07' }
+  { id: '9299147464', name: 'Compado - UTC - 07' },
+  { id: '2126478207', name: 'Compado - UTC - 08' },
+  { id: '8711828676', name: 'Compado - UTC - 09' },
+  { id: '5496110293', name: 'Compado - UTC - 10' },
+  { id: '3963323643', name: 'Compado - UTC - 11' },
+  { id: '1751028486', name: 'Compado - UTC - 12' },
+  { id: '9248809715', name: 'Compado - UTC - 13' }
 ];
 
 // Special "All Accounts" option for aggregated view

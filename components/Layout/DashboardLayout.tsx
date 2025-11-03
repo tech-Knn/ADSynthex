@@ -42,6 +42,61 @@ const CUSTOMER_ACCOUNTS = [
     value: '5108802445'
   },
   {
+    id: 'CID_1671699399',
+    name: 'Compado - UTC - 03',
+    value: '1671699399'
+  },
+  {
+    id: 'CID_9197380684',
+    name: 'Compado - UTC - 04',
+    value: '9197380684'
+  },
+  {
+    id: 'CID_9669088480',
+    name: 'Compado - UTC - 05',
+    value: '9669088480'
+  },
+  {
+    id: 'CID_6725067013',
+    name: 'Compado - UTC - 06',
+    value: '6725067013'
+  },
+  {
+    id: 'CID_9299147464',
+    name: 'Compado - UTC - 07',
+    value: '9299147464'
+  },
+  {
+    id: 'CID_2126478207',
+    name: 'Compado - UTC - 08',
+    value: '2126478207'
+  },
+  {
+    id: 'CID_8711828676',
+    name: 'Compado - UTC - 09',
+    value: '8711828676'
+  },
+  {
+    id: 'CID_5496110293',
+    name: 'Compado - UTC - 10',
+    value: '5496110293'
+  },
+  {
+    id: 'CID_3963323643',
+    name: 'Compado - UTC - 11',
+    value: '3963323643'
+  },
+  {
+    id: 'CID_1751028486',
+    name: 'Compado - UTC - 12',
+    value: '1751028486'
+  },
+  {
+    id: 'CID_9248809715',
+    name: 'Compado - UTC - 13',
+    value: '9248809715'
+  },
+  {
     id: 'CID_8677814915',
     name: 'Ads.com - RSOC - IST',
     value: '8677814915'
@@ -384,11 +439,15 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   return (
     <App>
       <Layout style={{ minHeight: '100vh' }}>
-        <Sider 
-          collapsible 
-          collapsed={collapsed} 
+        <Sider
+          collapsible
+          collapsed={collapsed}
           onCollapse={(value) => setCollapsed(value)}
-          theme={theme === 'dark' ? 'dark' : 'light'}
+          theme="light"
+          style={{
+            background: theme === 'dark' ? '#1e293b' : '#fff',
+            borderRight: theme === 'dark' ? '1px solid #334155' : '1px solid #f0f0f0'
+          }}
           width={280}
         >
           <div style={{ 
@@ -470,6 +529,11 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
             theme="light"
             selectedKeys={[getActiveMenuKey()]}
             mode="inline"
+            style={{
+              background: theme === 'dark' ? '#1e293b' : '#fff',
+              color: theme === 'dark' ? '#f3f4f6' : '#000',
+              borderRight: 'none'
+            }}
             items={[
               // Ads.com Dashboard - Only show if user has 'adscom' access
               ...(allowedFeeds.includes('adscom') ? [{
@@ -503,13 +567,16 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
           />
         </Sider>
         <Layout>
-          <Header style={{ 
-            padding: '0 16px', 
-            background: theme === 'dark' ? '#1f2937' : '#fff', 
-            display: 'flex', 
+          <Header style={{
+            padding: '0 16px',
+            background: theme === 'dark' ? '#1e293b' : '#fff',
+            display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            boxShadow: '0 1px 2px rgba(0, 0, 0, 0.03)',
+            boxShadow: theme === 'dark'
+              ? '0 1px 3px rgba(0, 0, 0, 0.5)'
+              : '0 1px 2px rgba(0, 0, 0, 0.03)',
+            borderBottom: theme === 'dark' ? '1px solid #334155' : 'none',
             position: 'sticky',
             top: 0,
             zIndex: 1000
@@ -525,19 +592,19 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
               </Title>
             </div>
             
-            <Space>
+            <Space size="middle">
               <Tooltip title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}>
                 <Button
                   type="text"
                   icon={theme === 'dark' ? <BulbFilled /> : <BulbOutlined />}
                   onClick={toggleTheme}
-                  style={{ fontSize: '16px' }}
+                  style={{ fontSize: '18px' }}
                 />
               </Tooltip>
               <Tooltip title="Logout">
-                <Button 
-                  type="primary" 
-                  icon={<LogoutOutlined />} 
+                <Button
+                  type="primary"
+                  icon={<LogoutOutlined />}
                   onClick={handleLogout}
                   shape="round"
                   className="logout-button"
@@ -547,7 +614,12 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
               </Tooltip>
             </Space>
           </Header>
-          <Content style={{ margin: '24px', overflow: 'initial' }}>
+          <Content style={{
+            margin: '24px',
+            overflow: 'initial',
+            background: theme === 'dark' ? '#0f172a' : 'transparent',
+            minHeight: 'calc(100vh - 112px)'
+          }}>
             {children}
           </Content>
         </Layout>
