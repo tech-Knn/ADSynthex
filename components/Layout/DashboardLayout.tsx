@@ -1,5 +1,5 @@
 import React, { ReactNode, useState, useEffect } from 'react';
-import { Layout, Menu, Typography, Select, Divider, Space, Button, Tooltip, App, Switch } from 'antd';
+import { Layout, Menu, Typography, Select, Divider, Button, Tooltip, App, Switch } from 'antd';
 import {
   DashboardOutlined,
   MenuFoldOutlined,
@@ -8,8 +8,6 @@ import {
   TeamOutlined,
   LogoutOutlined,
   LockOutlined,
-  BulbOutlined,
-  BulbFilled,
   DollarOutlined,
   RocketOutlined,
   ThunderboltOutlined,
@@ -17,7 +15,6 @@ import {
 } from '@ant-design/icons';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { useTheme } from '../Providers/AntdProvider';
 import { getAllowedFeeds, hasAccessToFeed, type FeedType } from '@/lib/account-access-control';
 
 const { Header, Sider, Content } = Layout;
@@ -340,8 +337,6 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   const [isAdmin, setIsAdmin] = useState(false);
   const [userAccountId, setUserAccountId] = useState<string | null>(null);
   const [allowedFeeds, setAllowedFeeds] = useState<FeedType[]>([]);
-  const { theme, toggleTheme } = useTheme();
-
   // Get current feed type and filter accounts accordingly
   const currentFeedType = getFeedTypeFromPathname(pathname || '');
   const filteredAccounts = filterAccountsByFeedType(currentFeedType);
@@ -445,8 +440,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
           onCollapse={(value) => setCollapsed(value)}
           theme="light"
           style={{
-            background: theme === 'dark' ? '#1e293b' : '#fff',
-            borderRight: theme === 'dark' ? '1px solid #334155' : '1px solid #f0f0f0'
+            background: '#fff',
+            borderRight: '1px solid #f0f0f0'
           }}
           width={280}
         >
@@ -530,8 +525,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
             selectedKeys={[getActiveMenuKey()]}
             mode="inline"
             style={{
-              background: theme === 'dark' ? '#1e293b' : '#fff',
-              color: theme === 'dark' ? '#f3f4f6' : '#000',
+              background: '#fff',
+              color: '#000',
               borderRight: 'none'
             }}
             items={[
@@ -569,14 +564,12 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         <Layout>
           <Header style={{
             padding: '0 16px',
-            background: theme === 'dark' ? '#1e293b' : '#fff',
+            background: '#fff',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            boxShadow: theme === 'dark'
-              ? '0 1px 3px rgba(0, 0, 0, 0.5)'
-              : '0 1px 2px rgba(0, 0, 0, 0.03)',
-            borderBottom: theme === 'dark' ? '1px solid #334155' : 'none',
+            boxShadow: '0 1px 2px rgba(0, 0, 0, 0.03)',
+            borderBottom: 'none',
             position: 'sticky',
             top: 0,
             zIndex: 1000
@@ -592,32 +585,22 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
               </Title>
             </div>
             
-            <Space size="middle">
-              <Tooltip title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}>
-                <Button
-                  type="text"
-                  icon={theme === 'dark' ? <BulbFilled /> : <BulbOutlined />}
-                  onClick={toggleTheme}
-                  style={{ fontSize: '18px' }}
-                />
-              </Tooltip>
-              <Tooltip title="Logout">
-                <Button
-                  type="primary"
-                  icon={<LogoutOutlined />}
-                  onClick={handleLogout}
-                  shape="round"
-                  className="logout-button"
-                >
-                  Logout
-                </Button>
-              </Tooltip>
-            </Space>
+            <Tooltip title="Logout">
+              <Button
+                type="primary"
+                icon={<LogoutOutlined />}
+                onClick={handleLogout}
+                shape="round"
+                className="logout-button"
+              >
+                Logout
+              </Button>
+            </Tooltip>
           </Header>
           <Content style={{
             margin: '24px',
             overflow: 'initial',
-            background: theme === 'dark' ? '#0f172a' : 'transparent',
+            background: 'transparent',
             minHeight: 'calc(100vh - 112px)'
           }}>
             {children}
