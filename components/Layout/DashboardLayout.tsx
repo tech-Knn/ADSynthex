@@ -249,6 +249,41 @@ const CUSTOMER_ACCOUNTS = [
     value: '7824950746'
   },
   {
+    id: 'CID_5675630727',
+    name: 'Ads.com - RSOC - UTC - 34',
+    value: '5675630727'
+  },
+  {
+    id: 'CID_3304906147',
+    name: 'Ads.com - RSOC - UTC - 35',
+    value: '3304906147'
+  },
+  {
+    id: 'CID_8825176554',
+    name: 'Ads.com - RSOC - UTC - 36',
+    value: '8825176554'
+  },
+  {
+    id: 'CID_8321499303',
+    name: 'Ads.com - RSOC - UTC - 37',
+    value: '8321499303'
+  },
+  {
+    id: 'CID_7953604784',
+    name: 'Ads.com - RSOC - UTC - 38',
+    value: '7953604784'
+  },
+  {
+    id: 'CID_9436130288',
+    name: 'Ads.com - RSOC - UTC - 39',
+    value: '9436130288'
+  },
+  {
+    id: 'CID_7572891295',
+    name: 'Ads.com - RSOC - UTC - 40',
+    value: '7572891295'
+  },
+  {
     id: 'CID_8807720960',
     name: 'Ads.com - RSOC - UTC - Yahoo',
     value: '8807720960'

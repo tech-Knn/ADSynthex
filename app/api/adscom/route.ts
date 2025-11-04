@@ -534,12 +534,19 @@ export async function POST(request: NextRequest) {
             '8600545272': ['utc30'],
             '3118222043': ['utc31'],
             '7824950746': ['utc32'],
+            '5675630727': ['utc34'],
+            '3304906147': ['utc35'],
+            '8825176554': ['utc36'],
+            '8321499303': ['utc37'],
+            '7953604784': ['utc38'],
+            '9436130288': ['utc39'],
+            '7572891295': ['utc40'],
             '8807720960': ['yahoo', 'utcyahoo'],
             '4277350349': ['siddhi']
             // The IST customer (8677814915) will be handled as the fallback below
           };
 
-          const excludeSubidsForIst = ['utc02', 'utc03', 'utc04', 'utc05', 'utc06', 'utc07', 'utc08', 'utc09', 'utc10', 'utc11', 'utc12', 'utc13', 'utc14', 'utc16', 'utc17', 'utc18', 'utc19', 'utc20', 'utc21', 'utc22', 'utc23', 'utc24', 'utc25', 'utc26', 'utc27', 'utc28', 'utc29', 'utc30', 'utc31', 'utc32', 'yahoo', 'utcyahoo', 'siddhi'];
+          const excludeSubidsForIst = ['utc02', 'utc03', 'utc04', 'utc05', 'utc06', 'utc07', 'utc08', 'utc09', 'utc10', 'utc11', 'utc12', 'utc13', 'utc14', 'utc16', 'utc17', 'utc18', 'utc19', 'utc20', 'utc21', 'utc22', 'utc23', 'utc24', 'utc25', 'utc26', 'utc27', 'utc28', 'utc29', 'utc30', 'utc31', 'utc32', 'utc34', 'utc35', 'utc36', 'utc37', 'utc38', 'utc39', 'utc40', 'yahoo', 'utcyahoo', 'siddhi'];
 
           if (customerSubidMap[customerId]) {
             const allowedSubids = customerSubidMap[customerId];
@@ -647,6 +654,13 @@ export async function POST(request: NextRequest) {
           '8600545272': 'futuretechtoday.com', // UTC-30
           '3118222043': 'innovationspotlight.net', // UTC-31
           '7824950746': 'futuretechtoday.com', // UTC-32
+          '5675630727': 'innovationspotlight.net', // UTC-34
+          '3304906147': 'techinsightsweekly.com', // UTC-35
+          '8825176554': 'freshcuesdaily.com', // UTC-36
+          '8321499303': 'digitaltrendstoday.com', // UTC-37
+          '7953604784': 'techreviewcentral.net', // UTC-38
+          '9436130288': 'futuristinsights.org', // UTC-39
+          '7572891295': 'innovationdigest.com', // UTC-40
           '8807720960': 'freshcuesdaily.com', // Yahoo
           '4277350349': 'emergingtrendsreport.org' // Siddhi
         };
@@ -784,6 +798,13 @@ export async function GET(request: NextRequest) {
         '8600545272': 'futuretechtoday.com', // UTC-30
         '3118222043': 'innovationspotlight.net', // UTC-31
         '7824950746': 'futuretechtoday.com', // UTC-32
+        '5675630727': 'innovationspotlight.net', // UTC-34
+        '3304906147': 'techinsightsweekly.com', // UTC-35
+        '8825176554': 'freshcuesdaily.com', // UTC-36
+        '8321499303': 'digitaltrendstoday.com', // UTC-37
+        '7953604784': 'techreviewcentral.net', // UTC-38
+        '9436130288': 'futuristinsights.org', // UTC-39
+        '7572891295': 'innovationdigest.com', // UTC-40
         '8807720960': 'freshcuesdaily.com', // Yahoo
         '4277350349': 'emergingtrendsreport.org' // Siddhi
       };
