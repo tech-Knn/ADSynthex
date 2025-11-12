@@ -11,7 +11,8 @@ import {
   DollarOutlined,
   RocketOutlined,
   ThunderboltOutlined,
-  GoogleOutlined
+  GoogleOutlined,
+  FileSearchOutlined
 } from '@ant-design/icons';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
@@ -328,6 +329,7 @@ const getFeedTypeFromPathname = (pathname: string): FeedType | null => {
   if (pathname === '/dashboard') return 'adscom';
   if (pathname === '/compado') return 'compado';
   if (pathname === '/inuvo-dashboard') return 'inuvo';
+  if (pathname === '/adsense') return 'adsense';
   return null;
 };
 
@@ -390,6 +392,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     const pathname = window.location.pathname;
     if (pathname === '/inuvo-dashboard') return '2';
     if (pathname === '/compado') return '4';
+    if (pathname === '/adsense') return '7';
     if (pathname === '/predicto-dashboard') return '5';
     return '1'; // Default to dashboard
   };
@@ -422,7 +425,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         console.log(`[DashboardLayout] User ${accountId} has access to feeds:`, feeds);
       } else if (authType === 'admin') {
         // Admin has access to all feeds
-        setAllowedFeeds(['adscom', 'compado', 'inuvo']);
+        setAllowedFeeds(['adscom', 'compado', 'inuvo', 'adsense']);
       }
 
       // If not admin and we have an account ID, select it by default
@@ -569,19 +572,25 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
               ...(allowedFeeds.includes('adscom') ? [{
                 key: '1',
                 icon: <DashboardOutlined />,
-                label: <Link href="/dashboard">Dashboard</Link>,
+                label: <Link href="/dashboard">Ads.com</Link>,
               }] : []),
               // Inuvo Cost vs Revenue - Only show if user has 'inuvo' access
               ...(allowedFeeds.includes('inuvo') ? [{
                 key: '2',
                 icon: <DollarOutlined />,
-                label: <Link href="/inuvo-dashboard">Cost vs Revenue</Link>,
+                label: <Link href="/inuvo-dashboard">Inuvo</Link>,
               }] : []),
               // Compado - Only show if user has 'compado' access
               ...(allowedFeeds.includes('compado') ? [{
                 key: '4',
                 icon: <ThunderboltOutlined />,
                 label: <Link href="/compado">Compado</Link>,
+              }] : []),
+              // AdSense for Search (AFS) - Only show if user has 'adsense' access
+              ...(allowedFeeds.includes('adsense') ? [{
+                key: '7',
+                icon: <FileSearchOutlined />,
+                label: <Link href="/adsense">AFS</Link>,
               }] : []),
               // {
               //   key: '5',

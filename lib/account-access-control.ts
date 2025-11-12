@@ -6,7 +6,7 @@
  * Regular users only have access to specific feeds based on their account type.
  */
 
-export type FeedType = 'adscom' | 'compado' | 'inuvo';
+export type FeedType = 'adscom' | 'compado' | 'inuvo' | 'adsense';
 
 export interface AccountAccessConfig {
   accountId: string;
@@ -21,8 +21,21 @@ export interface AccountAccessConfig {
  * - 'adscom': Ads.com dashboard and reports
  * - 'compado': Compado cost-revenue mapping
  * - 'inuvo': Inuvo cost vs revenue dashboard
+ * - 'adsense': AdSense for Search (AFS) revenue mapping
  */
 export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
+  // AdSense for Search (AFS) Accounts - Only access AdSense feed
+  'CID_7072817229': ['adsense'],
+  'CID_1353234754': ['adsense'],
+  'CID_6610446272': ['adsense'],
+  'CID_5700221831': ['adsense'],
+  'CID_3961840839': ['adsense'],
+  'CID_1769246493': ['adsense'],
+  'CID_8077371478': ['adsense'],
+  'CID_9657188741': ['adsense'],
+  'CID_5898780123': ['adsense'],
+  'CID_9249163427': ['adsense'],
+
   // Compado Accounts - Only access Compado feed
   'CID_5416418019': ['compado'],
   'CID_5108802445': ['compado'],
@@ -37,6 +50,8 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_3963323643': ['compado'],
   'CID_1751028486': ['compado'],
   'CID_9248809715': ['compado'],
+  'CID_9922466223': ['compado'],
+  'CID_9524489917': ['compado'],
 
   // Ads.com Accounts - Only access Ads.com feed
   'CID_8677814915': ['adscom'],
@@ -88,6 +103,7 @@ export const FEED_ROUTES: Record<FeedType, string[]> = {
   adscom: ['/dashboard', '/api/adscom'],
   compado: ['/compado', '/api/compado', '/api/compado-cost-revenue'],
   inuvo: ['/inuvo-dashboard', '/api/inuvo'],
+  adsense: ['/adsense', '/adsense-test', '/api/adsense', '/api/adsense-cost-revenue', '/api/adsense-test-revenue'],
 };
 
 /**

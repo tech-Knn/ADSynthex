@@ -56,7 +56,7 @@ export class BulletproofGoogleAdsAPI {
       accountId: customerId,
       startDate,
       endDate,
-      metadata: feedType ? { feedType } : undefined
+      extra: feedType || undefined  // Use 'extra' parameter to include feedType in cache key
     });
 
     const requestKey = `${cacheKey}:${priority}`;

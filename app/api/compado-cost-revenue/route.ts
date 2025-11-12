@@ -101,6 +101,12 @@ export async function POST(request: NextRequest) {
 
     console.log(`[COMPADO_COST_REVENUE] Mapping request: ${startDate} to ${endDate}, Accounts: ${isMultiAccount ? accountIds.join(', ') : (customerId || 'all')}, forceRefresh: ${forceRefresh}`);
 
+    // ATTRIBUTION WINDOW FIX: Extend click date range to 30 days before startDate
+    // This ensures we capture all clicks that could have led to conversions in the selected period
+    // Example: User selects Nov 4-5, we fetch clicks from Oct 5 - Nov 5
+    const clicksStartDate = calculateAttributionStartDate(startDate, 30);
+    console.log(`[COMPADO_COST_REVENUE] ✓ Attribution Window: Fetching clicks from ${clicksStartDate} to ${endDate} (30-day lookback for click attribution)`);
+
     let message = '';
 
     try {
@@ -122,9 +128,14 @@ export async function POST(request: NextRequest) {
           console.log(`[COMPADO_COST_REVENUE] ⚡ Clearing cache for account ${accId} to ensure fresh data...`);
           try {
             const { redisClient } = await import('@/lib/redis-client');
-            const cacheKey = `cache:google-ads:${accId}:${startDate}:${endDate}`;
+            // Match the cache key format used by redisCacheManager.generateKey() with feedType
+            const cacheKey = `cache:google-ads:${accId}:${startDate}:${endDate}:compado`;
             await redisClient.del(cacheKey);
             console.log(`[COMPADO_COST_REVENUE] ✓ Cleared cache key: ${cacheKey}`);
+
+            // Also clear the old format without feedType for backward compatibility
+            const oldCacheKey = `cache:google-ads:${accId}:${startDate}:${endDate}`;
+            await redisClient.del(oldCacheKey);
           } catch (cacheError) {
             console.warn(`[COMPADO_COST_REVENUE] ⚠️  Failed to clear cache:`, cacheError);
           }
@@ -139,10 +150,11 @@ export async function POST(request: NextRequest) {
 
       if (isMultiAccount) {
         // Fetch data for all accounts in parallel
-        console.log(`[COMPADO_COST_REVENUE] Fetching data for ${accountIds.length} accounts in parallel...`);
+        // CRITICAL: Use extended date range (clicksStartDate) to capture all clicks
+        console.log(`[COMPADO_COST_REVENUE] Fetching data for ${accountIds.length} accounts in parallel with extended date range...`);
         googleAdsDataPromises = Promise.all(
           accountIds.map(accId =>
-            bulletproofAPI.getData(startDate, endDate, accId, {
+            bulletproofAPI.getData(clicksStartDate, endDate, accId, {
               priority: 8,
               allowStale: !actualForceRefresh, // Use actualForceRefresh (cooldown-aware)
               maxWait: 10000,
@@ -151,8 +163,8 @@ export async function POST(request: NextRequest) {
           )
         );
       } else {
-        // Single account fetch
-        googleAdsDataPromises = bulletproofAPI.getData(startDate, endDate, customerId, {
+        // Single account fetch with extended date range
+        googleAdsDataPromises = bulletproofAPI.getData(clicksStartDate, endDate, customerId, {
           priority: 8,
           allowStale: !actualForceRefresh, // Use actualForceRefresh (cooldown-aware)
           maxWait: 10000,
@@ -228,6 +240,7 @@ export async function POST(request: NextRequest) {
       // Validate Google Ads data
       if (!googleAdsData || (!googleAdsData.campaigns && !googleAdsData.clicks)) {
         console.error('[COMPADO_COST_REVENUE] ❌ No Google Ads data received from API!');
+        console.error('[COMPADO_COST_REVENUE] googleAdsData:', googleAdsData);
         throw new Error('Failed to fetch Google Ads data - API returned empty response');
       }
 
@@ -237,6 +250,17 @@ export async function POST(request: NextRequest) {
         clicks: googleAdsData?.clicks?.length || 0,
         fetchTime: `${fetchTime}ms`
       });
+
+      // DIAGNOSTIC: Check if campaigns is empty for date ranges
+      if (googleAdsData?.campaigns?.length === 0) {
+        console.warn(`[COMPADO_COST_REVENUE] ⚠️  ZERO CAMPAIGNS returned for date range: ${startDate} to ${endDate}`);
+        console.warn(`[COMPADO_COST_REVENUE] This will result in "No Conversion Data Available" message`);
+        console.warn(`[COMPADO_COST_REVENUE] Possible causes:`);
+        console.warn(`[COMPADO_COST_REVENUE]   1. No campaigns ran during this period`);
+        console.warn(`[COMPADO_COST_REVENUE]   2. Campaigns exist but have zero metrics`);
+        console.warn(`[COMPADO_COST_REVENUE]   3. Cache serving old empty data`);
+        console.warn(`[COMPADO_COST_REVENUE]   4. Google Ads API query filtering too strictly`);
+      }
 
       // Handle Compado result
       let compadoData: any[] = [];
@@ -265,13 +289,15 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Extract and enrich clicks
+      // Extract and enrich clicks (using extended date range for GCLID matching)
       const googleAdsClicks = enrichClicksWithCost(
         googleAdsData?.clicks || [],
         campaignMetricsMap,
         adGroupMetricsMap,
-        startDate
+        clicksStartDate
       );
+
+      console.log(`[COMPADO_COST_REVENUE] Attribution window: ${googleAdsClicks.length} total clicks from ${clicksStartDate} to ${endDate} available for GCLID matching`);
 
       const processingTime = Date.now() - processingStart;
       console.log(`[COMPADO_COST_REVENUE] ⚡ Data processing completed in ${processingTime}ms`);
@@ -371,8 +397,17 @@ export async function POST(request: NextRequest) {
         campaignAggregated.forEach((camp, idx) => {
           console.log(`[COMPADO_COST_REVENUE]   ${idx + 1}. ${camp.campaign_name} | Cost: $${camp.cost.toFixed(2)} | Conversions: ${camp.conversions} | Revenue: $${camp.revenue.toFixed(2)}`);
         });
+
+        // DIAGNOSTIC: Check how many have conversions
+        const campaignsWithConversions = campaignAggregated.filter(c => c.conversions > 0);
+        const campaignsWithRevenue = campaignAggregated.filter(c => c.revenue > 0);
+        console.log(`[COMPADO_COST_REVENUE] Campaign breakdown: ${campaignsWithConversions.length} with conversions, ${campaignsWithRevenue.length} with revenue, ${campaignAggregated.length} total`);
       } else {
-        console.warn(`[COMPADO_COST_REVENUE] ⚠️  No campaigns in aggregated data - dashboard will show empty!`);
+        console.warn(`[COMPADO_COST_REVENUE] ⚠️⚠️⚠️  NO CAMPAIGNS in aggregated data - dashboard will show "No Conversion Data Available"!`);
+        console.warn(`[COMPADO_COST_REVENUE] Date range: ${startDate} to ${endDate}`);
+        console.warn(`[COMPADO_COST_REVENUE] Google Ads campaigns fetched: ${googleAdsData?.campaigns?.length || 0}`);
+        console.warn(`[COMPADO_COST_REVENUE] Compado conversions fetched: ${compadoData.length}`);
+        console.warn(`[COMPADO_COST_REVENUE] Cost-revenue mappings created: ${costRevenueMapping.length}`);
       }
 
       // 5. Generate summary statistics from aggregated campaign data
@@ -392,8 +427,9 @@ export async function POST(request: NextRequest) {
       });
 
       // Calculate data freshness for user awareness
-      const dataAge = googleAdsResult.age || 0;
-      const dataSource = googleAdsResult.source || 'unknown';
+      const firstResult = isMultiAccount && Array.isArray(googleAdsResult.value) ? googleAdsResult.value[0] : googleAdsResult.value;
+      const dataAge = (firstResult as any)?.age || 0;
+      const dataSource = (firstResult as any)?.source || 'unknown';
       const freshnessMinutes = Math.round(dataAge / 60000);
 
       const response: CompadoCostRevenueResponse = {
@@ -477,7 +513,7 @@ export async function POST(request: NextRequest) {
 /**
  * Health check endpoint
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     return NextResponse.json({
       status: 'healthy',
@@ -490,6 +526,15 @@ export async function GET(request: NextRequest) {
       timestamp: new Date().toISOString()
     }, { status: 500 });
   }
+}
+
+/**
+ * Calculate attribution start date by going back N days from the given date
+ */
+function calculateAttributionStartDate(startDate: string, lookbackDays: number): string {
+  const date = new Date(startDate);
+  date.setDate(date.getDate() - lookbackDays);
+  return date.toISOString().split('T')[0];
 }
 
 /**

@@ -110,7 +110,12 @@ export async function fetchAllCompadoConversions(
 
     console.log('[COMPADO_API] Fetching conversions with NEW API format...');
     const exchangeRate = await getExchangeRate();
-    console.log(`[COMPADO_API] Exchange rate: EUR to USD = ${exchangeRate}`);
+    const exchangeRateDate = new Date().toISOString();
+    console.log(`[COMPADO_API] ==================== EXCHANGE RATE INFO ====================`);
+    console.log(`[COMPADO_API] Exchange rate (EUR → USD): ${exchangeRate}`);
+    console.log(`[COMPADO_API] Fetched at: ${exchangeRateDate}`);
+    console.log(`[COMPADO_API] Date range: ${start_date} to ${end_date}`);
+    console.log(`[COMPADO_API] ===========================================================`);
 
     while (hasMorePages) {
       const response = await fetchCompadoConversions({
@@ -152,7 +157,29 @@ export async function fetchAllCompadoConversions(
 
     const totalRevenueEur = allConversions.reduce((sum, c) => sum + c.revenue, 0);
     const totalRevenueUsd = allConversions.reduce((sum, c) => sum + (c.revenueUsd || 0), 0);
+
+    // Check for data quality issues
+    const placeholderGclids = allConversions.filter(c => c.gclid === 'placeholder_gclid' || c.gclid === '{gclid}');
+    const emptyGclids = allConversions.filter(c => !c.gclid || c.gclid.trim() === '');
+    const shortGclids = allConversions.filter(c => c.gclid && c.gclid.length < 10 && c.gclid !== 'placeholder_gclid');
+
     console.log(`[COMPADO_API] ${allConversions.length} conversions: €${totalRevenueEur.toFixed(2)} → $${totalRevenueUsd.toFixed(2)} (rate: ${exchangeRate})`);
+
+    if (placeholderGclids.length > 0 || emptyGclids.length > 0 || shortGclids.length > 0) {
+      console.log(`[COMPADO_API] ⚠️  Data Quality Issues Detected:`);
+      if (placeholderGclids.length > 0) {
+        const placeholderRevenue = placeholderGclids.reduce((sum, c) => sum + (c.revenueUsd || 0), 0);
+        console.log(`[COMPADO_API]    - ${placeholderGclids.length} conversions with placeholder GCLIDs (€${placeholderGclids.reduce((s, c) => s + c.revenue, 0).toFixed(2)} / $${placeholderRevenue.toFixed(2)})`);
+      }
+      if (emptyGclids.length > 0) {
+        const emptyRevenue = emptyGclids.reduce((sum, c) => sum + (c.revenueUsd || 0), 0);
+        console.log(`[COMPADO_API]    - ${emptyGclids.length} conversions with empty GCLIDs (€${emptyGclids.reduce((s, c) => s + c.revenue, 0).toFixed(2)} / $${emptyRevenue.toFixed(2)})`);
+      }
+      if (shortGclids.length > 0) {
+        const shortRevenue = shortGclids.reduce((sum, c) => sum + (c.revenueUsd || 0), 0);
+        console.log(`[COMPADO_API]    - ${shortGclids.length} conversions with suspiciously short GCLIDs (<10 chars) (€${shortGclids.reduce((s, c) => s + c.revenue, 0).toFixed(2)} / $${shortRevenue.toFixed(2)})`);
+      }
+    }
 
     return allConversions;
   } catch (error) {
@@ -308,6 +335,18 @@ export interface CompadoCostRevenueSummary {
  * IMPORTANT: Only conversions with GCLIDs matching the provided Google Ads clicks will be included.
  * This ensures account-specific filtering when viewing individual accounts.
  */
+/**
+ * Normalize GCLID for consistent matching
+ * Handles case, whitespace, and special character variations
+ */
+function normalizeGclid(gclid: string): string {
+  if (!gclid) return '';
+  return gclid
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9_-]/gi, ''); // Remove special chars except underscore and hyphen
+}
+
 export function mapCompadoCostRevenue(
   googleAdsClicks: Array<{
     gclid: string;
@@ -333,18 +372,67 @@ export function mapCompadoCostRevenue(
     console.log(`[COMPADO_MAPPING] Campaign IDs: ${Array.from(googleAdsCampaignIds).join(', ')}`);
   }
 
-  // Build a Set of GCLIDs from Google Ads clicks for fast filtering
+  // Build a Set of GCLIDs from Google Ads clicks for fast filtering (with normalization)
   const googleAdsGclids = new Set(
-    googleAdsClicks.map(click => click.gclid.toLowerCase().trim())
+    googleAdsClicks.map(click => normalizeGclid(click.gclid))
   );
+
+  // Calculate total revenue BEFORE filtering (for diagnostics)
+  const totalRevenueBeforeFilter = compadoConversions.reduce((sum, c) => sum + (c.revenueUsd || 0), 0);
+  const totalRevenueEurBeforeFilter = compadoConversions.reduce((sum, c) => sum + c.revenue, 0);
 
   // Filter Compado conversions to only include those with matching GCLIDs from this account
   // NOTE: We filter by GCLID only since Compado might not have accurate campaign_id mapping
+  // Using normalized GCLIDs for better matching (handles case, whitespace, special chars)
   const accountSpecificConversions = compadoConversions.filter(conv =>
-    googleAdsGclids.has(conv.gclid.toLowerCase().trim())
+    googleAdsGclids.has(normalizeGclid(conv.gclid))
   );
 
-  console.log(`[COMPADO_MAPPING] Filtered to ${accountSpecificConversions.length} account-specific conversions (from ${compadoConversions.length} total)`);
+  // Calculate total revenue AFTER filtering (for diagnostics)
+  const totalRevenueAfterFilter = accountSpecificConversions.reduce((sum, c) => sum + (c.revenueUsd || 0), 0);
+  const totalRevenueEurAfterFilter = accountSpecificConversions.reduce((sum, c) => sum + c.revenue, 0);
+
+  // Track filtered-out conversions
+  const filteredOutConversions = compadoConversions.filter(conv =>
+    !googleAdsGclids.has(normalizeGclid(conv.gclid))
+  );
+
+  console.log(`[COMPADO_MAPPING] ==================== GCLID FILTERING REPORT ====================`);
+  console.log(`[COMPADO_MAPPING] Total conversions from Compado API: ${compadoConversions.length}`);
+  console.log(`[COMPADO_MAPPING] Google Ads GCLIDs available: ${googleAdsGclids.size}`);
+  console.log(`[COMPADO_MAPPING] Conversions WITH matching GCLIDs: ${accountSpecificConversions.length}`);
+  console.log(`[COMPADO_MAPPING] Conversions WITHOUT matching GCLIDs: ${filteredOutConversions.length}`);
+  console.log(`[COMPADO_MAPPING] Match rate: ${compadoConversions.length > 0 ? ((accountSpecificConversions.length / compadoConversions.length) * 100).toFixed(1) : 0}%`);
+  console.log(`[COMPADO_MAPPING] `);
+  console.log(`[COMPADO_MAPPING] Revenue BEFORE filtering: €${totalRevenueEurBeforeFilter.toFixed(2)} → $${totalRevenueBeforeFilter.toFixed(2)}`);
+  console.log(`[COMPADO_MAPPING] Revenue AFTER filtering: €${totalRevenueEurAfterFilter.toFixed(2)} → $${totalRevenueAfterFilter.toFixed(2)}`);
+  console.log(`[COMPADO_MAPPING] Revenue LOST due to filtering: €${(totalRevenueEurBeforeFilter - totalRevenueEurAfterFilter).toFixed(2)} → $${(totalRevenueBeforeFilter - totalRevenueAfterFilter).toFixed(2)}`);
+  console.log(`[COMPADO_MAPPING] Percentage filtered out: ${totalRevenueBeforeFilter > 0 ? ((1 - totalRevenueAfterFilter / totalRevenueBeforeFilter) * 100).toFixed(1) : 0}%`);
+
+  // Analyze conversion timestamps to detect attribution window issues
+  if (filteredOutConversions.length > 0) {
+    console.log(`[COMPADO_MAPPING] `);
+    console.log(`[COMPADO_MAPPING] ⚠️  ATTRIBUTION ANALYSIS:`);
+    console.log(`[COMPADO_MAPPING]    - ${filteredOutConversions.length} conversions don't have matching GCLIDs in Google Ads`);
+    console.log(`[COMPADO_MAPPING]    - This is usually because:`);
+    console.log(`[COMPADO_MAPPING]      1. Click happened BEFORE the date range you selected (${googleAdsClicks[0]?.date || 'N/A'})`);
+    console.log(`[COMPADO_MAPPING]      2. Different account/campaign (cross-account traffic)`);
+    console.log(`[COMPADO_MAPPING]      3. Invalid or missing GCLID in Compado data`);
+    console.log(`[COMPADO_MAPPING] `);
+    console.log(`[COMPADO_MAPPING] 💡 SOLUTION: To improve matching for ANY date range:`);
+    console.log(`[COMPADO_MAPPING]    - Query a wider date range (e.g., include previous 7-30 days)`);
+    console.log(`[COMPADO_MAPPING]    - Or use the date range when the clicks actually occurred`);
+    console.log(`[COMPADO_MAPPING] `);
+    console.log(`[COMPADO_MAPPING] ⚠️  Sample of filtered-out conversions (first 5):`);
+    filteredOutConversions.slice(0, 5).forEach((conv, idx) => {
+      const convDate = conv.timestamp ? new Date(conv.timestamp).toISOString().split('T')[0] : 'N/A';
+      console.log(`[COMPADO_MAPPING]    ${idx + 1}. GCLID: "${conv.gclid}" | Date: ${convDate} | €${conv.revenue.toFixed(2)} → $${(conv.revenueUsd || 0).toFixed(2)} | Ad ID: ${conv.ad_id || 'N/A'}`);
+    });
+    if (filteredOutConversions.length > 5) {
+      console.log(`[COMPADO_MAPPING]    ... and ${filteredOutConversions.length - 5} more`);
+    }
+  }
+  console.log(`[COMPADO_MAPPING] =================================================================`);
 
   // Use filtered conversions for mapping
   // IMPORTANT: Always use account-specific conversions, even if no clicks exist
@@ -353,21 +441,21 @@ export function mapCompadoCostRevenue(
 
   const mappings: CompadoCostRevenueMapping[] = [];
 
-  // Create a map of conversions by GCLID (using filtered conversions)
+  // Create a map of conversions by GCLID (using filtered conversions and normalized GCLIDs)
   const conversionMap = new Map<string, CompadoConversion[]>();
   conversionsToUse.forEach(conv => {
-    const gclid = conv.gclid.toLowerCase().trim();
-    if (!conversionMap.has(gclid)) {
-      conversionMap.set(gclid, []);
+    const normalizedGclid = normalizeGclid(conv.gclid);
+    if (!conversionMap.has(normalizedGclid)) {
+      conversionMap.set(normalizedGclid, []);
     }
-    conversionMap.get(gclid)!.push(conv);
+    conversionMap.get(normalizedGclid)!.push(conv);
   });
 
   console.log(`[COMPADO_MAPPING] Grouped conversions into ${conversionMap.size} unique GCLIDs`);
 
   // Debug: Show sample GCLIDs from both sources
   if (googleAdsClicks.length > 0) {
-    const sampleGoogleGclids = googleAdsClicks.slice(0, 3).map(c => c.gclid.toLowerCase().trim());
+    const sampleGoogleGclids = googleAdsClicks.slice(0, 3).map(c => normalizeGclid(c.gclid));
     console.log(`[COMPADO_MAPPING] Sample Google Ads GCLIDs (first 3):`, sampleGoogleGclids);
   }
   if (conversionMap.size > 0) {
@@ -384,15 +472,14 @@ export function mapCompadoCostRevenue(
     let totalMatchedRevenue = 0;
 
     googleAdsClicks.forEach((click, index) => {
-      const gclid = click.gclid.toLowerCase().trim();
-      const conversions = conversionMap.get(gclid) || [];
+      const normalizedGclid = normalizeGclid(click.gclid);
+      const conversions = conversionMap.get(normalizedGclid) || [];
 
       const totalRevenueUsd = conversions.reduce((sum, conv) => sum + (conv.revenueUsd || conv.revenue), 0);
-      const totalRevenueEur = conversions.reduce((sum, conv) => sum + conv.revenue, 0);
       const conversionCount = conversions.length;
 
       // Mark these conversions as matched
-      conversions.forEach(conv => matchedConversionGclids.add(conv.gclid.toLowerCase().trim()));
+      conversions.forEach(conv => matchedConversionGclids.add(normalizeGclid(conv.gclid)));
 
       const cost = click.cost || 0;
       const clicks = click.clicks || 1;
@@ -432,7 +519,7 @@ export function mapCompadoCostRevenue(
 
       // Log first few clicks to understand campaign_id structure
       if (index < 3) {
-        console.log(`[COMPADO_MAPPING] Click ${index + 1}: Campaign ID: ${click.campaign_id} | Name: ${click.campaign_name} | GCLID: ${gclid.substring(0, 20)}... | Conversions: ${conversionCount}`);
+        console.log(`[COMPADO_MAPPING] Click ${index + 1}: Campaign ID: ${click.campaign_id} | Name: ${click.campaign_name} | GCLID: ${normalizedGclid.substring(0, 20)}... | Conversions: ${conversionCount}`);
       }
     });
 
@@ -441,7 +528,7 @@ export function mapCompadoCostRevenue(
     // Log unmatched conversions for debugging (but don't add them)
     // Only check within the filtered account-specific conversions
     const unmatchedConversions = conversionsToUse.filter(conv =>
-      !matchedConversionGclids.has(conv.gclid.toLowerCase().trim())
+      !matchedConversionGclids.has(normalizeGclid(conv.gclid))
     );
 
     if (unmatchedConversions.length > 0) {

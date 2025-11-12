@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GoogleAdsApi } from 'google-ads-api';
 import { productionRateManager } from '@/lib/production-rate-manager';
 
+// In-memory cache for accounts
+let cachedAccounts: any = null;
+let cacheTimestamp: number = 0;
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
 // Initialize Google Ads client for MCC account queries
 function initializeMCCClient() {
   try {
@@ -62,6 +67,17 @@ export async function GET(request: NextRequest) {
     const canRequest = productionRateManager.canMakeRequest(undefined, 'standard');
     if (!canRequest.allowed) {
       console.warn(`[MCC_ACCOUNTS] Rate limit protection: ${canRequest.reason}`);
+
+      // Return cached accounts if available
+      if (cachedAccounts && Date.now() - cacheTimestamp < CACHE_DURATION) {
+        console.log('[MCC_ACCOUNTS] Returning cached accounts due to rate limit');
+        return NextResponse.json({
+          ...cachedAccounts,
+          _cached: true,
+          _cacheAge: Math.floor((Date.now() - cacheTimestamp) / 1000) + 's'
+        });
+      }
+
       return NextResponse.json({
         success: false,
         error: 'Rate limit protection active',
@@ -225,9 +241,9 @@ export async function GET(request: NextRequest) {
     }
     
     console.log('\n=== MCC ACCOUNTS DISCOVERY COMPLETED ===\n');
-    
-    // Return the results
-    return NextResponse.json({
+
+    // Prepare the response
+    const responseData = {
       success: true,
       mcc_account_id: process.env.GOOGLE_ADS_MANAGER_ID,
       summary: {
@@ -249,7 +265,15 @@ export async function GET(request: NextRequest) {
         newly_discovered: newlyDiscovered
       },
       message: 'All accounts under MCC have been logged to console'
-    }, {
+    };
+
+    // Cache the response
+    cachedAccounts = responseData;
+    cacheTimestamp = Date.now();
+    console.log('[MCC_ACCOUNTS] Cached accounts for future rate-limited requests');
+
+    // Return the results
+    return NextResponse.json(responseData, {
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',

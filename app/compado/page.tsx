@@ -56,7 +56,9 @@ const COMPADO_ENABLED_ACCOUNTS = [
   { id: '5496110293', name: 'Compado - UTC - 10' },
   { id: '3963323643', name: 'Compado - UTC - 11' },
   { id: '1751028486', name: 'Compado - UTC - 12' },
-  { id: '9248809715', name: 'Compado - UTC - 13' }
+  { id: '9248809715', name: 'Compado - UTC - 13' },
+  { id: '9922466223', name: 'Compado - UTC - 14' },
+  { id: '9524489917', name: 'Compado - UTC - 15' }
 ];
 
 // Special "All Accounts" option for aggregated view
@@ -129,7 +131,7 @@ export default function CompadoPage() {
     }
   };
 
-  const fetchData = async () => {
+  const fetchData = async (forceRefresh: boolean = false) => {
     if (!selectedAccount) {
       return;
     }
@@ -147,7 +149,7 @@ export default function CompadoPage() {
         ? COMPADO_ENABLED_ACCOUNTS.map(acc => acc.id)
         : [selectedAccount];
 
-      console.log(`[COMPADO_DASHBOARD] Fetching data: ${startDate} to ${endDate} for ${isAllAccounts ? 'all accounts' : `account ${selectedAccount}`}`);
+      console.log(`[COMPADO_DASHBOARD] Fetching data: ${startDate} to ${endDate} for ${isAllAccounts ? 'all accounts' : `account ${selectedAccount}`} (forceRefresh: ${forceRefresh})`);
 
       const response = await fetch('/api/compado-cost-revenue', {
         method: 'POST',
@@ -160,7 +162,7 @@ export default function CompadoPage() {
           endDate,
           customerId: isAllAccounts ? undefined : selectedAccount,
           accountIds: isAllAccounts ? accountIds : undefined,
-          forceRefresh: true  // Always force refresh to get fresh data
+          forceRefresh  // Only force refresh when explicitly requested
         })
       });
 
@@ -198,7 +200,7 @@ export default function CompadoPage() {
   };
 
   const handleRefresh = () => {
-    fetchData();
+    fetchData(true);  // Force refresh when user explicitly clicks Refresh button
   };
 
   return (
