@@ -76,6 +76,8 @@ export default function LoginPage() {
             router.push('/compado');
           } else if (firstFeed === 'inuvo') {
             router.push('/inuvo-dashboard');
+          } else if (firstFeed === 'adsense') {
+            router.push('/adsense');
           } else {
             // Fallback
             router.push('/dashboard');
