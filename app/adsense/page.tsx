@@ -125,12 +125,23 @@ export default function AdSensePage() {
       });
 
       console.log('[AFS] Filtered AFS accounts:', adsenseAccounts.length);
-      adsenseAccounts.forEach((acc: { id: any; name: any; }) => {
+
+      // Sort accounts by sequence number in name (AFS-IST-01, AFS-IST-02, etc.)
+      const sortedAccounts = adsenseAccounts.sort((a: any, b: any) => {
+        // Extract sequence number from name (e.g., "AFS - IST - 01" -> 1)
+        const getSequenceNumber = (name: string): number => {
+          const match = name.match(/(\d+)$/);
+          return match ? parseInt(match[1]) : 9999;
+        };
+        return getSequenceNumber(a.name) - getSequenceNumber(b.name);
+      });
+
+      sortedAccounts.forEach((acc: { id: any; name: any; }) => {
         console.log(`[AFS]   - ${acc.id}: ${acc.name}`);
       });
 
       if (authType === 'admin') {
-        setGoogleAdsAccounts(adsenseAccounts);
+        setGoogleAdsAccounts(sortedAccounts);
         // Set default to "all" for admin users
         if (adsenseAccounts.length > 0) {
           setSelectedGoogleAdsAccount('all');

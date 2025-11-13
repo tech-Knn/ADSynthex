@@ -104,11 +104,28 @@ export async function fetchAllCompadoConversions(
   end_date: string
 ): Promise<CompadoConversion[]> {
   try {
+    // PERFORMANCE OPTIMIZATION: Check cache first
+    const { redisCacheManager } = await import('./redis-cache-manager');
+    const cacheKey = redisCacheManager.generateKey({
+      dataType: 'compado',
+      accountId: 'all',
+      startDate: start_date,
+      endDate: end_date,
+      extra: 'conversions'
+    });
+
+    // Try to get from cache
+    const cached = await redisCacheManager.get(cacheKey, { dataType: 'compado' });
+    if (cached.data) {
+      console.log(`[COMPADO_API] ✓ Cache hit! Using cached conversions (age: ${Math.round(cached.age / 1000)}s)`);
+      return cached.data;
+    }
+
+    console.log('[COMPADO_API] Cache miss - Fetching conversions from API with NEW format...');
     const allConversions: CompadoConversion[] = [];
     let currentPage = 1;
     let hasMorePages = true;
 
-    console.log('[COMPADO_API] Fetching conversions with NEW API format...');
     const exchangeRate = await getExchangeRate();
     const exchangeRateDate = new Date().toISOString();
     console.log(`[COMPADO_API] ==================== EXCHANGE RATE INFO ====================`);
@@ -180,6 +197,13 @@ export async function fetchAllCompadoConversions(
         console.log(`[COMPADO_API]    - ${shortGclids.length} conversions with suspiciously short GCLIDs (<10 chars) (€${shortGclids.reduce((s, c) => s + c.revenue, 0).toFixed(2)} / $${shortRevenue.toFixed(2)})`);
       }
     }
+
+    // PERFORMANCE OPTIMIZATION: Cache the results
+    await redisCacheManager.set(cacheKey, allConversions, {
+      dataType: 'compado',
+      ttl: 900 // 15 minutes for Compado conversions
+    });
+    console.log(`[COMPADO_API] ✓ Cached ${allConversions.length} conversions for ${start_date} to ${end_date}`);
 
     return allConversions;
   } catch (error) {

@@ -132,6 +132,7 @@ export class RedisCacheManager {
 
   /**
    * Store data in cache (memory + Redis)
+   * CRITICAL: Skip Redis for large datasets (>8MB) to prevent Upstash limit errors
    */
   async set(key: string, data: any, options: CacheOptions = {}): Promise<void> {
     try {
@@ -144,10 +145,10 @@ export class RedisCacheManager {
       // Determine TTL based on data age and type
       const ttl = customTTL || this.determineTTL(key, dataType);
 
-      // Store in memory cache
+      // Store in memory cache (always)
       this.setInMemory(key, data, ttl, dataType);
 
-      // Store in Redis with TTL
+      // Prepare Redis entry
       const entry: CacheEntry = {
         data,
         timestamp: Date.now(),
@@ -156,9 +157,23 @@ export class RedisCacheManager {
         dataType
       };
 
-      await redisClient.setex(`cache:${key}`, ttl, JSON.stringify(entry));
+      // Check size before storing in Redis (Upstash has 10MB limit)
+      const dataString = JSON.stringify(entry);
+      const dataSizeBytes = Buffer.byteLength(dataString, 'utf8');
+      const dataSizeMB = dataSizeBytes / (1024 * 1024);
 
-      console.log(`[REDIS_CACHE] Stored ${key} with TTL ${ttl}s, type: ${dataType}`);
+      // CRITICAL: Skip Redis if data > 8MB (Upstash limit is 10MB, leave 2MB buffer)
+      if (dataSizeMB > 8) {
+        console.warn(`[REDIS_CACHE] ⚠️  Data size ${dataSizeMB.toFixed(2)}MB exceeds 8MB limit, skipping Redis cache (memory only)`);
+        console.warn(`[REDIS_CACHE] Key: ${key}`);
+        console.warn(`[REDIS_CACHE] TIP: Use smaller date ranges to enable Redis caching`);
+        return; // Skip Redis, keep in memory only
+      }
+
+      // Store in Redis with TTL
+      await redisClient.setex(`cache:${key}`, ttl, dataString);
+
+      console.log(`[REDIS_CACHE] Stored ${key} (${dataSizeMB.toFixed(2)}MB) with TTL ${ttl}s, type: ${dataType}`);
 
     } catch (error) {
       console.error(`[REDIS_CACHE] Error setting cache:`, error);

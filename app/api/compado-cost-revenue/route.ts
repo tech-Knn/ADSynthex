@@ -99,7 +99,18 @@ export async function POST(request: NextRequest) {
     const isMultiAccount = accountIds && Array.isArray(accountIds) && accountIds.length > 0;
     const accountsToProcess = isMultiAccount ? accountIds : (customerId ? [customerId] : []);
 
-    console.log(`[COMPADO_COST_REVENUE] Mapping request: ${startDate} to ${endDate}, Accounts: ${isMultiAccount ? accountIds.join(', ') : (customerId || 'all')}, forceRefresh: ${forceRefresh}`);
+    // Calculate date range size
+    const startDateObj = new Date(startDate);
+    const endDateObj = new Date(endDate);
+    const daysDiff = Math.ceil((endDateObj.getTime() - startDateObj.getTime()) / (1000 * 60 * 60 * 24));
+
+    console.log(`[COMPADO_COST_REVENUE] Mapping request: ${startDate} to ${endDate} (${daysDiff} days), Accounts: ${isMultiAccount ? accountIds.join(', ') : (customerId || 'all')}, forceRefresh: ${forceRefresh}`);
+
+    // OPTIMIZATION: Warn about large date ranges
+    if (daysDiff > 30) {
+      console.warn(`[COMPADO_COST_REVENUE] ⚠️  Large date range detected: ${daysDiff} days. This may take longer to load.`);
+      console.warn(`[COMPADO_COST_REVENUE] TIP: Use smaller date ranges (7-14 days) for faster loading.`);
+    }
 
     let message = '';
 
@@ -155,36 +166,67 @@ export async function POST(request: NextRequest) {
 
       // PERFORMANCE OPTIMIZATION: Fetch Google Ads and Compado data IN PARALLEL
       console.log('[COMPADO_COST_REVENUE] 🚀 Fetching Google Ads + Compado data in PARALLEL...');
+      console.log(`[COMPADO_COST_REVENUE] Date range: ${daysDiff} days - ${daysDiff <= 7 ? '⚡ Fast' : daysDiff <= 14 ? '⏱️ Medium' : '🐌 Slow (consider smaller range)'}`);
       const fetchStartTime = Date.now();
 
       let googleAdsDataPromises;
 
       if (isMultiAccount) {
-        // Fetch data for all accounts in parallel - USE ACTUAL DATE RANGE (like AFS/Ads.com)
-        console.log(`[COMPADO_COST_REVENUE] Fetching data for ${accountIds.length} accounts in parallel...`);
+        // OPTIMIZATION: Batch parallel fetching to avoid rate limit queue buildup
+        // CRITICAL: Keep batch size small (3) to prevent rate limit hits
+        // bulletproofAPI enforces 1 req/sec, so 3 parallel = safe queue management
+        const BATCH_SIZE = 3;
+        console.log(`[COMPADO_COST_REVENUE] Fetching data for ${accountIds.length} accounts in batches of ${BATCH_SIZE} (rate-limit safe)...`);
 
         // RATE LIMIT PROTECTION: Always allow stale for multi-account to minimize API calls
         const allowStaleForMulti = true; // CRITICAL: Always prefer cache for multi-account
 
-        googleAdsDataPromises = Promise.all(
-          accountIds.map(accId =>
-            bulletproofAPI.getData(startDate, endDate, accId, {
-              priority: 8,
-              allowStale: allowStaleForMulti, // CRITICAL: Always true for multi-account protection
-              maxWait: 10000,
-              feedType: 'compado' // CRITICAL: ONLY fetch Compado accounts
+        // OPTIMIZATION: Increase timeout for large date ranges
+        const maxWaitTime = daysDiff > 14 ? 30000 : daysDiff > 7 ? 20000 : 10000;
+        console.log(`[COMPADO_COST_REVENUE] Max wait time: ${maxWaitTime}ms for ${daysDiff}-day range`);
+
+        // Process accounts in batches
+        const allAccountsData: any[] = [];
+        for (let i = 0; i < accountIds.length; i += BATCH_SIZE) {
+          const batch = accountIds.slice(i, i + BATCH_SIZE);
+          const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+          const totalBatches = Math.ceil(accountIds.length / BATCH_SIZE);
+
+          console.log(`[COMPADO_COST_REVENUE] 🔄 Processing batch ${batchNum}/${totalBatches} (${batch.length} accounts)...`);
+          const batchStartTime = Date.now();
+
+          const batchResults = await Promise.all(
+            batch.map((accId, index) => {
+              const globalIndex = i + index + 1;
+              console.log(`[COMPADO_COST_REVENUE] Starting fetch ${globalIndex}/${accountIds.length}: Account ${accId}`);
+              return bulletproofAPI.getData(startDate, endDate, accId, {
+                priority: 8,
+                allowStale: allowStaleForMulti, // CRITICAL: Always true for multi-account protection
+                maxWait: maxWaitTime, // Dynamic timeout based on date range
+                feedType: 'compado' // CRITICAL: ONLY fetch Compado accounts
+              });
             })
-          )
-        );
+          );
+
+          allAccountsData.push(...batchResults);
+
+          const batchTime = Date.now() - batchStartTime;
+          console.log(`[COMPADO_COST_REVENUE] ✓ Batch ${batchNum}/${totalBatches} completed in ${(batchTime / 1000).toFixed(1)}s`);
+        }
+
+        googleAdsDataPromises = Promise.resolve(allAccountsData);
       } else {
         // Single account fetch - USE ACTUAL DATE RANGE (like AFS/Ads.com)
         // RATE LIMIT PROTECTION: Prefer stale cache unless explicitly forcing refresh
         const allowStaleSingle = !actualForceRefresh || quotaStatus.usagePercentage > 75;
 
+        // OPTIMIZATION: Increase timeout for large date ranges
+        const maxWaitTime = daysDiff > 14 ? 30000 : daysDiff > 7 ? 20000 : 10000;
+
         googleAdsDataPromises = bulletproofAPI.getData(startDate, endDate, customerId, {
           priority: 8,
           allowStale: allowStaleSingle, // CRITICAL: Protect against rate limits
-          maxWait: 10000,
+          maxWait: maxWaitTime, // Dynamic timeout based on date range
           feedType: 'compado' // CRITICAL: ONLY fetch Compado accounts
         });
       }
@@ -195,7 +237,19 @@ export async function POST(request: NextRequest) {
       ]);
 
       const fetchTime = Date.now() - fetchStartTime;
-      console.log(`[COMPADO_COST_REVENUE] ⚡ Parallel fetch completed in ${fetchTime}ms`);
+      const fetchTimeSeconds = (fetchTime / 1000).toFixed(1);
+      console.log(`[COMPADO_COST_REVENUE] ⚡ Parallel fetch completed in ${fetchTime}ms (${fetchTimeSeconds}s)`);
+
+      // PERFORMANCE INSIGHT: Log fetch speed rating
+      if (fetchTime < 5000) {
+        console.log(`[COMPADO_COST_REVENUE] 🚀 Excellent speed! < 5s`);
+      } else if (fetchTime < 15000) {
+        console.log(`[COMPADO_COST_REVENUE] ✅ Good speed: ${fetchTimeSeconds}s`);
+      } else if (fetchTime < 30000) {
+        console.log(`[COMPADO_COST_REVENUE] ⏱️ Moderate speed: ${fetchTimeSeconds}s - Consider smaller date ranges`);
+      } else {
+        console.log(`[COMPADO_COST_REVENUE] 🐌 Slow speed: ${fetchTimeSeconds}s - Use smaller date ranges for faster loading`);
+      }
 
       // Handle Google Ads result
       if (googleAdsResult.status === 'rejected') {
@@ -310,10 +364,14 @@ export async function POST(request: NextRequest) {
         message += 'Compado: API error. ';
       }
 
-      // MEMORY OPTIMIZATION: Build metrics maps
+      // MEMORY OPTIMIZATION: Build metrics maps with progress tracking
       const processingStart = Date.now();
+      console.log(`[COMPADO_COST_REVENUE] 📊 Processing ${totalCampaigns} campaigns, ${totalClicks} clicks...`);
+
       const campaignMetricsMap = buildCampaignMetricsMap(googleAdsData?.campaigns || [], customerId || 'multi');
       const adGroupMetricsMap = buildAdGroupMetricsMap(googleAdsData?.ads || []);
+
+      console.log(`[COMPADO_COST_REVENUE] ✓ Metrics maps built: ${campaignMetricsMap.size} campaigns, ${adGroupMetricsMap.size} ad groups`);
 
       // DIAGNOSTIC: Log if we have zero-cost campaigns
       if (campaignMetricsMap.size > 0) {
@@ -337,15 +395,27 @@ export async function POST(request: NextRequest) {
       console.log(`[COMPADO_COST_REVENUE] Enriched ${googleAdsClicks.length} clicks from ${startDate} to ${endDate} for GCLID matching`);
 
       const processingTime = Date.now() - processingStart;
-      console.log(`[COMPADO_COST_REVENUE] ⚡ Data processing completed in ${processingTime}ms`);
+      const processingSeconds = (processingTime / 1000).toFixed(1);
+      console.log(`[COMPADO_COST_REVENUE] ⚡ Data processing completed in ${processingTime}ms (${processingSeconds}s)`);
+
+      // PERFORMANCE SUMMARY
+      const totalTime = Date.now() - startTime;
+      const totalSeconds = (totalTime / 1000).toFixed(1);
+      console.log(`[COMPADO_COST_REVENUE] ==================== PERFORMANCE SUMMARY ====================`);
+      console.log(`[COMPADO_COST_REVENUE] Total time: ${totalSeconds}s`);
+      console.log(`[COMPADO_COST_REVENUE]   - Fetch: ${fetchTimeSeconds}s (${((fetchTime / totalTime) * 100).toFixed(0)}%)`);
+      console.log(`[COMPADO_COST_REVENUE]   - Processing: ${processingSeconds}s (${((processingTime / totalTime) * 100).toFixed(0)}%)`);
+      console.log(`[COMPADO_COST_REVENUE] Data volume: ${totalClicks.toLocaleString()} clicks, ${totalCampaigns} campaigns`);
+      console.log(`[COMPADO_COST_REVENUE] Speed rating: ${totalTime < 10000 ? '🚀 Excellent' : totalTime < 30000 ? '✅ Good' : totalTime < 60000 ? '⏱️ Moderate' : '🐌 Slow'}`);
+      console.log(`[COMPADO_COST_REVENUE] ===========================================================`);
 
       // Simplified cost statistics logging (performance optimization)
       const clicksWithCost = googleAdsClicks.filter((c: any) => c.cost > 0);
       const totalCost = googleAdsClicks.reduce((sum: number, c: any) => sum + c.cost, 0);
       console.log(`[COMPADO_COST_REVENUE] Cost mapping: ${googleAdsClicks.length} clicks, ${clicksWithCost.length} with cost, total: $${totalCost.toFixed(2)}`);
 
-      // 3. Map cost and revenue by GCLID
-      console.log('[COMPADO_COST_REVENUE] Creating cost-revenue mapping...');
+      // 3. Map cost and revenue by GCLID with progress tracking
+      console.log(`[COMPADO_COST_REVENUE] 🔗 Creating cost-revenue mapping (${googleAdsClicks.length} clicks × ${compadoData.length} conversions)...`);
 
       // Build and cache campaign names for future use (even during rate limits)
       const campaignNamesMap = new Map<string, string>();

@@ -106,8 +106,18 @@ export default function CompadoPage() {
       // Set admin flag
       setIsAdmin(authType === 'admin');
 
+      // Sort accounts by sequence number in name (Compado-UTC-01, Compado-UTC-02, etc.)
+      const sortedCompadoAccounts = [...COMPADO_ENABLED_ACCOUNTS].sort((a, b) => {
+        // Extract sequence number from name (e.g., "Compado - UTC - 01" -> 1)
+        const getSequenceNumber = (name: string): number => {
+          const match = name.match(/(\d+)$/);
+          return match ? parseInt(match[1]) : 9999;
+        };
+        return getSequenceNumber(a.name) - getSequenceNumber(b.name);
+      });
+
       // Add "All Accounts" option at the beginning
-      const accountsWithAll = [ALL_ACCOUNTS_OPTION, ...COMPADO_ENABLED_ACCOUNTS];
+      const accountsWithAll = [ALL_ACCOUNTS_OPTION, ...sortedCompadoAccounts];
       setAccounts(accountsWithAll);
 
       // For regular users, auto-select their account (without CID_ prefix for API calls)
