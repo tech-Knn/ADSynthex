@@ -101,12 +101,6 @@ export async function POST(request: NextRequest) {
 
     console.log(`[COMPADO_COST_REVENUE] Mapping request: ${startDate} to ${endDate}, Accounts: ${isMultiAccount ? accountIds.join(', ') : (customerId || 'all')}, forceRefresh: ${forceRefresh}`);
 
-    // ATTRIBUTION WINDOW FIX: Extend click date range to 30 days before startDate
-    // This ensures we capture all clicks that could have led to conversions in the selected period
-    // Example: User selects Nov 4-5, we fetch clicks from Oct 5 - Nov 5
-    const clicksStartDate = calculateAttributionStartDate(startDate, 30);
-    console.log(`[COMPADO_COST_REVENUE] ✓ Attribution Window: Fetching clicks from ${clicksStartDate} to ${endDate} (30-day lookback for click attribution)`);
-
     let message = '';
 
     try {
@@ -149,24 +143,23 @@ export async function POST(request: NextRequest) {
       let googleAdsDataPromises;
 
       if (isMultiAccount) {
-        // Fetch data for all accounts in parallel
-        // CRITICAL: Use extended date range (clicksStartDate) to capture all clicks
-        console.log(`[COMPADO_COST_REVENUE] Fetching data for ${accountIds.length} accounts in parallel with extended date range...`);
+        // Fetch data for all accounts in parallel - USE ACTUAL DATE RANGE (like AFS/Ads.com)
+        console.log(`[COMPADO_COST_REVENUE] Fetching data for ${accountIds.length} accounts in parallel...`);
         googleAdsDataPromises = Promise.all(
           accountIds.map(accId =>
-            bulletproofAPI.getData(clicksStartDate, endDate, accId, {
+            bulletproofAPI.getData(startDate, endDate, accId, {
               priority: 8,
-              allowStale: !actualForceRefresh, // Use actualForceRefresh (cooldown-aware)
+              allowStale: !actualForceRefresh,
               maxWait: 10000,
               feedType: 'compado' // CRITICAL: ONLY fetch Compado accounts
             })
           )
         );
       } else {
-        // Single account fetch with extended date range
-        googleAdsDataPromises = bulletproofAPI.getData(clicksStartDate, endDate, customerId, {
+        // Single account fetch - USE ACTUAL DATE RANGE (like AFS/Ads.com)
+        googleAdsDataPromises = bulletproofAPI.getData(startDate, endDate, customerId, {
           priority: 8,
-          allowStale: !actualForceRefresh, // Use actualForceRefresh (cooldown-aware)
+          allowStale: !actualForceRefresh,
           maxWait: 10000,
           feedType: 'compado' // CRITICAL: ONLY fetch Compado accounts
         });
@@ -266,8 +259,16 @@ export async function POST(request: NextRequest) {
       let compadoData: any[] = [];
       if (compadoConversions.status === 'fulfilled') {
         compadoData = compadoConversions.value;
-        message += `Compado: ${compadoData.length} conversions. `;
+
+        // Calculate total Compado revenue for verification
+        const totalCompadoRevenueEur = compadoData.reduce((sum, c) => sum + (c.revenue || 0), 0);
+        const totalCompadoRevenueUsd = compadoData.reduce((sum, c) => sum + (c.revenueUsd || 0), 0);
+
         console.log(`[COMPADO_COST_REVENUE] ✓ Compado conversions: ${compadoData.length}`);
+        console.log(`[COMPADO_COST_REVENUE] ✓ Total Compado revenue: €${totalCompadoRevenueEur.toFixed(2)} → $${totalCompadoRevenueUsd.toFixed(2)}`);
+        console.log(`[COMPADO_COST_REVENUE] ✓ Expected final revenue after GCLID matching: ~$${totalCompadoRevenueUsd.toFixed(2)}`);
+
+        message += `Compado: ${compadoData.length} conversions, $${totalCompadoRevenueUsd.toFixed(2)} revenue. `;
       } else {
         console.warn('[COMPADO_COST_REVENUE] ⚠️  Compado fetch failed:', compadoConversions.reason);
         message += 'Compado: API error. ';
@@ -289,15 +290,15 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Extract and enrich clicks (using extended date range for GCLID matching)
+      // Extract and enrich clicks
       const googleAdsClicks = enrichClicksWithCost(
         googleAdsData?.clicks || [],
         campaignMetricsMap,
         adGroupMetricsMap,
-        clicksStartDate
+        startDate
       );
 
-      console.log(`[COMPADO_COST_REVENUE] Attribution window: ${googleAdsClicks.length} total clicks from ${clicksStartDate} to ${endDate} available for GCLID matching`);
+      console.log(`[COMPADO_COST_REVENUE] Enriched ${googleAdsClicks.length} clicks from ${startDate} to ${endDate} for GCLID matching`);
 
       const processingTime = Date.now() - processingStart;
       console.log(`[COMPADO_COST_REVENUE] ⚡ Data processing completed in ${processingTime}ms`);
@@ -528,14 +529,6 @@ export async function GET() {
   }
 }
 
-/**
- * Calculate attribution start date by going back N days from the given date
- */
-function calculateAttributionStartDate(startDate: string, lookbackDays: number): string {
-  const date = new Date(startDate);
-  date.setDate(date.getDate() - lookbackDays);
-  return date.toISOString().split('T')[0];
-}
 
 /**
  * MEMORY OPTIMIZED: Build campaign metrics map
