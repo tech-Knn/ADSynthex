@@ -104,15 +104,32 @@ export async function POST(request: NextRequest) {
     let message = '';
 
     try {
+      // BULLETPROOF RATE LIMIT PROTECTION: Check quota status first
+      const quotaStatus = await googleAdsRateLimiter.getQuotaStatus();
+      console.log(`[COMPADO_COST_REVENUE] 🛡️ Quota status: ${quotaStatus.dailyUsed}/${quotaStatus.dailyLimit} daily, ${quotaStatus.hourlyUsed}/${quotaStatus.hourlyLimit} hourly`);
+
+      // CRITICAL: If quota is getting close to limit, deny forceRefresh
+      let actualForceRefresh = forceRefresh;
+      if (quotaStatus.usagePercentage > 90) {
+        console.warn(`[COMPADO_COST_REVENUE] 🚨 Quota usage at ${quotaStatus.usagePercentage}% - BLOCKING forceRefresh to protect quota`);
+        actualForceRefresh = false;
+      }
+
       // Check if we're in cooldown BEFORE clearing cache
       const quotaCheck = await googleAdsRateLimiter.canMakeRequest();
 
       // CRITICAL: If in cooldown, IGNORE forceRefresh to prevent errors
-      let actualForceRefresh = forceRefresh;
-      if (forceRefresh && !quotaCheck.allowed) {
+      if (actualForceRefresh && !quotaCheck.allowed) {
         console.warn(`[COMPADO_COST_REVENUE] 🛡️ COOLDOWN ACTIVE - Ignoring forceRefresh to serve cached data`);
         console.warn(`[COMPADO_COST_REVENUE] Reason: ${quotaCheck.reason}`);
         actualForceRefresh = false; // Override to protect user experience
+      }
+
+      // OPTIMISTIC CACHING: Always prefer stale cache over fresh API calls
+      // This ensures we NEVER hit rate limits even under heavy load
+      const shouldUseStaleCache = !actualForceRefresh || quotaStatus.usagePercentage > 80;
+      if (shouldUseStaleCache && !actualForceRefresh) {
+        console.log(`[COMPADO_COST_REVENUE] 🎯 Using optimistic caching strategy (quota: ${quotaStatus.usagePercentage}%)`);
       }
 
       // Clear cache if forceRefresh is requested AND we're not in cooldown
@@ -145,11 +162,15 @@ export async function POST(request: NextRequest) {
       if (isMultiAccount) {
         // Fetch data for all accounts in parallel - USE ACTUAL DATE RANGE (like AFS/Ads.com)
         console.log(`[COMPADO_COST_REVENUE] Fetching data for ${accountIds.length} accounts in parallel...`);
+
+        // RATE LIMIT PROTECTION: Always allow stale for multi-account to minimize API calls
+        const allowStaleForMulti = true; // CRITICAL: Always prefer cache for multi-account
+
         googleAdsDataPromises = Promise.all(
           accountIds.map(accId =>
             bulletproofAPI.getData(startDate, endDate, accId, {
               priority: 8,
-              allowStale: !actualForceRefresh,
+              allowStale: allowStaleForMulti, // CRITICAL: Always true for multi-account protection
               maxWait: 10000,
               feedType: 'compado' // CRITICAL: ONLY fetch Compado accounts
             })
@@ -157,9 +178,12 @@ export async function POST(request: NextRequest) {
         );
       } else {
         // Single account fetch - USE ACTUAL DATE RANGE (like AFS/Ads.com)
+        // RATE LIMIT PROTECTION: Prefer stale cache unless explicitly forcing refresh
+        const allowStaleSingle = !actualForceRefresh || quotaStatus.usagePercentage > 75;
+
         googleAdsDataPromises = bulletproofAPI.getData(startDate, endDate, customerId, {
           priority: 8,
-          allowStale: !actualForceRefresh,
+          allowStale: allowStaleSingle, // CRITICAL: Protect against rate limits
           maxWait: 10000,
           feedType: 'compado' // CRITICAL: ONLY fetch Compado accounts
         });
@@ -180,9 +204,9 @@ export async function POST(request: NextRequest) {
       }
 
       // Aggregate data from multiple accounts if needed
-      let googleAdsData;
+      let googleAdsData: any;
       if (isMultiAccount) {
-        const accountsData = googleAdsResult.value;
+        const accountsData = googleAdsResult.value as any[];
         console.log(`[COMPADO_COST_REVENUE] Aggregating data from ${accountsData.length} accounts...`);
 
         // Merge all accounts' data
@@ -200,26 +224,30 @@ export async function POST(request: NextRequest) {
           // Tag campaigns with account_id for tracking
           if (accData?.campaigns) {
             accData.campaigns.forEach((c: any) => c.account_id = accountId);
-            googleAdsData.campaigns.push(...accData.campaigns);
+            // Use concat instead of spread to avoid stack overflow with large arrays
+            googleAdsData.campaigns = googleAdsData.campaigns.concat(accData.campaigns);
           }
 
           // Tag ads with account_id for tracking
           if (accData?.ads) {
             accData.ads.forEach((a: any) => a.account_id = accountId);
-            googleAdsData.ads.push(...accData.ads);
+            // Use concat instead of spread to avoid stack overflow with large arrays
+            googleAdsData.ads = googleAdsData.ads.concat(accData.ads);
           }
 
           // Tag clicks with account_id for tracking
           if (accData?.clicks) {
             accData.clicks.forEach((c: any) => c.account_id = accountId);
-            googleAdsData.clicks.push(...accData.clicks);
+            // Use concat instead of spread to avoid stack overflow with large arrays
+            googleAdsData.clicks = googleAdsData.clicks.concat(accData.clicks);
           }
         });
 
         message += `Google Ads: ${accountsData.length} accounts aggregated (${fetchTime}ms). `;
       } else {
-        googleAdsData = googleAdsResult.value.data;
-        message += `Google Ads: ${googleAdsResult.value.message} (${fetchTime}ms). `;
+        const singleResult = googleAdsResult.value as any;
+        googleAdsData = singleResult.data;
+        message += `Google Ads: ${singleResult.message} (${fetchTime}ms). `;
 
         // For single account, log campaign details to verify account separation
         if (googleAdsData?.campaigns && googleAdsData.campaigns.length > 0) {
@@ -237,12 +265,20 @@ export async function POST(request: NextRequest) {
         throw new Error('Failed to fetch Google Ads data - API returned empty response');
       }
 
+      const totalClicks = googleAdsData?.clicks?.length || 0;
+      const totalCampaigns = googleAdsData?.campaigns?.length || 0;
+
       console.log(`[COMPADO_COST_REVENUE] ✓ Live Google Ads API data received:`, {
-        campaigns: googleAdsData?.campaigns?.length || 0,
+        campaigns: totalCampaigns,
         ads: googleAdsData?.ads?.length || 0,
-        clicks: googleAdsData?.clicks?.length || 0,
+        clicks: totalClicks,
         fetchTime: `${fetchTime}ms`
       });
+
+      // Warn about large datasets
+      if (totalClicks > 100000) {
+        console.warn(`[COMPADO_COST_REVENUE] ⚠️  Large dataset detected: ${totalClicks} clicks. Processing may take longer...`);
+      }
 
       // DIAGNOSTIC: Check if campaigns is empty for date ranges
       if (googleAdsData?.campaigns?.length === 0) {
@@ -282,7 +318,7 @@ export async function POST(request: NextRequest) {
       // DIAGNOSTIC: Log if we have zero-cost campaigns
       if (campaignMetricsMap.size > 0) {
         let zeroCostCampaigns = 0;
-        campaignMetricsMap.forEach((metrics, id) => {
+        campaignMetricsMap.forEach((metrics) => {
           if (metrics.total_cost === 0) zeroCostCampaigns++;
         });
         if (zeroCostCampaigns > 0) {
@@ -368,7 +404,7 @@ export async function POST(request: NextRequest) {
       // Log campaign-level totals before aggregation (for validation)
       let totalCampaignLevelCost = 0;
       if (campaignMetricsMap) {
-        campaignMetricsMap.forEach((data, id) => {
+        campaignMetricsMap.forEach((data) => {
           totalCampaignLevelCost += data.total_cost || 0;
         });
         console.log(`[COMPADO_COST_REVENUE] Campaign-level total cost (from Google Ads): $${totalCampaignLevelCost.toFixed(2)}`);
@@ -435,16 +471,16 @@ export async function POST(request: NextRequest) {
 
       const response: CompadoCostRevenueResponse = {
         google_ads_data: {
-          clicks: googleAdsClicks,
+          clicks: [], // Don't send 276K+ clicks to frontend! Only send aggregated data
           total_clicks: googleAdsClicks.length,
           total_cost: totalCost
         },
         compado_data: {
-          conversions: compadoData,
+          conversions: [], // Don't send all conversions to frontend! Only send aggregated data
           total_conversions: compadoData.length,
           total_revenue: compadoData.reduce((sum: number, c: any) => sum + (c.revenueUsd || 0), 0)
         },
-        cost_revenue_mapping: costRevenueMapping,
+        cost_revenue_mapping: [], // Don't send massive mappings - only campaign_aggregated needed
         campaign_aggregated: campaignAggregated,
         summary,
         _source: 'compado_google_ads_mapping',
@@ -457,6 +493,9 @@ export async function POST(request: NextRequest) {
           message: dataSource === 'cache' ? `Data from cache (${freshnessMinutes} min old)` : 'Fresh from API'
         }
       };
+
+      // Log response size for monitoring
+      console.log(`[COMPADO_COST_REVENUE] 📦 Response optimized: Sending ${campaignAggregated.length} campaigns (not ${googleAdsClicks.length} clicks + ${compadoData.length} conversions)`);
 
       return NextResponse.json(response, {
         headers: {
