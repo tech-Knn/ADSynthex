@@ -128,10 +128,21 @@ export default function AdSensePage() {
 
       // Sort accounts by sequence number in name (AFS-IST-01, AFS-IST-02, etc.)
       const sortedAccounts = adsenseAccounts.sort((a: any, b: any) => {
-        // Extract sequence number from name (e.g., "AFS - IST - 01" -> 1)
+        // Extract sequence number from name, handling different formats:
+        // "AFS - IST - 06" -> 6
+        // "AFS - 08 - GMT - 7" -> 8
+        // "TRT - AFS 01" -> 1
         const getSequenceNumber = (name: string): number => {
-          const match = name.match(/(\d+)$/);
-          return match ? parseInt(match[1]) : 9999;
+          // First try to find "IST - XX" or "AFS XX" pattern
+          const istMatch = name.match(/IST\s*-\s*(\d+)/i);
+          if (istMatch) return parseInt(istMatch[1]);
+
+          const afsMatch = name.match(/AFS\s*-?\s*(\d+)/i);
+          if (afsMatch) return parseInt(afsMatch[1]);
+
+          // Fallback: extract last number
+          const lastMatch = name.match(/(\d+)$/);
+          return lastMatch ? parseInt(lastMatch[1]) : 9999;
         };
         return getSequenceNumber(a.name) - getSequenceNumber(b.name);
       });

@@ -110,8 +110,13 @@ export default function CompadoPage() {
       const sortedCompadoAccounts = [...COMPADO_ENABLED_ACCOUNTS].sort((a, b) => {
         // Extract sequence number from name (e.g., "Compado - UTC - 01" -> 1)
         const getSequenceNumber = (name: string): number => {
-          const match = name.match(/(\d+)$/);
-          return match ? parseInt(match[1]) : 9999;
+          // Find "UTC - XX" pattern
+          const utcMatch = name.match(/UTC\s*-\s*(\d+)/i);
+          if (utcMatch) return parseInt(utcMatch[1]);
+
+          // Fallback: extract last number
+          const lastMatch = name.match(/(\d+)$/);
+          return lastMatch ? parseInt(lastMatch[1]) : 9999;
         };
         return getSequenceNumber(a.name) - getSequenceNumber(b.name);
       });
