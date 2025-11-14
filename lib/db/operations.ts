@@ -42,17 +42,27 @@ export async function saveClicks(
     cost_micros: click.cost_micros,
     clicks: click.clicks || 1,
     impressions: click.impressions,
+    style_id: click.style_id, // For AFS
+    domain: click.domain, // For AFS
     feed_type: feedType,
     created_at: new Date()
   }));
 
-  const operations = documents.map(doc => ({
-    updateOne: {
-      filter: { gclid: doc.gclid, date: doc.date, feed_type: feedType },
-      update: { $set: doc },
-      upsert: true
-    }
-  }));
+  const operations = documents.map(doc => {
+    // For AFS: use style_id + domain + date as unique key
+    // For others: use gclid + date as unique key
+    const filter = feedType === 'afs' && doc.style_id
+      ? { style_id: doc.style_id, domain: doc.domain, date: doc.date, feed_type: feedType }
+      : { gclid: doc.gclid, date: doc.date, feed_type: feedType };
+
+    return {
+      updateOne: {
+        filter,
+        update: { $set: doc },
+        upsert: true
+      }
+    };
+  });
 
   const result = await collection.bulkWrite(operations, { ordered: false });
   const savedCount = result.upsertedCount + result.modifiedCount;
@@ -80,6 +90,7 @@ export async function saveRevenue(
     revenue_usd: rev.revenue_usd,
     revenue_eur: rev.revenue_eur,
     date: rev.date,
+    style_id: rev.style_id, // For AFS
     domain: rev.domain,
     article_id: rev.article_id,
     conversion_type: rev.conversion_type,
@@ -87,13 +98,21 @@ export async function saveRevenue(
     created_at: new Date()
   }));
 
-  const operations = documents.map(doc => ({
-    updateOne: {
-      filter: { gclid: doc.gclid, date: doc.date, feed_type: feedType },
-      update: { $set: doc },
-      upsert: true
-    }
-  }));
+  const operations = documents.map(doc => {
+    // For AFS: use style_id + domain + date as unique key
+    // For others: use gclid + date as unique key
+    const filter = feedType === 'afs' && doc.style_id
+      ? { style_id: doc.style_id, domain: doc.domain, date: doc.date, feed_type: feedType }
+      : { gclid: doc.gclid, date: doc.date, feed_type: feedType };
+
+    return {
+      updateOne: {
+        filter,
+        update: { $set: doc },
+        upsert: true
+      }
+    };
+  });
 
   const result = await collection.bulkWrite(operations, { ordered: false });
   const savedCount = result.upsertedCount + result.modifiedCount;
