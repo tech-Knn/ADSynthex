@@ -16,6 +16,7 @@ import config from '@/lib/google-ads-config';
 import { fetchAllCompadoConversions } from '@/lib/compado-api';
 
 export const maxDuration = 300; // 5 minutes timeout
+export const dynamic = 'force-dynamic'; // Required for headers access
 
 export async function GET(request: Request) {
   try {

@@ -5,6 +5,8 @@ import { NextResponse } from 'next/server';
 import { setupAllIndexes, listAllIndexes } from '@/lib/db/setup-indexes';
 import { testConnection } from '@/lib/db/mongodb';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     console.log('[SETUP_DB] Starting database setup...');

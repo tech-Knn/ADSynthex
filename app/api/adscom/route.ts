@@ -728,12 +728,14 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
-    const url = new URL(request.url);
-    const startDate = url.searchParams.get('startDate') || '';
-    const endDate = url.searchParams.get('endDate') || '';
-    const customerId = url.searchParams.get('customerId') || null;
+    const searchParams = request.nextUrl.searchParams;
+    const startDate = searchParams.get('startDate') || '';
+    const endDate = searchParams.get('endDate') || '';
+    const customerId = searchParams.get('customerId') || null;
     
     console.log(`GET: Ads.com API request for date range: ${startDate} to ${endDate}${customerId ? `, Customer ID: ${customerId}` : ''}`);
     

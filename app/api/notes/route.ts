@@ -13,8 +13,10 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 
 const TABLE = 'article_notes';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
+  const searchParams = request.nextUrl.searchParams;
   const slug = searchParams.get('slug');
 
   let query = supabase.from(TABLE).select('*').order('updated_at', { ascending: false });
@@ -60,7 +62,7 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
+    const searchParams = request.nextUrl.searchParams;
     const id = searchParams.get('id');
     if (!id) throw new Error('id is required');
 

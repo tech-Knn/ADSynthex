@@ -6,6 +6,8 @@ import { getDashboardCampaigns } from '@/lib/db/operations';
 import { FeedType } from '@/lib/db/types';
 import { redisCacheManager } from '@/lib/redis-cache-manager';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     const { startDate, endDate, accountId, feedType } = await request.json();

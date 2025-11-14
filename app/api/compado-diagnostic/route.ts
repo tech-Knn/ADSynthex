@@ -8,9 +8,11 @@ import { getExchangeRate } from '@/lib/currency-service';
  * Diagnostic endpoint to compare Compado revenue with dashboard calculations
  * Usage: GET /api/compado-diagnostic?start_date=2025-11-01&end_date=2025-11-01&customerId=1671699399
  */
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
+    const searchParams = request.nextUrl.searchParams;
     const startDate = searchParams.get('start_date') || new Date().toISOString().split('T')[0];
     const endDate = searchParams.get('end_date') || startDate;
     const customerId = searchParams.get('customerId');
