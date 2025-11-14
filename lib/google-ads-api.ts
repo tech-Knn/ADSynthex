@@ -686,12 +686,11 @@ export async function fetchGoogleAdsData(
         console.warn(`[GOOGLE_ADS_API] Asset Groups query failed (continuing):`, error instanceof Error ? error.message : 'Unknown error');
       }
 
-      // CRITICAL FIX: Only fetch click_view data for Compado feed
-      // Ads.com uses campaign-level URL slug matching, NOT GCLID
-      // Inuvo uses TKID matching, NOT GCLID
-      // This also prevents Redis payload size errors from 14,000+ clicks
-      if (feedType === 'compado') {
-        console.log(`[GOOGLE_ADS_API] Fetching click_view data (GCLIDs) for Compado feed...`);
+      // Fetch click_view data (GCLIDs) for feeds that use GCLID matching
+      // AFS uses style_id + domain matching (NO GCLID)
+      // Compado, Ads.com, Inuvo use GCLID matching
+      if (feedType === 'adscom' || feedType === 'compado' || feedType === 'inuvo') {
+        console.log(`[GOOGLE_ADS_API] Fetching click_view data (GCLIDs) for ${feedType} feed...`);
         try {
           const start = new Date(startDate);
           const end = new Date(endDate);
@@ -721,7 +720,7 @@ export async function fetchGoogleAdsData(
             }
           }
 
-          console.log(`[GOOGLE_ADS_API] Fetched ${data.clicks!.length} total clicks for Compado`);
+          console.log(`[GOOGLE_ADS_API] Fetched ${data.clicks!.length} total clicks for ${feedType}`);
         } catch (error: any) {
           console.warn(`[GOOGLE_ADS_API] Click view fetch failed:`, error?.message || 'Unknown error');
         }
@@ -743,7 +742,7 @@ export async function fetchGoogleAdsData(
     }
   }
 
-  const clicksMsg = feedType === 'compado' ? `, ${data.clicks?.length || 0} clicks with GCLIDs` : '';
+  const clicksMsg = (feedType === 'adscom' || feedType === 'compado' || feedType === 'inuvo') ? `, ${data.clicks?.length || 0} clicks with GCLIDs` : '';
   console.log(`Google Ads API fetch completed for ${feedType || 'all'} feed. Total: ${data.campaigns.length} campaigns, ${data.ads.length} ads${clicksMsg}`);
 
   return data;

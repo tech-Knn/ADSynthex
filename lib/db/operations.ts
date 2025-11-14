@@ -115,6 +115,50 @@ export async function createCostRevenueMapping(
   console.log(`[DB] Creating cost-revenue mapping for ${feedType} (${startDate} to ${endDate})...`);
 
   // MongoDB aggregation pipeline to join clicks with revenue
+  // AFS uses style_id + domain matching, others use GCLID matching
+  const lookupPipeline = feedType === 'afs'
+    ? {
+        $lookup: {
+          from: getCollectionNames(feedType).revenue,
+          let: { click_style_id: '$style_id', click_domain: '$domain', click_date: '$date' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$style_id', '$$click_style_id'] },
+                    { $eq: ['$domain', '$$click_domain'] },
+                    { $eq: ['$date', '$$click_date'] },
+                    { $eq: ['$feed_type', feedType] }
+                  ]
+                }
+              }
+            }
+          ],
+          as: 'revenue_data'
+        }
+      }
+    : {
+        $lookup: {
+          from: getCollectionNames(feedType).revenue,
+          let: { click_gclid: '$gclid', click_date: '$date' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$gclid', '$$click_gclid'] },
+                    { $eq: ['$date', '$$click_date'] },
+                    { $eq: ['$feed_type', feedType] }
+                  ]
+                }
+              }
+            }
+          ],
+          as: 'revenue_data'
+        }
+      };
+
   const pipeline = [
     {
       $match: {
@@ -122,26 +166,7 @@ export async function createCostRevenueMapping(
         feed_type: feedType
       }
     },
-    {
-      $lookup: {
-        from: getCollectionNames(feedType).revenue,
-        let: { click_gclid: '$gclid', click_date: '$date' },
-        pipeline: [
-          {
-            $match: {
-              $expr: {
-                $and: [
-                  { $eq: ['$gclid', '$$click_gclid'] },
-                  { $eq: ['$date', '$$click_date'] },
-                  { $eq: ['$feed_type', feedType] }
-                ]
-              }
-            }
-          }
-        ],
-        as: 'revenue_data'
-      }
-    },
+    lookupPipeline,
     {
       $unwind: {
         path: '$revenue_data',
@@ -152,6 +177,7 @@ export async function createCostRevenueMapping(
       $project: {
         account_id: 1,
         gclid: 1,
+        style_id: 1, // For AFS
         campaign_id: 1,
         campaign_name: 1,
         ad_group_id: 1,
@@ -162,7 +188,7 @@ export async function createCostRevenueMapping(
         cost_usd: { $divide: ['$cost_micros', 1000000] },
         revenue_usd: { $ifNull: ['$revenue_data.revenue_usd', 0] },
         revenue_eur: { $ifNull: ['$revenue_data.revenue_eur', 0] },
-        domain: { $ifNull: ['$revenue_data.domain', null] },
+        domain: { $ifNull: ['$revenue_data.domain', '$domain'] }, // Use click domain if revenue domain not found
         article_id: { $ifNull: ['$revenue_data.article_id', null] },
         profit_usd: {
           $subtract: [
@@ -202,13 +228,21 @@ export async function createCostRevenueMapping(
   const mappings = await clicksCollection.aggregate(pipeline).toArray();
 
   if (mappings.length > 0) {
-    const operations = mappings.map(mapping => ({
-      updateOne: {
-        filter: { gclid: mapping.gclid, date: mapping.date, feed_type: feedType },
-        update: { $set: mapping },
-        upsert: true
-      }
-    }));
+    const operations = mappings.map((mapping: any) => {
+      // For AFS: use style_id + domain + date as unique key
+      // For others: use gclid + date as unique key
+      const filter = feedType === 'afs'
+        ? { style_id: mapping.style_id, domain: mapping.domain, date: mapping.date, feed_type: feedType }
+        : { gclid: mapping.gclid, date: mapping.date, feed_type: feedType };
+
+      return {
+        updateOne: {
+          filter,
+          update: { $set: mapping },
+          upsert: true
+        }
+      };
+    });
 
     const result = await mappingCollection.bulkWrite(operations, { ordered: false });
     const savedCount = result.upsertedCount + result.modifiedCount;

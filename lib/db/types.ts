@@ -8,7 +8,7 @@ export type FeedType = 'adscom' | 'afs' | 'compado' | 'inuvo';
 export interface ClickDocument {
   _id?: string;
   account_id: string;
-  gclid: string;
+  gclid?: string; // Optional for AFS (uses style_id instead)
   campaign_id: string;
   campaign_name: string;
   ad_group_id?: string;
@@ -19,6 +19,11 @@ export interface ClickDocument {
   cost_micros: number; // Cost in micros ($1 = 1,000,000 micros)
   clicks: number; // Usually 1 per GCLID
   impressions?: number;
+
+  // AFS-specific fields (for style_id + domain matching)
+  style_id?: string; // For AFS revenue matching
+  domain?: string; // For AFS revenue matching
+
   feed_type: FeedType;
   created_at: Date;
 }
@@ -27,11 +32,15 @@ export interface ClickDocument {
 
 export interface RevenueDocument {
   _id?: string;
-  gclid: string;
+  gclid?: string; // Optional for AFS (uses style_id instead)
   revenue_usd: number;
   revenue_eur?: number; // For Compado
   date: string; // YYYY-MM-DD
-  domain?: string; // For AFS
+
+  // AFS-specific fields
+  style_id?: string; // For AFS (from AdSense API)
+  domain?: string; // For AFS and Ads.com
+
   article_id?: string; // For Ads.com
   conversion_type?: string; // For Compado
   feed_type: FeedType;
@@ -43,7 +52,7 @@ export interface RevenueDocument {
 export interface CostRevenueMappingDocument {
   _id?: string;
   account_id: string;
-  gclid: string;
+  gclid?: string; // Optional for AFS
   campaign_id: string;
   campaign_name: string;
   ad_group_id?: string;
@@ -63,8 +72,9 @@ export interface CostRevenueMappingDocument {
   profit_usd: number; // revenue_usd - cost_usd
   roi: number; // (profit_usd / cost_usd) * 100
 
-  // Additional fields
-  domain?: string; // For AFS
+  // AFS-specific fields (style_id + domain matching)
+  style_id?: string; // For AFS
+  domain?: string; // For AFS and Ads.com
   article_id?: string; // For Ads.com
 
   feed_type: FeedType;
@@ -164,7 +174,7 @@ export const SHARED_COLLECTIONS = {
 
 export interface SaveClicksInput {
   account_id: string;
-  gclid: string;
+  gclid?: string; // Optional for AFS
   campaign_id: string;
   campaign_name: string;
   ad_group_id?: string;
@@ -175,16 +185,24 @@ export interface SaveClicksInput {
   cost_micros: number;
   clicks?: number;
   impressions?: number;
+
+  // AFS-specific fields
+  style_id?: string; // For AFS
+  domain?: string; // For AFS
 }
 
 export interface SaveRevenueInput {
-  gclid: string;
+  gclid?: string; // Optional for AFS
   revenue_usd: number;
   revenue_eur?: number;
   date: string;
-  domain?: string;
-  article_id?: string;
-  conversion_type?: string;
+
+  // AFS-specific fields
+  style_id?: string; // For AFS (from AdSense API)
+  domain?: string; // For AFS and Ads.com
+
+  article_id?: string; // For Ads.com
+  conversion_type?: string; // For Compado
 }
 
 // ==================== QUERY FILTERS ====================

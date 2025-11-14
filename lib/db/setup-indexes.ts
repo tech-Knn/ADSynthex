@@ -40,11 +40,20 @@ async function setupFeedIndexes(feedType: FeedType): Promise<void> {
   // ==================== CLICKS COLLECTION ====================
   const clicksCollection = await getCollection(collections.clicks);
 
-  // Unique index on GCLID + date + feed_type (prevents duplicates)
-  await clicksCollection.createIndex(
-    { gclid: 1, date: 1, feed_type: 1 },
-    { unique: true, name: 'unique_click_per_day' }
-  );
+  // Unique index - different for AFS (style_id + domain) vs others (GCLID)
+  if (feedType === 'afs') {
+    // AFS: Unique on style_id + domain + date
+    await clicksCollection.createIndex(
+      { style_id: 1, domain: 1, date: 1, feed_type: 1 },
+      { unique: true, name: 'unique_afs_style_domain_per_day', sparse: true }
+    );
+  } else {
+    // Others: Unique on GCLID + date
+    await clicksCollection.createIndex(
+      { gclid: 1, date: 1, feed_type: 1 },
+      { unique: true, name: 'unique_click_per_day', sparse: true }
+    );
+  }
 
   // Index for date range queries
   await clicksCollection.createIndex(
@@ -69,11 +78,20 @@ async function setupFeedIndexes(feedType: FeedType): Promise<void> {
   // ==================== REVENUE COLLECTION ====================
   const revenueCollection = await getCollection(collections.revenue);
 
-  // Unique index on GCLID + date + feed_type (prevents duplicates)
-  await revenueCollection.createIndex(
-    { gclid: 1, date: 1, feed_type: 1 },
-    { unique: true, name: 'unique_revenue_per_day' }
-  );
+  // Unique index - different for AFS (style_id + domain) vs others (GCLID)
+  if (feedType === 'afs') {
+    // AFS: Unique on style_id + domain + date
+    await revenueCollection.createIndex(
+      { style_id: 1, domain: 1, date: 1, feed_type: 1 },
+      { unique: true, name: 'unique_afs_revenue_per_day', sparse: true }
+    );
+  } else {
+    // Others: Unique on GCLID + date
+    await revenueCollection.createIndex(
+      { gclid: 1, date: 1, feed_type: 1 },
+      { unique: true, name: 'unique_revenue_per_day', sparse: true }
+    );
+  }
 
   // Index for date range queries
   await revenueCollection.createIndex(
@@ -81,11 +99,13 @@ async function setupFeedIndexes(feedType: FeedType): Promise<void> {
     { name: 'date_feed_lookup' }
   );
 
-  // Index for domain lookups (AFS)
-  await revenueCollection.createIndex(
-    { domain: 1, date: 1 },
-    { name: 'domain_date_lookup', sparse: true }
-  );
+  // Index for AFS style_id lookups
+  if (feedType === 'afs') {
+    await revenueCollection.createIndex(
+      { style_id: 1, date: 1 },
+      { name: 'style_date_lookup', sparse: true }
+    );
+  }
 
   // TTL index - auto-delete revenue older than 90 days
   await revenueCollection.createIndex(
@@ -98,11 +118,20 @@ async function setupFeedIndexes(feedType: FeedType): Promise<void> {
   // ==================== COST-REVENUE MAPPING COLLECTION ====================
   const mappingCollection = await getCollection(collections.costRevenueMapping);
 
-  // Unique index on GCLID + date + feed_type (prevents duplicates)
-  await mappingCollection.createIndex(
-    { gclid: 1, date: 1, feed_type: 1 },
-    { unique: true, name: 'unique_mapping_per_day' }
-  );
+  // Unique index - different for AFS (style_id + domain) vs others (GCLID)
+  if (feedType === 'afs') {
+    // AFS: Unique on style_id + domain + date
+    await mappingCollection.createIndex(
+      { style_id: 1, domain: 1, date: 1, feed_type: 1 },
+      { unique: true, name: 'unique_afs_mapping_per_day', sparse: true }
+    );
+  } else {
+    // Others: Unique on GCLID + date
+    await mappingCollection.createIndex(
+      { gclid: 1, date: 1, feed_type: 1 },
+      { unique: true, name: 'unique_mapping_per_day', sparse: true }
+    );
+  }
 
   // Compound index for efficient queries
   await mappingCollection.createIndex(
