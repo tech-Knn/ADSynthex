@@ -38,4 +38,10 @@ next-env.d.ts
 .vscode
 
 # Google Ads credentials
-google-ads-auth.json 
+google-ads-auth.json
+
+# Documentation and test files
+*.md
+!README.md
+test-*.js
+test-*.sh 

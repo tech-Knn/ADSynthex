@@ -10,6 +10,11 @@ const publicPaths = [
   '/api/google-ads/accounts',
   '/api/google-ads-production',
   '/api/test',
+  '/api/test-db',
+  '/api/setup-db',
+  '/api/check-db-data',
+  '/api/dashboard-v2',
+  '/api/cron',
   '/api/currency/refresh',
   '/logout'
 ];

@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GoogleAdsApi } from 'google-ads-api';
 import { productionRateManager } from '@/lib/production-rate-manager';
 
-// In-memory cache for accounts
+// CRITICAL: Aggressive caching to prevent rate limit exhaustion
+// Accounts change very rarely, so we can cache for a long time
 let cachedAccounts: any = null;
 let cacheTimestamp: number = 0;
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const CACHE_DURATION = 60 * 60 * 1000; // 1 hour (accounts rarely change)
+const STALE_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours for stale cache
 
 // Initialize Google Ads client for MCC account queries
 function initializeMCCClient() {
@@ -62,28 +64,43 @@ interface CustomerAccount {
 export async function GET(request: NextRequest) {
   try {
     console.log('=== MCC ACCOUNTS DISCOVERY STARTING ===');
-    
+
+    // OPTIMIZATION: Return fresh cache immediately (accounts rarely change)
+    const cacheAge = Date.now() - cacheTimestamp;
+    if (cachedAccounts && cacheAge < CACHE_DURATION) {
+      console.log(`[MCC_ACCOUNTS] ✓ Returning cached accounts (age: ${Math.floor(cacheAge / 1000)}s, TTL: ${Math.floor(CACHE_DURATION / 1000)}s)`);
+      return NextResponse.json({
+        ...cachedAccounts,
+        _cached: true,
+        _cacheAge: Math.floor(cacheAge / 1000) + 's'
+      });
+    }
+
     // Check rate limits BEFORE making any API calls
     const canRequest = productionRateManager.canMakeRequest(undefined, 'standard');
     if (!canRequest.allowed) {
-      console.warn(`[MCC_ACCOUNTS] Rate limit protection: ${canRequest.reason}`);
+      console.warn(`[MCC_ACCOUNTS] ⚠️  Rate limit protection: ${canRequest.reason}`);
 
-      // Return cached accounts if available
-      if (cachedAccounts && Date.now() - cacheTimestamp < CACHE_DURATION) {
-        console.log('[MCC_ACCOUNTS] Returning cached accounts due to rate limit');
+      // CRITICAL: Serve stale cache if available (even if old) to avoid rate limits
+      if (cachedAccounts && cacheAge < STALE_CACHE_DURATION) {
+        console.log(`[MCC_ACCOUNTS] 🛡️ Serving stale cache due to rate limit (age: ${Math.floor(cacheAge / 1000)}s)`);
         return NextResponse.json({
           ...cachedAccounts,
           _cached: true,
-          _cacheAge: Math.floor((Date.now() - cacheTimestamp) / 1000) + 's'
+          _stale: true,
+          _cacheAge: Math.floor(cacheAge / 1000) + 's',
+          _rateLimitProtection: true
         });
       }
 
+      // No cache available and rate limited - return error
+      console.error(`[MCC_ACCOUNTS] 🚨 Rate limited and no cache available!`);
       return NextResponse.json({
         success: false,
         error: 'Rate limit protection active',
         reason: canRequest.reason,
         waitTime: canRequest.waitTime,
-        message: 'Please try again later to avoid hitting Google API limits'
+        message: 'API rate limit reached. Please wait before retrying.'
       }, { status: 429 });
     }
     
@@ -283,14 +300,39 @@ export async function GET(request: NextRequest) {
     
   } catch (error: any) {
     console.error('Error fetching MCC accounts:', error);
-    
+
+    // Check if it's a rate limit error
+    const isRateLimitError = error.message?.includes('Too many requests') ||
+                             error.message?.includes('RATE_LIMIT_EXCEEDED') ||
+                             error.message?.includes('RESOURCE_EXHAUSTED');
+
+    if (isRateLimitError) {
+      console.error('[MCC_ACCOUNTS] 🚨 Google API rate limit error detected!');
+
+      // CRITICAL: Serve stale cache if available to prevent complete failure
+      const cacheAge = Date.now() - cacheTimestamp;
+      if (cachedAccounts && cacheAge < STALE_CACHE_DURATION) {
+        console.log(`[MCC_ACCOUNTS] 🛡️ Serving stale cache due to rate limit error (age: ${Math.floor(cacheAge / 1000)}s)`);
+        return NextResponse.json({
+          ...cachedAccounts,
+          _cached: true,
+          _stale: true,
+          _cacheAge: Math.floor(cacheAge / 1000) + 's',
+          _rateLimitError: true,
+          _errorMessage: 'Rate limit reached, serving cached data'
+        });
+      }
+    }
+
     return NextResponse.json({
       success: false,
       error: 'Failed to fetch accounts from MCC',
       details: error.message || 'Unknown error occurred',
-      message: 'Check server logs for detailed error information'
-    }, { 
-      status: 500,
+      message: isRateLimitError
+        ? 'Google Ads API rate limit exceeded. Using cached data if available.'
+        : 'Check server logs for detailed error information'
+    }, {
+      status: isRateLimitError ? 429 : 500,
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
