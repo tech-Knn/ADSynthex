@@ -40,15 +40,27 @@ async function setupFeedIndexes(feedType: FeedType): Promise<void> {
   // ==================== CLICKS COLLECTION ====================
   const clicksCollection = await getCollection(collections.clicks);
 
-  // Unique index - different for AFS (style_id + domain) vs others (GCLID)
+  // Unique index - different matching keys per feed type
   if (feedType === 'afs') {
     // AFS: Unique on style_id + domain + date
     await clicksCollection.createIndex(
       { style_id: 1, domain: 1, date: 1, feed_type: 1 },
       { unique: true, name: 'unique_afs_style_domain_per_day', sparse: true }
     );
+  } else if (feedType === 'adscom') {
+    // Ads.com: Unique on article + date
+    await clicksCollection.createIndex(
+      { article: 1, date: 1, feed_type: 1 },
+      { unique: true, name: 'unique_article_per_day', sparse: true }
+    );
+  } else if (feedType === 'inuvo') {
+    // Inuvo: Unique on tkid + date
+    await clicksCollection.createIndex(
+      { tkid: 1, date: 1, feed_type: 1 },
+      { unique: true, name: 'unique_tkid_per_day', sparse: true }
+    );
   } else {
-    // Others: Unique on GCLID + date
+    // Compado: Unique on GCLID + date
     await clicksCollection.createIndex(
       { gclid: 1, date: 1, feed_type: 1 },
       { unique: true, name: 'unique_click_per_day', sparse: true }
@@ -78,15 +90,27 @@ async function setupFeedIndexes(feedType: FeedType): Promise<void> {
   // ==================== REVENUE COLLECTION ====================
   const revenueCollection = await getCollection(collections.revenue);
 
-  // Unique index - different for AFS (style_id + domain) vs others (GCLID)
+  // Unique index - different matching keys per feed type
   if (feedType === 'afs') {
     // AFS: Unique on style_id + domain + date
     await revenueCollection.createIndex(
       { style_id: 1, domain: 1, date: 1, feed_type: 1 },
       { unique: true, name: 'unique_afs_revenue_per_day', sparse: true }
     );
+  } else if (feedType === 'adscom') {
+    // Ads.com: Unique on article + date
+    await revenueCollection.createIndex(
+      { article: 1, date: 1, feed_type: 1 },
+      { unique: true, name: 'unique_article_revenue_per_day', sparse: true }
+    );
+  } else if (feedType === 'inuvo') {
+    // Inuvo: Unique on tkid + date
+    await revenueCollection.createIndex(
+      { tkid: 1, date: 1, feed_type: 1 },
+      { unique: true, name: 'unique_tkid_revenue_per_day', sparse: true }
+    );
   } else {
-    // Others: Unique on GCLID + date
+    // Compado: Unique on GCLID + date
     await revenueCollection.createIndex(
       { gclid: 1, date: 1, feed_type: 1 },
       { unique: true, name: 'unique_revenue_per_day', sparse: true }
@@ -118,15 +142,27 @@ async function setupFeedIndexes(feedType: FeedType): Promise<void> {
   // ==================== COST-REVENUE MAPPING COLLECTION ====================
   const mappingCollection = await getCollection(collections.costRevenueMapping);
 
-  // Unique index - different for AFS (style_id + domain) vs others (GCLID)
+  // Unique index - different matching keys per feed type
   if (feedType === 'afs') {
     // AFS: Unique on style_id + domain + date
     await mappingCollection.createIndex(
       { style_id: 1, domain: 1, date: 1, feed_type: 1 },
       { unique: true, name: 'unique_afs_mapping_per_day', sparse: true }
     );
+  } else if (feedType === 'adscom') {
+    // Ads.com: Unique on article + date
+    await mappingCollection.createIndex(
+      { article: 1, date: 1, feed_type: 1 },
+      { unique: true, name: 'unique_article_mapping_per_day', sparse: true }
+    );
+  } else if (feedType === 'inuvo') {
+    // Inuvo: Unique on tkid + date
+    await mappingCollection.createIndex(
+      { tkid: 1, date: 1, feed_type: 1 },
+      { unique: true, name: 'unique_tkid_mapping_per_day', sparse: true }
+    );
   } else {
-    // Others: Unique on GCLID + date
+    // Compado: Unique on GCLID + date
     await mappingCollection.createIndex(
       { gclid: 1, date: 1, feed_type: 1 },
       { unique: true, name: 'unique_mapping_per_day', sparse: true }

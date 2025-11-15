@@ -7,6 +7,7 @@ import {
 } from '@/lib/adsense-api';
 import { cookies } from 'next/headers';
 import { bulletproofAPI } from '@/lib/bulletproof-google-ads-api';
+import { getDashboardFromMongoDB } from '@/lib/db/dashboard-helper';
 
 interface RevenueByStyleId {
   style_id: string;
@@ -57,7 +58,7 @@ export async function POST(request: NextRequest) {
     const userAccountId = cookieStore.get('account_id')?.value;
 
     if (authType === 'user' && userAccountId) {
-      
+
       console.log('[ADSENSE_REVENUE] User access:', userAccountId);
 
       const normalizedUserAccountId = userAccountId.startsWith('CID_') ? userAccountId : `CID_${userAccountId}`;
@@ -74,6 +75,41 @@ export async function POST(request: NextRequest) {
         }
       }
     }
+
+    // ==================== MONGODB FIRST: Check for fresh data ====================
+    console.log('[ADSENSE_REVENUE] 🔍 Checking MongoDB for fresh data...');
+
+    const accountToQuery = accountIds && accountIds.length > 0
+      ? accountIds
+      : (customerId || 'all');
+
+    const mongoData = await getDashboardFromMongoDB(
+      'afs',
+      accountToQuery,
+      startDate,
+      endDate,
+      30 // 30 minutes freshness
+    );
+
+    if (mongoData) {
+      console.log(`[ADSENSE_REVENUE] ✅ Returning fresh MongoDB data (${mongoData.age} min old)`);
+      return NextResponse.json({
+        cost_revenue_mapping: mongoData.data.cost_revenue_mapping,
+        campaign_aggregated: [], // TODO: Add campaign aggregation
+        summary: mongoData.data.summary,
+        _source: 'mongodb',
+        _timestamp: new Date().toISOString(),
+        _message: `Fresh data from MongoDB (${mongoData.age} minutes old)`,
+        _dataFreshness: {
+          source: 'mongodb',
+          ageMinutes: mongoData.age,
+          isFresh: true,
+          message: `Data is ${mongoData.age} minutes old`
+        }
+      });
+    }
+
+    console.log('[ADSENSE_REVENUE] ⚠️  MongoDB data stale/missing, fetching from API...');
 
     const fetchStartTime = Date.now();
 

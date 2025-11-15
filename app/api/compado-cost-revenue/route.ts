@@ -18,6 +18,7 @@ import { productionCache } from '@/lib/production-cache-strategy';
 import { userRateLimiter } from '@/lib/user-rate-limiter';
 import { googleAdsRateLimiter } from '@/lib/redis-rate-limiter';
 import { cookies } from 'next/headers';
+import { getDashboardFromMongoDB } from '@/lib/db/dashboard-helper';
 
 interface CompadoCostRevenueResponse {
   google_ads_data: any;
@@ -93,6 +94,44 @@ export async function POST(request: NextRequest) {
       body.accountIds = undefined;
 
       console.log(`[COMPADO_COST_REVENUE] 🔒 User ${userAccountId} accessing their own account data`);
+    }
+
+    // ==================== MONGODB FIRST: Check for fresh data ====================
+    // Try MongoDB first (unless forceRefresh is true)
+    if (!forceRefresh) {
+      console.log('[COMPADO_COST_REVENUE] 🔍 Checking MongoDB for fresh data...');
+
+      const accountToQuery = accountIds && Array.isArray(accountIds) && accountIds.length > 0
+        ? accountIds
+        : (customerId || 'all');
+
+      const mongoData = await getDashboardFromMongoDB(
+        'compado',
+        accountToQuery,
+        startDate,
+        endDate,
+        30 // 30 minutes freshness
+      );
+
+      if (mongoData) {
+        console.log(`[COMPADO_COST_REVENUE] ✅ Returning fresh MongoDB data (${mongoData.age} min old)`);
+        return NextResponse.json({
+          cost_revenue_mapping: mongoData.data.cost_revenue_mapping,
+          campaign_aggregated: [], // TODO: Add campaign aggregation
+          summary: mongoData.data.summary,
+          _source: 'mongodb',
+          _timestamp: new Date().toISOString(),
+          _message: `Fresh data from MongoDB (${mongoData.age} minutes old)`,
+          _dataFreshness: {
+            source: 'mongodb',
+            ageMinutes: mongoData.age,
+            isFresh: true,
+            message: `Data is ${mongoData.age} minutes old`
+          }
+        });
+      }
+
+      console.log('[COMPADO_COST_REVENUE] ⚠️  MongoDB data stale/missing, fetching from API...');
     }
 
     // Determine if we're processing multiple accounts

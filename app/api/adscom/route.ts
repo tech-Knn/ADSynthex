@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchArticlePerformance, getMockArticleData, AdsComArticleData, AdsComResponse } from '../../../lib/adscom-api';
+import { getDashboardFromMongoDB } from '@/lib/db/dashboard-helper';
 
 // Helper to transform and map API response
 const transformApiData = (apiResponse: any): AdsComResponse => {
@@ -213,19 +214,50 @@ export async function POST(request: NextRequest) {
     const { startDate, endDate, customerId, forceRefresh } = await request.json();
     console.log(`Ads.com API request for date range: ${startDate} to ${endDate}${customerId ? `, Customer ID: ${customerId}` : ''}${forceRefresh ? ', Force Refresh: true' : ''}`);
     console.log('DEBUG: Current time', new Date().toISOString());
-    
+
+    // ==================== MONGODB FIRST: Check for fresh data ====================
+    if (!forceRefresh) {
+      console.log('[ADSCOM] 🔍 Checking MongoDB for fresh data...');
+
+      const mongoData = await getDashboardFromMongoDB(
+        'adscom',
+        customerId || 'all',
+        startDate,
+        endDate,
+        30 // 30 minutes freshness
+      );
+
+      if (mongoData) {
+        console.log(`[ADSCOM] ✅ Returning fresh MongoDB data (${mongoData.age} min old)`);
+        return NextResponse.json({
+          cost_revenue_mapping: mongoData.data.cost_revenue_mapping,
+          summary: mongoData.data.summary,
+          _source: 'mongodb',
+          _timestamp: new Date().toISOString(),
+          _message: `Fresh data from MongoDB (${mongoData.age} minutes old)`,
+          dataFreshness: {
+            source: 'mongodb',
+            ageMinutes: mongoData.age,
+            isFresh: true
+          }
+        });
+      }
+
+      console.log('[ADSCOM] ⚠️  MongoDB data stale/missing, fetching from API...');
+    }
+
     // Calculate update time information
     const now = new Date();
     const minutes = now.getMinutes();
     const lastUpdateMinute = Math.floor(minutes / 15) * 15;
-    
+
     const lastUpdate = new Date(now);
     lastUpdate.setMinutes(lastUpdateMinute);
     lastUpdate.setSeconds(0);
     lastUpdate.setMilliseconds(0);
-    
+
     const nextUpdateIn = ((15 - (minutes % 15)) * 60) - now.getSeconds();
-    
+
     console.log(`Calculated update times: Last updated at ${lastUpdate.toISOString()}, next update in ${nextUpdateIn} seconds`);
     
     // Debug: Print all environment variables

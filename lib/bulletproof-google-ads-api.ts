@@ -217,8 +217,8 @@ export class BulletproofGoogleAdsAPI {
   ): Promise<ApiResponse> {
     console.log(`[BULLETPROOF_API] Making Redis-protected Google Ads API call for customer ${customerId || 'all'}${feedType ? `, feed: ${feedType}` : ''}`);
 
-    // Record request in Redis (increments counters atomically)
-    await googleAdsRateLimiter.recordRequest(customerId || undefined);
+    // NOTE: Request recording now happens inside fetchGoogleAdsData() per-query for accurate tracking
+    // We no longer record here to avoid double-counting
 
     const startTime = Date.now();
 

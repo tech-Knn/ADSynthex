@@ -8,7 +8,6 @@ export type FeedType = 'adscom' | 'afs' | 'compado' | 'inuvo';
 export interface ClickDocument {
   _id?: string;
   account_id: string;
-  gclid?: string; // Optional for AFS (uses style_id instead)
   campaign_id: string;
   campaign_name: string;
   ad_group_id?: string;
@@ -16,13 +15,21 @@ export interface ClickDocument {
   ad_id?: string;
   ad_name?: string;
   date: string; // YYYY-MM-DD
-  cost_micros: number; // Cost in micros ($1 = 1,000,000 micros)
-  clicks: number; // Usually 1 per GCLID
-  impressions?: number;
 
-  // AFS-specific fields (for style_id + domain matching)
-  style_id?: string; // For AFS revenue matching
-  domain?: string; // For AFS revenue matching
+  // Cost metrics
+  cost_micros: number; // Cost in micros ($1 = 1,000,000 micros)
+  clicks: number; // Google Ads clicks
+  impressions?: number;
+  conversions?: number; // Google Ads conversions
+  ctr?: number; // Click-through rate
+  cpc?: number; // Cost per click
+
+  // MATCHING KEYS BY FEED:
+  gclid?: string; // Compado, Inuvo (from click_view query)
+  style_id?: string; // AFS (from final_urls ?style_id=xxx)
+  domain?: string; // AFS (termuxtools.com)
+  article?: string; // Ads.com (article slug from URL)
+  tkid?: string; // Inuvo (from final_urls ?tkid=xxx)
 
   feed_type: FeedType;
   created_at: Date;
@@ -32,17 +39,48 @@ export interface ClickDocument {
 
 export interface RevenueDocument {
   _id?: string;
-  gclid?: string; // Optional for AFS (uses style_id instead)
-  revenue_usd: number;
-  revenue_eur?: number; // For Compado
   date: string; // YYYY-MM-DD
 
-  // AFS-specific fields
-  style_id?: string; // For AFS (from AdSense API)
-  domain?: string; // For AFS and Ads.com
+  // Revenue metrics
+  revenue_usd: number;
+  revenue_eur?: number; // Original currency (Compado)
+  clicks: number; // Revenue clicks (AdSense/Compado/Ads.com clicks)
+  impressions?: number;
 
-  article_id?: string; // For Ads.com
-  conversion_type?: string; // For Compado
+  // MATCHING KEYS BY FEED:
+  gclid?: string; // Compado
+  style_id?: string; // AFS (from AdSense API)
+  domain?: string; // AFS (termuxtools.com)
+  article?: string; // Ads.com (article slug)
+  tkid?: string; // Inuvo (TKID from API)
+
+  // Feed-specific additional data
+  // AFS
+  country_name?: string;
+
+  // Compado
+  srcclkid?: string; // Source click ID
+  conversion_type?: string;
+  device?: string;
+  country?: string;
+  traffic_source?: string;
+  keywords?: string[];
+
+  // Inuvo
+  agid?: string;
+  platform_type?: string;
+  ad_requests?: number;
+  page_views?: number;
+  estimated_clicks?: number;
+
+  // Ads.com
+  visits?: number;
+  ctr?: number;
+  rpm?: number;
+  epc?: number;
+  ivt_correction?: number;
+  finalized?: boolean;
+
   feed_type: FeedType;
   created_at: Date;
 }
@@ -52,7 +90,6 @@ export interface RevenueDocument {
 export interface CostRevenueMappingDocument {
   _id?: string;
   account_id: string;
-  gclid?: string; // Optional for AFS
   campaign_id: string;
   campaign_name: string;
   ad_group_id?: string;
@@ -61,21 +98,48 @@ export interface CostRevenueMappingDocument {
   ad_name?: string;
   date: string;
 
-  // Cost metrics
-  cost_usd: number;
+  // MATCHING KEYS BY FEED:
+  gclid?: string; // Compado
+  style_id?: string; // AFS
+  domain?: string; // AFS (termuxtools.com)
+  article?: string; // Ads.com
+  tkid?: string; // Inuvo
 
-  // Revenue metrics
+  // Cost metrics (from Google Ads)
+  cost_usd: number;
+  cost_clicks: number; // Google Ads clicks
+  impressions: number;
+  cost_conversions?: number; // Google Ads conversions
+  cpc?: number;
+  ctr?: number;
+
+  // Revenue metrics (from revenue APIs)
   revenue_usd: number;
   revenue_eur?: number;
+  revenue_clicks: number; // AdSense/Compado/Ads.com clicks
+  revenue_impressions?: number;
 
-  // Calculated metrics
+  // Dashboard calculated metrics (CRITICAL!)
   profit_usd: number; // revenue_usd - cost_usd
   roi: number; // (profit_usd / cost_usd) * 100
+  roas?: number; // revenue_usd / cost_usd
+  cpa?: number; // cost_usd / revenue_clicks
+  conversion_rate?: number; // (revenue_clicks / cost_clicks) * 100
+  rpc?: number; // revenue_usd / revenue_clicks
 
-  // AFS-specific fields (style_id + domain matching)
-  style_id?: string; // For AFS
-  domain?: string; // For AFS and Ads.com
-  article_id?: string; // For Ads.com
+  // Feed-specific extra data
+  country_name?: string; // AFS
+  traffic_source?: string; // Compado
+  device?: string; // Compado
+  keywords?: string[]; // Compado
+  conversion_type?: string; // Compado
+  visits?: number; // Ads.com
+  rpm?: number; // Ads.com
+  epc?: number; // Ads.com
+  ivt_correction?: number; // Ads.com
+  finalized?: boolean; // Ads.com
+  page_views?: number; // Inuvo
+  ad_requests?: number; // Inuvo
 
   feed_type: FeedType;
   created_at: Date;
@@ -174,7 +238,6 @@ export const SHARED_COLLECTIONS = {
 
 export interface SaveClicksInput {
   account_id: string;
-  gclid?: string; // Optional for AFS
   campaign_id: string;
   campaign_name: string;
   ad_group_id?: string;
@@ -185,24 +248,51 @@ export interface SaveClicksInput {
   cost_micros: number;
   clicks?: number;
   impressions?: number;
+  conversions?: number;
+  ctr?: number;
+  cpc?: number;
 
-  // AFS-specific fields
-  style_id?: string; // For AFS
-  domain?: string; // For AFS
+  // Matching keys by feed
+  gclid?: string; // Compado, Inuvo
+  style_id?: string; // AFS
+  domain?: string; // AFS
+  article?: string; // Ads.com
+  tkid?: string; // Inuvo
 }
 
 export interface SaveRevenueInput {
-  gclid?: string; // Optional for AFS
   revenue_usd: number;
   revenue_eur?: number;
+  clicks: number;
+  impressions?: number;
   date: string;
 
-  // AFS-specific fields
-  style_id?: string; // For AFS (from AdSense API)
-  domain?: string; // For AFS and Ads.com
+  // Matching keys by feed
+  gclid?: string; // Compado
+  style_id?: string; // AFS
+  domain?: string; // AFS
+  article?: string; // Ads.com
+  tkid?: string; // Inuvo
 
-  article_id?: string; // For Ads.com
-  conversion_type?: string; // For Compado
+  // Feed-specific fields
+  country_name?: string; // AFS
+  srcclkid?: string; // Compado
+  conversion_type?: string; // Compado
+  device?: string; // Compado
+  country?: string; // Compado
+  traffic_source?: string; // Compado
+  keywords?: string[]; // Compado
+  agid?: string; // Inuvo
+  platform_type?: string; // Inuvo
+  ad_requests?: number; // Inuvo
+  page_views?: number; // Inuvo
+  estimated_clicks?: number; // Inuvo
+  visits?: number; // Ads.com
+  ctr?: number; // Ads.com
+  rpm?: number; // Ads.com
+  epc?: number; // Ads.com
+  ivt_correction?: number; // Ads.com
+  finalized?: boolean; // Ads.com
 }
 
 // ==================== QUERY FILTERS ====================

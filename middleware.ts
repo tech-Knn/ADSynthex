@@ -12,6 +12,8 @@ const publicPaths = [
   '/api/test',
   '/api/test-db',
   '/api/setup-db',
+  '/api/setup-indexes',
+  '/api/cleanup-db',
   '/api/check-db-data',
   '/api/dashboard-v2',
   '/api/cron',

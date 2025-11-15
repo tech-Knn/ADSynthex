@@ -4,6 +4,7 @@ import { GoogleAdsApi } from 'google-ads-api';
 import config from './google-ads-config';
 import * as utils from './google-ads-utils';
 import { ACCOUNT_FEED_ACCESS, FeedType } from './account-access-control';
+import { googleAdsRateLimiter } from './redis-rate-limiter';
 
 // Target accounts configuration
 const TARGET_ACCOUNTS = config.TARGET_ACCOUNTS;
@@ -570,9 +571,17 @@ export async function fetchGoogleAdsData(
 
   for (let i = 0; i < accountsToProcess.length; i++) {
     const account = accountsToProcess[i];
-    
+
     try {
-      console.log(`Processing account ${i + 1}/${accountsToProcess.length}: ${account.id} (${account.name})`);
+      // Check rate limiter status before processing each account
+      const quotaStatus = await googleAdsRateLimiter.getQuotaStatus();
+      if (quotaStatus.isInCooldown || !quotaStatus.safeToOperate) {
+        console.warn(`[GOOGLE_ADS_API] Stopping processing - API in cooldown or unsafe to operate`);
+        console.warn(`[GOOGLE_ADS_API] Cooldown ends: ${quotaStatus.cooldownEnds}, Safe to operate: ${quotaStatus.safeToOperate}`);
+        break; // Stop processing remaining accounts
+      }
+
+      console.log(`[GOOGLE_ADS_API] Processing account ${i + 1}/${accountsToProcess.length}: ${account.id} (${account.name})`);
       
       // Create account-specific customer
       const accountCustomer = client.Customer({
@@ -581,14 +590,49 @@ export async function fetchGoogleAdsData(
         login_customer_id: process.env.GOOGLE_ADS_MANAGER_ID || ''
       });
       
-      // Helper function to make API calls with retry (rate limiting handled by smart cache)
+      // Helper function to make API calls with rate limiting protection
       const makeApiCall = async (query: string, operationName: string) => {
+        // CRITICAL: Check rate limiter before EACH API call
+        const rateLimitCheck = await googleAdsRateLimiter.canMakeRequest(account.id);
+
+        if (!rateLimitCheck.allowed) {
+          console.warn(`[GOOGLE_ADS_API] Rate limit blocked for ${operationName}: ${rateLimitCheck.reason}`);
+
+          // If we need to wait, wait before throwing error
+          if (rateLimitCheck.waitTime && rateLimitCheck.waitTime < 60000) { // Wait max 60 seconds
+            console.log(`[GOOGLE_ADS_API] Waiting ${Math.round(rateLimitCheck.waitTime / 1000)}s before retry...`);
+            await new Promise(resolve => setTimeout(resolve, rateLimitCheck.waitTime));
+
+            // Re-check after waiting
+            const recheckResult = await googleAdsRateLimiter.canMakeRequest(account.id);
+            if (!recheckResult.allowed) {
+              throw new Error(`Rate limit exceeded: ${rateLimitCheck.reason}. Retry in ${Math.round(rateLimitCheck.waitTime / 1000)}s`);
+            }
+          } else {
+            throw new Error(`Rate limit exceeded: ${rateLimitCheck.reason}. ${rateLimitCheck.waitTime ? `Retry in ${Math.round(rateLimitCheck.waitTime / 1000)}s` : 'Please retry later'}`);
+          }
+        }
+
         return await retryWithBackoff(async () => {
-          console.log(`Making ${operationName} call for account ${account.id}`);
-          const response = await accountCustomer.query(query);
-          console.log(`${operationName} response: ${response?.length || 0} items`);
-          return response;
-        });
+          console.log(`[GOOGLE_ADS_API] Making ${operationName} call for account ${account.id}`);
+
+          // Record the request BEFORE making it
+          await googleAdsRateLimiter.recordRequest(account.id);
+
+          try {
+            const response = await accountCustomer.query(query);
+            console.log(`[GOOGLE_ADS_API] ${operationName} response: ${response?.length || 0} items`);
+            return response;
+          } catch (error: any) {
+            // Handle rate limit errors by recording in Redis
+            const errorStr = JSON.stringify(error).toLowerCase();
+            if (errorStr.includes('rate') || errorStr.includes('429') || errorStr.includes('resource_exhausted')) {
+              console.error(`[GOOGLE_ADS_API] Rate limit error detected in ${operationName}`);
+              await googleAdsRateLimiter.handleRateLimitError(error);
+            }
+            throw error;
+          }
+        }, RETRY_CONFIG.maxRetries, 1000);
       };
       
       const activeCampaignQuery = buildActiveCampaignQuery(startDate, endDate);
