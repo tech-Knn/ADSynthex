@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
       accountToQuery,
       startDate,
       endDate,
-      30 // 30 minutes freshness
+      240 // 4 hours freshness (increased from 30min to reduce API quota usage)
     );
 
     if (mongoData) {

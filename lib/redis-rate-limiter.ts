@@ -45,8 +45,8 @@ export class RedisRateLimiter {
     this.apiName = apiName;
     this.config = {
       dailyLimit: 10000, // ~67% of 15K daily quota (more conservative)
-      hourlyLimit: 400,  // Max 400 requests per hour (~6-7 per minute)
-      qps: 1,            // 1 query per second (Google standard)
+      hourlyLimit: 3000,  // Max 3000 requests per hour (allows bursts, stays under daily)
+      qps: 2,            // 2 queries per second (increased for multiple concurrent feeds)
       cooldownBuffer: 600, // 10 minutes safety buffer (increased from 5)
       ...config
     };

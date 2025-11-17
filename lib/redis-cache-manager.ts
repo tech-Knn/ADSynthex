@@ -44,19 +44,19 @@ export class RedisCacheManager {
   // CRITICAL: Longer TTLs = fewer API calls = better rate limit protection
   private ttlConfig = {
     'google-ads': {
-      current: 900,      // 15 min for today (balanced freshness + protection)
-      recent: 3600,      // 1 hour for last 7 days
-      historical: 7200   // 2 hours for older data
+      current: 3600,     // 1 hour for today (increased from 15min to reduce API calls)
+      recent: 7200,      // 2 hours for last 7 days (increased from 1 hour)
+      historical: 14400  // 4 hours for older data (increased from 2 hours)
     },
     'adscom': {
-      current: 900,      // 15 min
-      recent: 3600,      // 1 hour
-      historical: 7200   // 2 hours
+      current: 3600,     // 1 hour (increased from 15min)
+      recent: 7200,      // 2 hours (increased from 1 hour)
+      historical: 14400  // 4 hours (increased from 2 hours)
     },
     'compado': {
-      current: 900,      // 15 min for fresh conversion data (increased for rate limit protection)
-      recent: 3600,      // 1 hour
-      historical: 7200   // 2 hours
+      current: 3600,     // 1 hour (increased from 15min for rate limit protection)
+      recent: 7200,      // 2 hours (increased from 1 hour)
+      historical: 14400  // 4 hours (increased from 2 hours)
     },
     'unified': {
       current: 600,      // 10 min for cost+revenue combined view (most accessed)
