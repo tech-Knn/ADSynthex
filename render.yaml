@@ -1,5 +1,4 @@
 services:
-  # Main Web Service
   - type: web
     name: adsynthe-x
     env: node
@@ -28,17 +27,30 @@ services:
   - type: cron
     name: exchange-rate-refresh
     env: node
-    schedule: "0 0 * * *"  # Daily at 00:00 UTC (midnight)
+    schedule: "0 0 * * *"  
     buildCommand: npm install
     startCommand: node scripts/refresh-exchange-rate.js
     envVars:
       - key: APP_URL
-        sync: false  # Set this to your web service URL (e.g., https://adsynthe-x.onrender.com)
+        sync: false  
       - key: NODE_ENV
         value: production
 
-# Schedule Options:
-# "0 0 * * *"     - Daily at midnight UTC (00:00)
-# "0 2 * * *"     - Daily at 2 AM UTC (recommended for Europe)
-# "0 6 * * *"     - Daily at 6 AM UTC
-# "0 */12 * * *"  - Every 12 hours 
+  # Cron Job: MongoDB Sync Worker
+  # Syncs Google Ads cost + revenue data to MongoDB every 2 hours
+  - type: cron
+    name: mongodb-sync-worker
+    env: node
+    schedule: "0 */1 * * *"  # Every 2 hours
+    buildCommand: npm install
+    startCommand: node scripts/run-sync.js
+    envVars:
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false  
+      - key: CRON_SECRET
+        sync: false  
+      - key: MONGODB_URI
+        sync: false
+      - key: NODE_ENV
+        value: production
+
