@@ -126,14 +126,9 @@ export default function AdSensePage() {
 
       console.log('[AFS] Filtered AFS accounts:', adsenseAccounts.length);
 
-      // Sort accounts by sequence number in name (AFS-IST-01, AFS-IST-02, etc.)
       const sortedAccounts = adsenseAccounts.sort((a: any, b: any) => {
-        // Extract sequence number from name, handling different formats:
-        // "AFS - IST - 06" -> 6
-        // "AFS - 08 - GMT - 7" -> 8
-        // "TRT - AFS 01" -> 1
+        
         const getSequenceNumber = (name: string): number => {
-          // First try to find "IST - XX" or "AFS XX" pattern
           const istMatch = name.match(/IST\s*-\s*(\d+)/i);
           if (istMatch) return parseInt(istMatch[1]);
 
@@ -276,7 +271,8 @@ export default function AdSensePage() {
     if (searchStyleId) {
       filtered = filtered.filter((campaign: any) =>
         campaign.style_id?.toLowerCase().includes(searchStyleId.toLowerCase()) ||
-        campaign.article?.toLowerCase().includes(searchStyleId.toLowerCase())
+        campaign.campaign_name?.toLowerCase().includes(searchStyleId.toLowerCase()) ||
+        campaign.name?.toLowerCase().includes(searchStyleId.toLowerCase())
       );
     }
 
@@ -360,7 +356,7 @@ export default function AdSensePage() {
                   )}
                   {googleAdsAccounts.map(account => (
                     <Option key={account.id} value={account.id}>
-                      {account.name}
+                      {account.name} 
                     </Option>
                   ))}
                 </Select>
@@ -430,13 +426,6 @@ export default function AdSensePage() {
             const paginatedCampaigns = getPaginatedCampaigns();
             const totalPages = getTotalPages();
 
-            // Get account name for display
-            const getAccountName = () => {
-              if (selectedGoogleAdsAccount === 'all') return 'All Accounts';
-              const account = googleAdsAccounts.find(acc => acc.id === selectedGoogleAdsAccount);
-              return account ? account.name : 'Unknown';
-            };
-
             return (
             <Row gutter={[16, 16]}>
               <Col span={24}>
@@ -490,9 +479,9 @@ export default function AdSensePage() {
                   {/* Metric Filters */}
                   <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
                     <Col xs={24} md={8}>
-                      <Text strong>Search Style ID or Article</Text>
+                      <Text strong>Search Campaign or Style ID</Text>
                       <Input
-                        placeholder="Search by Style ID or Article"
+                        placeholder="Search by Campaign Name or Style ID"
                         value={searchStyleId}
                         onChange={(e) => setSearchStyleId(e.target.value)}
                         prefix={<SearchOutlined />}
@@ -596,7 +585,7 @@ export default function AdSensePage() {
                       <table className="afs-performance-table">
                           <thead>
                             <tr>
-                              <th style={{ textAlign: 'left', width: '20%', background: 'linear-gradient(135deg, #f1f5f9, #e2e8f0)', color: '#1e293b', padding: '12px', borderRadius: '8px', fontWeight: '600' }}>Article Name</th>
+                              <th style={{ textAlign: 'left', width: '20%', background: 'linear-gradient(135deg, #f1f5f9, #e2e8f0)', color: '#1e293b', padding: '12px', borderRadius: '8px', fontWeight: '600' }}>Campaign Name</th>
                               <th colSpan={3} style={{ textAlign: 'center', background: 'linear-gradient(135deg, #dbeafe, #bfdbfe)', color: '#1e40af', padding: '12px', borderRadius: '8px', fontWeight: '600' }}>Google Ads Metrics</th>
                               <th colSpan={3} style={{ textAlign: 'center', background: 'linear-gradient(135deg, #d1fae5, #a7f3d0)', color: '#065f46', padding: '12px', borderRadius: '8px', fontWeight: '600' }}>AdSense Metrics</th>
                               <th colSpan={2} style={{ textAlign: 'center', background: 'linear-gradient(135deg, #e9d5ff, #d8b4fe)', color: '#6b21a8', padding: '12px', borderRadius: '8px', fontWeight: '600' }}>Performance</th>
@@ -617,9 +606,9 @@ export default function AdSensePage() {
                             {paginatedCampaigns.map((campaign: any, idx: number) => (
                               <tr key={idx}>
                                 <td className="afs-article-cell">
-                                  <Tooltip title={formatArticleTitle(campaign.article || 'N/A')} placement="topLeft">
+                                  <Tooltip title={campaign.campaign_name || campaign.name || 'N/A'} placement="topLeft">
                                     <div>
-                                      {truncateArticleTitle(formatArticleTitle(campaign.article || 'N/A'))}
+                                      {campaign.campaign_name || campaign.name || 'N/A'}
                                     </div>
                                   </Tooltip>
                                 </td>

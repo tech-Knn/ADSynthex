@@ -93,9 +93,10 @@ export async function POST(request: NextRequest) {
 
     if (mongoData) {
       console.log(`[ADSENSE_REVENUE] ✅ Returning fresh MongoDB data (${mongoData.age} min old)`);
+      console.log(`[ADSENSE_REVENUE] MongoDB data includes ${mongoData.data.campaign_aggregated?.length || 0} campaigns`);
       return NextResponse.json({
         cost_revenue_mapping: mongoData.data.cost_revenue_mapping,
-        campaign_aggregated: [], // TODO: Add campaign aggregation
+        campaign_aggregated: mongoData.data.campaign_aggregated || [],
         summary: mongoData.data.summary,
         _source: 'mongodb',
         _timestamp: new Date().toISOString(),
@@ -267,7 +268,7 @@ export async function POST(request: NextRequest) {
     };
 
     // Build campaign to ads mapping (URLs are in ads, not campaigns)
-    const campaignToStyleMap = new Map<string, { styleIds: Set<string>; domains: Set<string> }>();
+    const campaignToStyleMap = new Map<string, { styleIds: Set<string>; domains: Set<string>; campaignName: string }>();
 
     // Extract style_id and domain from ads
     for (const ad of googleAdsData.ads || []) {
@@ -275,9 +276,14 @@ export async function POST(request: NextRequest) {
       const finalUrls = ad.final_urls || [];
 
       if (!campaignToStyleMap.has(campaignId)) {
+        // Get campaign name from campaigns data
+        const campaign = (googleAdsData.campaigns || []).find((c: any) => String(c.campaign_id) === campaignId);
+        const campaignName = campaign?.campaign_name || campaign?.name || `Campaign ${campaignId}`;
+
         campaignToStyleMap.set(campaignId, {
           styleIds: new Set<string>(),
-          domains: new Set<string>()
+          domains: new Set<string>(),
+          campaignName: campaignName
         });
       }
 
@@ -302,6 +308,21 @@ export async function POST(request: NextRequest) {
         debugCount++;
       }
     }
+
+    // Build style_id+domain to campaign name mapping
+    const styleDomainToCampaignName = new Map<string, string>();
+    for (const [_campaignId, data] of campaignToStyleMap.entries()) {
+      for (const styleId of data.styleIds) {
+        for (const domain of data.domains) {
+          const key = `${styleId}_${domain}`;
+          // If multiple campaigns use the same style_id+domain, keep the first one
+          if (!styleDomainToCampaignName.has(key)) {
+            styleDomainToCampaignName.set(key, data.campaignName);
+          }
+        }
+      }
+    }
+    console.log(`[ADSENSE_COST_REVENUE] Built style_id+domain to campaign name mapping for ${styleDomainToCampaignName.size} combinations`);
 
     // Build cost lookup by style_id + domain from campaigns
     const costByStyleDomain = new Map<string, { cost: number; clicks: number; impressions: number }>();
@@ -349,14 +370,10 @@ export async function POST(request: NextRequest) {
         return 'N/A';
       }
     };
-
-    // CRITICAL: Multiple Google Ads accounts may share the same style_id.
-    // AdSense revenue for a style_id represents TOTAL revenue from ALL accounts.
-    // We need to allocate revenue proportionally based on each account's cost share.
-
+    
     // Build a Set of style_ids that belong to the selected account
     const accountStyleIds = new Set<string>();
-    for (const [campaignId, data] of campaignToStyleMap.entries()) {
+    for (const [_campaignId, data] of campaignToStyleMap.entries()) {
       for (const styleId of data.styleIds) {
         accountStyleIds.add(styleId);
       }
@@ -450,9 +467,12 @@ export async function POST(request: NextRequest) {
       }
 
       if (!revenueByStyleDomain.has(key)) {
+        // Get the campaign name from our mapping
+        const campaignName = styleDomainToCampaignName.get(key) || `Style ${rev.style_id}`;
+
         revenueByStyleDomain.set(key, {
           campaign_id: rev.style_id,
-          campaign_name: `Style ${rev.style_id}`,
+          campaign_name: campaignName,
           style_id: rev.style_id,
           domain: normalizedDomain,
           article: 'N/A',
@@ -553,9 +573,13 @@ export async function POST(request: NextRequest) {
         const parts = key.split('_');
         const styleId = parts[0];
         const domain = parts.slice(1).join('_'); // Handle domains with underscores
+
+        // Get the campaign name from our mapping
+        const campaignName = styleDomainToCampaignName.get(key) || `Style ${styleId}`;
+
         revenueByStyleDomain.set(key, {
           campaign_id: styleId,
-          campaign_name: `Style ${styleId}`,
+          campaign_name: campaignName,
           style_id: styleId,
           domain: domain,
           article: 'N/A',

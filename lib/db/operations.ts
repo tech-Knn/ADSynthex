@@ -14,7 +14,7 @@ import {
   getCollectionNames,
   SHARED_COLLECTIONS
 } from './types';
-
+  
 // ==================== SAVE CLICKS (Google Ads Cost Data) ====================
 
 export async function saveClicks(
@@ -523,6 +523,31 @@ export async function aggregateCampaigns(
 
   console.log(`[DB] Aggregating campaigns for ${feedType} (${startDate} to ${endDate})...`);
 
+  // Build grouping based on feed type
+  let groupId: any = {
+    account_id: '$account_id',
+    campaign_id: '$campaign_id',
+    campaign_name: '$campaign_name',
+    date: '$date'
+  };
+
+  // Add feed-specific grouping fields
+  switch (feedType) {
+    case 'afs':
+      groupId.style_id = '$style_id';
+      groupId.domain = '$domain';
+      break;
+    case 'adscom':
+      groupId.article = '$article';
+      break;
+    case 'inuvo':
+      groupId.tkid = '$tkid';
+      break;
+    case 'compado':
+      // Compado uses campaign_id
+      break;
+  }
+
   const pipeline = [
     {
       $match: {
@@ -532,17 +557,19 @@ export async function aggregateCampaigns(
     },
     {
       $group: {
-        _id: {
-          account_id: '$account_id',
-          campaign_id: '$campaign_id',
-          campaign_name: '$campaign_name',
-          date: '$date'
-        },
+        _id: groupId,
         clicks: { $sum: 1 },
         cost_usd: { $sum: '$cost_usd' },
         revenue_usd: { $sum: '$revenue_usd' },
         revenue_eur: { $sum: '$revenue_eur' },
-        profit_usd: { $sum: '$profit_usd' }
+        profit_usd: { $sum: '$profit_usd' },
+        cost_clicks: { $sum: '$cost_clicks' },
+        impressions: { $sum: '$impressions' },
+        conversions: { $sum: '$conversions' },
+        cpa: { $avg: '$cpa' },
+        conversion_rate: { $avg: '$conversion_rate' },
+        rpc: { $avg: '$rpc' },
+        roas: { $avg: '$roas' }
       }
     },
     {
@@ -551,11 +578,22 @@ export async function aggregateCampaigns(
         campaign_id: '$_id.campaign_id',
         campaign_name: '$_id.campaign_name',
         date: '$_id.date',
+        style_id: '$_id.style_id',
+        domain: '$_id.domain',
+        article: '$_id.article',
+        tkid: '$_id.tkid',
         clicks: 1,
         cost_usd: 1,
         revenue_usd: 1,
         revenue_eur: 1,
         profit_usd: 1,
+        cost_clicks: 1,
+        impressions: 1,
+        conversions: 1,
+        cpa: 1,
+        conversion_rate: 1,
+        rpc: 1,
+        roas: 1,
         roi: {
           $cond: {
             if: { $eq: ['$cost_usd', 0] },
@@ -573,18 +611,37 @@ export async function aggregateCampaigns(
   const campaigns = await mappingCollection.aggregate(pipeline).toArray();
 
   if (campaigns.length > 0) {
-    const operations = campaigns.map((campaign: any) => ({
-      updateOne: {
-        filter: {
-          account_id: campaign.account_id,
-          campaign_id: campaign.campaign_id,
-          date: campaign.date,
-          feed_type: feedType
-        },
-        update: { $set: campaign },
-        upsert: true
+    const operations = campaigns.map((campaign: any) => {
+      // Build filter based on feed type
+      let filter: any = {
+        account_id: campaign.account_id,
+        campaign_id: campaign.campaign_id,
+        date: campaign.date,
+        feed_type: feedType
+      };
+
+      // Add feed-specific filter fields
+      switch (feedType) {
+        case 'afs':
+          filter.style_id = campaign.style_id;
+          filter.domain = campaign.domain;
+          break;
+        case 'adscom':
+          filter.article = campaign.article;
+          break;
+        case 'inuvo':
+          filter.tkid = campaign.tkid;
+          break;
       }
-    }));
+
+      return {
+        updateOne: {
+          filter,
+          update: { $set: campaign },
+          upsert: true
+        }
+      };
+    });
 
     const result = await campaignsCollection.bulkWrite(operations, { ordered: false });
     const savedCount = result.upsertedCount + result.modifiedCount;
