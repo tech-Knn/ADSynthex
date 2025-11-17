@@ -44,6 +44,7 @@ interface Account {
 
 // Compado-enabled accounts only (accounts with Compado tracking setup)
 const COMPADO_ENABLED_ACCOUNTS = [
+  // Regular Compado Accounts
   { id: '5416418019', name: 'Compado - UTC - 01' },
   { id: '5108802445', name: 'Compado - UTC - 02' },
   { id: '1671699399', name: 'Compado - UTC - 03' },
@@ -58,7 +59,14 @@ const COMPADO_ENABLED_ACCOUNTS = [
   { id: '1751028486', name: 'Compado - UTC - 12' },
   { id: '9248809715', name: 'Compado - UTC - 13' },
   { id: '9922466223', name: 'Compado - UTC - 14' },
-  { id: '9524489917', name: 'Compado - UTC - 15' }
+  { id: '9524489917', name: 'Compado - UTC - 15' },
+
+  // Compado BoldmoveGuide Accounts (new domain)
+  { id: '1235076035', name: 'Compado - BoldmoveGuide - UTC01' },
+  { id: '3471023162', name: 'Compado - BoldmoveGuide - UTC-02' },
+  { id: '8871395768', name: 'Compado - BoldmoveGuide - UTC03' },
+  { id: '3475645746', name: 'Compado - BoldmoveGuide - UTC04' },
+  { id: '8994182684', name: 'Compado - BoldmoveGuide - UTC5' }
 ];
 
 // Special "All Accounts" option for aggregated view
@@ -106,12 +114,19 @@ export default function CompadoPage() {
       // Set admin flag
       setIsAdmin(authType === 'admin');
 
-      // Sort accounts by sequence number in name (Compado-UTC-01, Compado-UTC-02, etc.)
+      // Sort accounts: Regular Compado first (by sequence), then BoldmoveGuide (by sequence)
       const sortedCompadoAccounts = [...COMPADO_ENABLED_ACCOUNTS].sort((a, b) => {
-        // Extract sequence number from name (e.g., "Compado - UTC - 01" -> 1)
+        const isBoldmoveA = a.name.includes('BoldmoveGuide');
+        const isBoldmoveB = b.name.includes('BoldmoveGuide');
+
+        // If one is BoldmoveGuide and the other isn't, put BoldmoveGuide at the bottom
+        if (isBoldmoveA && !isBoldmoveB) return 1;
+        if (!isBoldmoveA && isBoldmoveB) return -1;
+
+        // If both are same type, sort by sequence number
         const getSequenceNumber = (name: string): number => {
-          // Find "UTC - XX" pattern
-          const utcMatch = name.match(/UTC\s*-\s*(\d+)/i);
+          // Find "UTC - XX" or "UTC-XX" or "UTCXX" pattern
+          const utcMatch = name.match(/UTC\s*-?\s*(\d+)/i);
           if (utcMatch) return parseInt(utcMatch[1]);
 
           // Fallback: extract last number
