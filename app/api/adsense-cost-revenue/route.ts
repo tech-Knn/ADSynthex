@@ -311,17 +311,79 @@ export async function POST(request: NextRequest) {
 
     // Build style_id+domain to campaign name mapping
     const styleDomainToCampaignName = new Map<string, string>();
-    for (const [_campaignId, data] of campaignToStyleMap.entries()) {
-      for (const styleId of data.styleIds) {
-        for (const domain of data.domains) {
-          const key = `${styleId}_${domain}`;
-          // If multiple campaigns use the same style_id+domain, keep the first one
-          if (!styleDomainToCampaignName.has(key)) {
-            styleDomainToCampaignName.set(key, data.campaignName);
+
+    // For single account view, we need campaign names from ALL AFS accounts (not just selected account)
+    // because style_ids are shared across accounts
+    if (isSingleAccountView && allAccountsResult && allAccountsResult.status === 'fulfilled') {
+      console.log('[ADSENSE_COST_REVENUE] Building campaign name mapping from ALL AFS accounts for single account view');
+
+      const allAccountsData = allAccountsResult.value as any[];
+
+      // Process each account's data to extract campaign names
+      for (let i = 0; i < allAccountsData.length; i++) {
+        const accountResult = allAccountsData[i];
+        const accountData = accountResult.data;
+
+        if (!accountData || !accountData.campaigns || !accountData.ads) {
+          continue;
+        }
+
+        // Build campaign to style map for this account
+        const accountCampaignToStyleMap = new Map<string, { styleIds: Set<string>; domains: Set<string>; campaignName: string }>();
+
+        for (const ad of accountData.ads || []) {
+          const campaignId = String(ad.campaign_id);
+          const finalUrls = ad.final_urls || [];
+
+          if (!accountCampaignToStyleMap.has(campaignId)) {
+            const campaign = (accountData.campaigns || []).find((c: any) => String(c.campaign_id) === campaignId);
+            const campaignName = campaign?.campaign_name || campaign?.name || `Campaign ${campaignId}`;
+
+            accountCampaignToStyleMap.set(campaignId, {
+              styleIds: new Set<string>(),
+              domains: new Set<string>(),
+              campaignName: campaignName
+            });
+          }
+
+          const mapping = accountCampaignToStyleMap.get(campaignId)!;
+
+          for (const url of finalUrls) {
+            const styleId = extractStyleIdFromUrl(url);
+            let domain = extractDomainFromUrl(url);
+            if (domain) domain = normalizeDomain(domain);
+            if (styleId) mapping.styleIds.add(styleId);
+            if (domain) mapping.domains.add(domain);
+          }
+        }
+
+        // Add campaign names to global mapping
+        for (const [_campaignId, data] of accountCampaignToStyleMap.entries()) {
+          for (const styleId of data.styleIds) {
+            for (const domain of data.domains) {
+              const key = `${styleId}_${domain}`;
+              if (!styleDomainToCampaignName.has(key)) {
+                styleDomainToCampaignName.set(key, data.campaignName);
+              }
+            }
+          }
+        }
+      }
+    } else {
+      // For multi-account view or if all accounts data not available, use current account's data
+      for (const [_campaignId, data] of campaignToStyleMap.entries()) {
+        for (const styleId of data.styleIds) {
+          for (const domain of data.domains) {
+            const key = `${styleId}_${domain}`;
+            // If multiple campaigns use the same style_id+domain, keep the first one
+            if (!styleDomainToCampaignName.has(key)) {
+              styleDomainToCampaignName.set(key, data.campaignName);
+            }
           }
         }
       }
     }
+
     console.log(`[ADSENSE_COST_REVENUE] Built style_id+domain to campaign name mapping for ${styleDomainToCampaignName.size} combinations`);
 
     // Build cost lookup by style_id + domain from campaigns
