@@ -736,47 +736,40 @@ export async function fetchGoogleAdsData(
       if (feedType === 'adscom' || feedType === 'compado' || feedType === 'inuvo') {
         console.log(`[GOOGLE_ADS_API] Fetching click_view data (GCLIDs) for ${feedType} feed...`);
         try {
-          const start = new Date(startDate);
-          const end = new Date(endDate);
-          const daysDiff = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+          // OPTIMIZATION: Fetch entire date range in ONE query instead of day-by-day
+          // This reduces API calls from 7-30 queries to just 1 query (85-97% reduction!)
+          // Example: 7-day range = 1 call instead of 7 calls
+          //         30-day range = 1 call instead of 30 calls
+          const clickViewQuery = buildClickViewQuery(startDate, endDate);
+          console.log(`[GOOGLE_ADS_API] Fetching click_view data (GCLIDs) for ${account.name}: ${startDate} to ${endDate}`);
 
-          for (let dayOffset = 0; dayOffset <= daysDiff; dayOffset++) {
-            const currentDate = new Date(start);
-            currentDate.setDate(start.getDate() + dayOffset);
-            const dateString = currentDate.toISOString().split('T')[0];
+          const clickViewResponse = await makeApiCall(
+            clickViewQuery,
+            `Click Views (GCLIDs) for ${account.name}`
+          );
 
-            try {
-              const clickViewQuery = buildClickViewQuery(dateString, dateString);
-              const clickViewResponse = await makeApiCall(clickViewQuery, `Click Views (GCLIDs) for ${dateString}`);
-
-              if (clickViewResponse && clickViewResponse.length > 0) {
-                const clicks = processClickData(clickViewResponse, account);
-                if (clicks.length > 0) {
-                  data.clicks!.push(...clicks);
-                }
-              }
-
-              if (dayOffset < daysDiff) {
-                await new Promise(resolve => setTimeout(resolve, 200));
-              }
-            } catch (dayError: any) {
-              console.warn(`[GOOGLE_ADS_API] Failed to fetch clicks for ${dateString}`);
+          if (clickViewResponse && clickViewResponse.length > 0) {
+            const clicks = processClickData(clickViewResponse, account);
+            if (clicks.length > 0) {
+              data.clicks!.push(...clicks);
+              console.log(`[GOOGLE_ADS_API] ✓ Fetched ${clicks.length} clicks for ${account.name} (${feedType})`);
             }
+          } else {
+            console.log(`[GOOGLE_ADS_API] No clicks found for ${account.name}`);
           }
 
-          console.log(`[GOOGLE_ADS_API] Fetched ${data.clicks!.length} total clicks for ${feedType}`);
         } catch (error: any) {
-          console.warn(`[GOOGLE_ADS_API] Click view fetch failed:`, error?.message || 'Unknown error');
+          console.warn(`[GOOGLE_ADS_API] Click view fetch failed for ${account.name}:`, error?.message || 'Unknown error');
         }
       } else {
         console.log(`[GOOGLE_ADS_API] Skipping click_view data (not needed for ${feedType || 'this'} feed)`);
       }
 
-      // Add delay between accounts to prevent overwhelming the API
-      if (i < accountsToProcess.length - 1) {
-        console.log(`Waiting 1000ms before next account...`);
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
+      // OPTIMIZATION: Removed hardcoded 1000ms delay between accounts
+      // The rate limiter at line 596 already enforces 500ms minimum (2 QPS)
+      // and has quota monitoring, cooldown, and circuit breaker protection.
+      // This saves 20 seconds for 20 accounts (20 × 1s = 20s)
+      // Rate limiter will auto-throttle if quota limits are approached
       
     } catch (error) {
       console.error(`Error fetching data for account ${account.id}:`, error);

@@ -215,35 +215,47 @@ export async function POST(request: NextRequest) {
     console.log(`Ads.com API request for date range: ${startDate} to ${endDate}${customerId ? `, Customer ID: ${customerId}` : ''}${forceRefresh ? ', Force Refresh: true' : ''}`);
     console.log('DEBUG: Current time', new Date().toISOString());
 
-    // ==================== MONGODB FIRST: Check for fresh data ====================
+    // ==================== MONGODB FIRST: Check for fresh data (1-hour freshness) ====================
+    // Professional Dashboard Strategy: Always use MongoDB if data is < 60 minutes old
+    // Background sync worker runs every 1 hour to keep data fresh
     if (!forceRefresh) {
-      console.log('[ADSCOM] 🔍 Checking MongoDB for fresh data...');
+      console.log('[ADSCOM] 🔍 Checking MongoDB for fresh data (< 60 min)...');
 
       const mongoData = await getDashboardFromMongoDB(
         'adscom',
         customerId || 'all',
         startDate,
         endDate,
-        30 // 30 minutes freshness
+        60 // Accept data up to 60 minutes old (1-hour freshness)
       );
 
       if (mongoData) {
-        console.log(`[ADSCOM] ✅ Returning fresh MongoDB data (${mongoData.age} min old)`);
+        const nextSyncMinutes = 60 - (mongoData.age % 60);
+        const isFresh = mongoData.age <= 60;
+
+        console.log(`[ADSCOM] ✅ Returning MongoDB data (${mongoData.age} min old, next sync in ${nextSyncMinutes} min)`);
+
         return NextResponse.json({
           cost_revenue_mapping: mongoData.data.cost_revenue_mapping,
+          campaign_aggregated: mongoData.data.campaign_aggregated || [],
           summary: mongoData.data.summary,
           _source: 'mongodb',
           _timestamp: new Date().toISOString(),
-          _message: `Fresh data from MongoDB (${mongoData.age} minutes old)`,
+          _message: `Data from MongoDB (${mongoData.age} minutes old). Sync runs every hour.`,
           dataFreshness: {
             source: 'mongodb',
             ageMinutes: mongoData.age,
-            isFresh: true
+            isFresh,
+            nextSyncInMinutes: nextSyncMinutes,
+            message: `Data is ${mongoData.age} min old. Next sync in ~${nextSyncMinutes} min.`,
+            cronSchedule: 'Every hour'
           }
         });
       }
 
-      console.log('[ADSCOM] ⚠️  MongoDB data stale/missing, fetching from API...');
+      console.log('[ADSCOM] ⚠️  MongoDB data stale (>60 min) or missing, fetching from API...');
+    } else {
+      console.log('[ADSCOM] 🔄 Force refresh requested - skipping MongoDB cache...');
     }
 
     // Calculate update time information

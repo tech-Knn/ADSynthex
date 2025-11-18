@@ -96,10 +96,12 @@ export async function POST(request: NextRequest) {
       console.log(`[COMPADO_COST_REVENUE] 🔒 User ${userAccountId} accessing their own account data`);
     }
 
-    // ==================== MONGODB FIRST: Check for fresh data ====================
-    // Try MongoDB first (unless forceRefresh is true)
+    // ==================== MONGODB FIRST: Check for fresh data (1-hour freshness) ====================
+    // Professional Dashboard Strategy: Always use MongoDB if data is < 60 minutes old
+    // Background sync worker runs every 1 hour to keep data fresh
+    // Users see data that's max 1 hour old - perfect balance between freshness & API quota
     if (!forceRefresh) {
-      console.log('[COMPADO_COST_REVENUE] 🔍 Checking MongoDB for fresh data...');
+      console.log('[COMPADO_COST_REVENUE] 🔍 Checking MongoDB for fresh data (< 60 min)...');
 
       const accountToQuery = accountIds && Array.isArray(accountIds) && accountIds.length > 0
         ? accountIds
@@ -110,29 +112,68 @@ export async function POST(request: NextRequest) {
         accountToQuery,
         startDate,
         endDate,
-        30 // 30 minutes freshness
+        60 // Accept data up to 60 minutes old (1-hour freshness)
       );
 
       if (mongoData) {
-        console.log(`[COMPADO_COST_REVENUE] ✅ Returning fresh MongoDB data (${mongoData.age} min old)`);
+        const nextSyncMinutes = 60 - (mongoData.age % 60);
+        const isFresh = mongoData.age <= 60;
+
+        console.log(`[COMPADO_COST_REVENUE] ✅ Returning MongoDB data (${mongoData.age} min old, next sync in ${nextSyncMinutes} min)`);
+
         return NextResponse.json({
           cost_revenue_mapping: mongoData.data.cost_revenue_mapping,
-          campaign_aggregated: [], // TODO: Add campaign aggregation
+          campaign_aggregated: mongoData.data.campaign_aggregated || [],
           summary: mongoData.data.summary,
           _source: 'mongodb',
           _timestamp: new Date().toISOString(),
-          _message: `Fresh data from MongoDB (${mongoData.age} minutes old)`,
+          _message: `Data from MongoDB (${mongoData.age} minutes old). Sync runs every hour.`,
           _dataFreshness: {
             source: 'mongodb',
             ageMinutes: mongoData.age,
-            isFresh: true,
-            message: `Data is ${mongoData.age} minutes old`
+            isFresh,
+            nextSyncInMinutes: nextSyncMinutes,
+            message: `Data is ${mongoData.age} min old. Next sync in ~${nextSyncMinutes} min.`,
+            cronSchedule: 'Every hour'
           }
         });
       }
 
-      console.log('[COMPADO_COST_REVENUE] ⚠️  MongoDB data stale/missing, fetching from API...');
+      console.log('[COMPADO_COST_REVENUE] ⚠️  MongoDB data stale (>60 min) or missing, checking Redis aggregated cache...');
+    } else {
+      console.log('[COMPADO_COST_REVENUE] 🔄 Force refresh requested - skipping MongoDB and Redis cache...');
     }
+
+    // ==================== REDIS AGGREGATED CACHE: Check for cached aggregated results ====================
+    // This cache stores only the final aggregated data (campaign_aggregated + summary)
+    // Size: ~50-200KB instead of 10-20MB raw data - fits in Redis easily!
+    const aggregatedCacheKey = `compado-agg:${isMultiAccount ? accountIds?.join(',') : (customerId || 'all')}:${startDate}:${endDate}`;
+
+    if (!forceRefresh) {
+      const cachedAggregated = await redisCacheManager.get(aggregatedCacheKey, { dataType: 'compado' });
+
+      if (cachedAggregated.data) {
+        console.log(`[COMPADO_COST_REVENUE] ✅ Serving cached aggregated data (${Math.round(cachedAggregated.age / 1000)}s old)`);
+        return NextResponse.json({
+          campaign_aggregated: cachedAggregated.data.campaign_aggregated,
+          summary: cachedAggregated.data.summary,
+          google_ads_data: cachedAggregated.data.google_ads_data || {},
+          compado_data: cachedAggregated.data.compado_data || {},
+          cost_revenue_mapping: [],
+          _source: 'redis-aggregated-cache',
+          _timestamp: new Date().toISOString(),
+          _message: `Cached aggregated data (${Math.round(cachedAggregated.age / 1000)}s old)`,
+          _dataFreshness: {
+            source: 'redis',
+            ageMinutes: Math.round(cachedAggregated.age / 60000),
+            isFresh: cachedAggregated.age < 1800000, // < 30 min
+            message: `Aggregated cache (${Math.round(cachedAggregated.age / 60000)} min old)`
+          }
+        });
+      }
+    }
+
+    console.log('[COMPADO_COST_REVENUE] ⚠️  No aggregated cache, fetching from API...');
 
     // Determine if we're processing multiple accounts
     const isMultiAccount = accountIds && Array.isArray(accountIds) && accountIds.length > 0;
@@ -212,9 +253,10 @@ export async function POST(request: NextRequest) {
 
       if (isMultiAccount) {
         // OPTIMIZATION: Batch parallel fetching to avoid rate limit queue buildup
-        // CRITICAL: Keep batch size small (3) to prevent rate limit hits
-        // bulletproofAPI enforces 1 req/sec, so 3 parallel = safe queue management
-        const BATCH_SIZE = 3;
+        // Increased batch size from 3 to 5 for better performance (still conservative for rate limits)
+        // Rate limiter enforces 2 QPS with circuit breaker protection
+        // 5 accounts per batch = faster processing while staying under limits
+        const BATCH_SIZE = 5;
         console.log(`[COMPADO_COST_REVENUE] Fetching data for ${accountIds.length} accounts in batches of ${BATCH_SIZE} (rate-limit safe)...`);
 
         // RATE LIMIT PROTECTION: Always allow stale for multi-account to minimize API calls
@@ -602,6 +644,29 @@ export async function POST(request: NextRequest) {
           message: dataSource === 'cache' ? `Data from cache (${freshnessMinutes} min old)` : 'Fresh from API'
         }
       };
+
+      // ==================== CACHE AGGREGATED RESULTS ====================
+      // Cache only the small aggregated data (50-200KB) instead of raw clicks/conversions (10-20MB)
+      console.log('[COMPADO_COST_REVENUE] Caching aggregated results...');
+      const cachePayload = {
+        campaign_aggregated: campaignAggregated,
+        summary: summary,
+        google_ads_data: response.google_ads_data,
+        compado_data: response.compado_data
+      };
+
+      try {
+        await redisCacheManager.set(aggregatedCacheKey, cachePayload, {
+          dataType: 'compado',
+          ttl: 1800 // 30 minutes - shorter than 1-hour sync to ensure fresh data after sync
+        });
+
+        const cacheSize = JSON.stringify(cachePayload).length / 1024;
+        console.log(`[COMPADO_COST_REVENUE] ✓ Cached aggregated results: ${cacheSize.toFixed(2)}KB (TTL: 30 min)`);
+      } catch (cacheError: any) {
+        console.error(`[COMPADO_COST_REVENUE] ⚠️  Failed to cache aggregated results:`, cacheError.message);
+        // Continue even if caching fails
+      }
 
       // Log response size for monitoring
       console.log(`[COMPADO_COST_REVENUE] 📦 Response optimized: Sending ${campaignAggregated.length} campaigns (not ${googleAdsClicks.length} clicks + ${compadoData.length} conversions)`);

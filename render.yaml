@@ -37,11 +37,11 @@ services:
         value: production
 
   # Cron Job: MongoDB Sync Worker
-  # Syncs Google Ads cost + revenue data to MongoDB every 2 hours
+  # Syncs Google Ads cost + revenue data to MongoDB every 1 hour
   - type: cron
     name: mongodb-sync-worker
     env: node
-    schedule: "0 */1 * * *"  # Every 2 hours
+    schedule: "0 * * * *"  # Every hour (at minute 0)
     buildCommand: npm install
     startCommand: node scripts/run-sync.js
     envVars:
