@@ -36,7 +36,7 @@ function runSync() {
         'Authorization': `Bearer ${CRON_SECRET}`,
         'User-Agent': 'AdSyntheX-CronJob/1.0'
       },
-      timeout: 300000 // 5 minutes timeout
+      timeout: 600000 // 10 minutes timeout (initial sync takes longer)
     };
 
     const req = protocol.request(url, options, (res) => {
