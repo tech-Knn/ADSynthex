@@ -18,7 +18,7 @@ import { fetchAdSenseRevenueByStyleId } from '@/lib/adsense-api';
 import { fetchInuvoRealtimeData } from '@/lib/inuvo-api';
 import { fetchArticlePerformance } from '@/lib/adscom-api';
 
-export const maxDuration = 300; // 5 minutes timeout
+export const maxDuration = 600; // 10 minutes timeout (initial sync takes longer)
 export const dynamic = 'force-dynamic'; // Required for headers access
 
 export async function GET(request: Request) {
