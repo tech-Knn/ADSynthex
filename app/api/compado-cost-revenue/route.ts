@@ -225,9 +225,19 @@ export async function POST(request: NextRequest) {
         console.log(`[COMPADO_COST_REVENUE] 🎯 Using optimistic caching strategy (quota: ${quotaStatus.usagePercentage}%)`);
       }
 
+      // AUTO-CLEAR CACHE for BoldmoveGuide accounts (recently added)
+      // These accounts might have stale empty cache from before they were configured
+      const boldmoveAccountIds = ['1235076035', '3471023162', '8871395768', '3475645746', '8994182684'];
+      const accountsToClear = isMultiAccount ? accountIds : (customerId ? [customerId] : []);
+      const hasBoldmoveAccount = accountsToClear.some(id => boldmoveAccountIds.includes(id.toString()));
+
+      if (hasBoldmoveAccount && !actualForceRefresh) {
+        console.log(`[COMPADO_COST_REVENUE] 🔧 BoldmoveGuide account detected - auto-clearing cache to fetch fresh data...`);
+        actualForceRefresh = true; // Force refresh for BoldmoveGuide accounts
+      }
+
       // Clear cache if forceRefresh is requested AND we're not in cooldown
       if (actualForceRefresh) {
-        const accountsToClear = isMultiAccount ? accountIds : (customerId ? [customerId] : []);
         for (const accId of accountsToClear) {
           console.log(`[COMPADO_COST_REVENUE] ⚡ Clearing cache for account ${accId} to ensure fresh data...`);
           try {
@@ -240,6 +250,10 @@ export async function POST(request: NextRequest) {
             // Also clear the old format without feedType for backward compatibility
             const oldCacheKey = `cache:google-ads:${accId}:${startDate}:${endDate}`;
             await redisClient.del(oldCacheKey);
+
+            // Clear aggregated cache too
+            const aggCacheKey = `compado-agg:${accId}:${startDate}:${endDate}`;
+            await redisClient.del(aggCacheKey);
           } catch (cacheError) {
             console.warn(`[COMPADO_COST_REVENUE] ⚠️  Failed to clear cache:`, cacheError);
           }
@@ -399,6 +413,14 @@ export async function POST(request: NextRequest) {
       if (!googleAdsData || (!googleAdsData.campaigns && !googleAdsData.clicks)) {
         console.error('[COMPADO_COST_REVENUE] ❌ No Google Ads data received from API!');
         console.error('[COMPADO_COST_REVENUE] googleAdsData:', googleAdsData);
+        console.error('[COMPADO_COST_REVENUE] Request details:', {
+          startDate,
+          endDate,
+          customerId,
+          accountIds,
+          isMultiAccount,
+          feedType: 'compado'
+        });
         throw new Error('Failed to fetch Google Ads data - API returned empty response');
       }
 
@@ -411,6 +433,29 @@ export async function POST(request: NextRequest) {
         clicks: totalClicks,
         fetchTime: `${fetchTime}ms`
       });
+
+      // DIAGNOSTIC: Check for BoldmoveGuide accounts specifically
+      const boldmoveAccountIds = ['1235076035', '3471023162', '8871395768', '3475645746', '8994182684'];
+      const requestedBoldmoveAccounts = isMultiAccount
+        ? accountIds?.filter(id => boldmoveAccountIds.includes(id.toString()))
+        : (boldmoveAccountIds.includes(customerId?.toString() || '') ? [customerId] : []);
+
+      if (requestedBoldmoveAccounts && requestedBoldmoveAccounts.length > 0) {
+        console.log(`[COMPADO_COST_REVENUE] 🔍 BoldmoveGuide account detected: ${requestedBoldmoveAccounts.join(', ')}`);
+        console.log(`[COMPADO_COST_REVENUE] Checking if campaigns returned for BoldmoveGuide accounts...`);
+
+        if (totalCampaigns === 0) {
+          console.warn(`[COMPADO_COST_REVENUE] ⚠️⚠️⚠️ ZERO campaigns for BoldmoveGuide account!`);
+          console.warn(`[COMPADO_COST_REVENUE] This means Google Ads API didn't return data for this account`);
+          console.warn(`[COMPADO_COST_REVENUE] Possible causes:`);
+          console.warn(`[COMPADO_COST_REVENUE]   1. Account not yet synced (try force refresh)`);
+          console.warn(`[COMPADO_COST_REVENUE]   2. Cached empty data from before account was added`);
+          console.warn(`[COMPADO_COST_REVENUE]   3. Date range has no data`);
+          console.warn(`[COMPADO_COST_REVENUE]   4. Account not in Google Ads API response`);
+        } else {
+          console.log(`[COMPADO_COST_REVENUE] ✓ ${totalCampaigns} campaigns found for BoldmoveGuide account`);
+        }
+      }
 
       // Warn about large datasets
       if (totalClicks > 100000) {
