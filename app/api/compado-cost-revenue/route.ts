@@ -144,6 +144,9 @@ export async function POST(request: NextRequest) {
       console.log('[COMPADO_COST_REVENUE] 🔄 Force refresh requested - skipping MongoDB and Redis cache...');
     }
 
+    // Determine if we're processing multiple accounts (needed for cache key generation)
+    const isMultiAccount = accountIds && Array.isArray(accountIds) && accountIds.length > 0;
+
     // ==================== REDIS AGGREGATED CACHE: Check for cached aggregated results ====================
     // This cache stores only the final aggregated data (campaign_aggregated + summary)
     // Size: ~50-200KB instead of 10-20MB raw data - fits in Redis easily!
@@ -175,8 +178,7 @@ export async function POST(request: NextRequest) {
 
     console.log('[COMPADO_COST_REVENUE] ⚠️  No aggregated cache, fetching from API...');
 
-    // Determine if we're processing multiple accounts
-    const isMultiAccount = accountIds && Array.isArray(accountIds) && accountIds.length > 0;
+    // Build list of accounts to process
     const accountsToProcess = isMultiAccount ? accountIds : (customerId ? [customerId] : []);
 
     // Calculate date range size
