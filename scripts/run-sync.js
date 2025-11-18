@@ -20,8 +20,10 @@ if (!API_URL) {
 
 function runSync() {
   return new Promise((resolve, reject) => {
-    const url = `${API_URL}/api/cron/sync-all-feeds`;
-    const isHttps = API_URL.startsWith('https');
+    // Remove trailing slash from API_URL to prevent double slashes
+    const baseUrl = API_URL.endsWith('/') ? API_URL.slice(0, -1) : API_URL;
+    const url = `${baseUrl}/api/cron/sync-all-feeds`;
+    const isHttps = baseUrl.startsWith('https');
     const protocol = isHttps ? https : http;
 
     console.log(`[SYNC] ========== Starting MongoDB sync ==========`);
