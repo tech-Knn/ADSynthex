@@ -76,11 +76,20 @@ export async function GET(request: Request) {
 
           console.log(`[CRON_SYNC] ${feedType}: Fetching ${account.id}...`);
 
+          // IMPORTANT: Allow stale cache to handle quota exhaustion gracefully
+          // During quota exhaustion, use cached data instead of failing
           const data = await bulletproofAPI.getData(yesterday, today, account.id, {
             priority: 5,
-            allowStale: false,
+            allowStale: true, // Use cached data if quota exhausted
             feedType: feedType === 'afs' ? 'adsense' : feedType
           });
+
+          // Skip accounts with no data (quota exhausted and no cache)
+          if (!data || !data.data) {
+            console.log(`[CRON_SYNC] ${feedType}: ⚠️ Skipping ${account.id} - no data available`);
+            await updateSyncStatus(feedType, account.id, 'skipped', 'No data available');
+            continue;
+          }
 
           // CRITICAL FIX: Save cost data from ads array, not clicks array!
           // Google Ads API structure: { campaigns: [...], ads: [...cost data...], clicks: [...GCLIDs...] }

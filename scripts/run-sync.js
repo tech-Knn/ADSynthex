@@ -94,7 +94,7 @@ function runSync() {
     });
 
     req.on('timeout', () => {
-      console.error(`[SYNC] ⏱️  Request timed out after 5 minutes`);
+      console.error(`[SYNC] ⏱️  Request timed out after 10 minutes`);
       req.destroy();
       console.log(`[SYNC] ========== Sync timed out ==========`);
       reject(new Error('Request timeout'));
