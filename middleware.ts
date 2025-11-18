@@ -16,7 +16,9 @@ const publicPaths = [
   '/api/cleanup-db',
   '/api/check-db-data',
   '/api/dashboard-v2',
-  '/api/cron',
+  '/api/cron/',  // Changed: Added trailing slash to match all cron routes
+  '/api/sync-status',
+  '/api/manual-sync',
   '/api/currency/refresh',
   '/logout'
 ];
