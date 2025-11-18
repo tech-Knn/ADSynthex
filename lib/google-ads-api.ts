@@ -675,6 +675,8 @@ export async function fetchGoogleAdsData(
         // Continue with active campaigns data
       }
 
+      // OPTIMIZATION: Only fetch active ads (removed duplicate "All Ads" query)
+      // This saves 1 API call per account = 86 calls per sync = ~2,000 calls/day
       try {
         const activeAdQuery = buildActiveAdGroupAdQuery(startDate, endDate);
         const activeAdResponse = await makeApiCall(activeAdQuery, 'Active Ads');
@@ -684,36 +686,6 @@ export async function fetchGoogleAdsData(
         }
       } catch (error) {
         console.warn(`[GOOGLE_ADS_API] Active Ads query failed:`, error instanceof Error ? error.message : 'Unknown error');
-      }
-
-      // Fetch all ad group ads (with error handling to not block click queries)
-      try {
-        const allAdQuery = buildAllAdGroupAdQuery(startDate, endDate);
-        const allAdResponse = await makeApiCall(allAdQuery, 'All Ads');
-        if (allAdResponse && allAdResponse.length > 0) {
-          const allAds = processAdData(allAdResponse, account);
-
-          // Merge ad lists, prioritizing active ads
-          const adMap = new Map();
-
-          // First add all ads
-          for (const ad of allAds) {
-            adMap.set(ad.ad_id, ad);
-          }
-
-          // Then override with active ads
-          for (const ad of data.ads) {
-            if (ad.customer_id === account.id) {
-              adMap.set(ad.ad_id, ad);
-            }
-          }
-
-          // Update ads list
-          data.ads = data.ads.filter(a => a.customer_id !== account.id);
-          data.ads.push(...Array.from(adMap.values()));
-        }
-      } catch (error) {
-        console.warn(`[GOOGLE_ADS_API] All Ads query failed (continuing):`, error instanceof Error ? error.message : 'Unknown error');
       }
 
       // Fetch Performance Max asset groups (with error handling to not block click queries)
