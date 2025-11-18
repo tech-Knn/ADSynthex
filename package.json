@@ -38,7 +38,8 @@
     "react-chartjs-2": "^5.2.0",
     "react-dom": "18.2.0",
     "react-world-flags": "^1.6.0",
-    "tailwindcss": "^4.1.10"
+    "tailwindcss": "^4.1.10",
+    "typescript": "5.3.3"
   },
   "devDependencies": {
     "@types/node": "20.11.5",
@@ -47,8 +48,7 @@
     "@types/react-world-flags": "^1.6.0",
     "dotenv": "^17.2.3",
     "rimraf": "^5.0.10",
-    "ts-node": "^10.9.2",
-    "typescript": "5.3.3"
+    "ts-node": "^10.9.2"
   },
   "engines": {
     "node": ">=18.0.0"
