@@ -178,6 +178,9 @@ export async function POST(request: NextRequest) {
 
     console.log('[COMPADO_COST_REVENUE] ⚠️  No aggregated cache, fetching from API...');
 
+    // BoldmoveGuide account IDs (recently added accounts that need cache clearing)
+    const boldmoveAccountIds = ['1235076035', '3471023162', '8871395768', '3475645746', '8994182684'];
+
     // Build list of accounts to process
     const accountsToProcess = isMultiAccount ? accountIds : (customerId ? [customerId] : []);
 
@@ -227,7 +230,6 @@ export async function POST(request: NextRequest) {
 
       // AUTO-CLEAR CACHE for BoldmoveGuide accounts (recently added)
       // These accounts might have stale empty cache from before they were configured
-      const boldmoveAccountIds = ['1235076035', '3471023162', '8871395768', '3475645746', '8994182684'];
       const accountsToClear = isMultiAccount ? accountIds : (customerId ? [customerId] : []);
       const hasBoldmoveAccount = accountsToClear.some(id => boldmoveAccountIds.includes(id.toString()));
 
@@ -435,7 +437,6 @@ export async function POST(request: NextRequest) {
       });
 
       // DIAGNOSTIC: Check for BoldmoveGuide accounts specifically
-      const boldmoveAccountIds = ['1235076035', '3471023162', '8871395768', '3475645746', '8994182684'];
       const requestedBoldmoveAccounts = isMultiAccount
         ? accountIds?.filter(id => boldmoveAccountIds.includes(id.toString()))
         : (boldmoveAccountIds.includes(customerId?.toString() || '') ? [customerId] : []);
