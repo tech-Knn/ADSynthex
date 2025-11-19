@@ -42,30 +42,31 @@ export class RedisCacheManager {
 
   // TTL configuration optimized for RATE LIMIT PROTECTION + reasonable freshness (in seconds)
   // CRITICAL: Longer TTLs = fewer API calls = better rate limit protection
+  // OPTIMIZED: Significantly longer TTLs to stay within 10k daily quota
   private ttlConfig = {
     'google-ads': {
-      current: 3600,     // 1 hour for today (increased from 15min to reduce API calls)
-      recent: 7200,      // 2 hours for last 7 days (increased from 1 hour)
-      historical: 14400  // 4 hours for older data (increased from 2 hours)
+      current: 7200,     // 2 hours for today (was 1h) - balance freshness vs quota
+      recent: 21600,     // 6 hours for last 7 days (was 2h) - data rarely changes
+      historical: 86400  // 24 hours for older data (was 4h) - historical data is stable
     },
     'adscom': {
-      current: 3600,     // 1 hour (increased from 15min)
-      recent: 7200,      // 2 hours (increased from 1 hour)
-      historical: 14400  // 4 hours (increased from 2 hours)
+      current: 7200,     // 2 hours (was 1h) - Ads.com updates every 15min but we cache longer
+      recent: 21600,     // 6 hours (was 2h)
+      historical: 86400  // 24 hours (was 4h)
     },
     'compado': {
-      current: 3600,     // 1 hour (increased from 15min for rate limit protection)
-      recent: 7200,      // 2 hours (increased from 1 hour)
-      historical: 14400  // 4 hours (increased from 2 hours)
+      current: 7200,     // 2 hours (was 1h) - Conversions are relatively stable
+      recent: 21600,     // 6 hours (was 2h)
+      historical: 86400  // 24 hours (was 4h)
     },
     'unified': {
-      current: 600,      // 10 min for cost+revenue combined view (most accessed)
-      recent: 1800,      // 30 minutes
-      historical: 3600   // 1 hour
+      current: 1800,     // 30 min for cost+revenue combined view (was 10min)
+      recent: 7200,      // 2 hours (was 30min)
+      historical: 21600  // 6 hours (was 1h)
     }
   };
 
-  private maxMemoryCacheSize = 20; // Max entries in memory cache (reduced for production memory limits)
+  private maxMemoryCacheSize = 100; // Max entries in memory cache (increased from 20 for better hit rate)
 
   /**
    * Get data from cache (memory → Redis → returns null)
@@ -217,6 +218,80 @@ export class RedisCacheManager {
   }
 
   /**
+   * Stale-While-Revalidate pattern: Serve cached data while refreshing in background
+   * This ensures fast responses even when cache is stale
+   */
+  async getWithRevalidate(
+    key: string,
+    fetchFunction: () => Promise<any>,
+    options: CacheOptions = {}
+  ): Promise<{
+    data: any;
+    source: 'cache' | 'api';
+    age: number;
+    isStale: boolean;
+    revalidating: boolean;
+  }> {
+    const { dataType = 'google-ads' } = options;
+    const cached = await this.get(key, options);
+
+    // Cache hit - check if revalidation needed
+    if (cached.data) {
+      const ttl = this.determineTTL(key, dataType);
+      const isStale = cached.age > ttl * 1000;
+
+      // If stale, trigger background refresh
+      if (isStale) {
+        console.log(`[REDIS_CACHE] Serving stale cache while revalidating: ${key} (age: ${Math.round(cached.age / 1000)}s)`);
+
+        // Non-blocking background refresh
+        setImmediate(async () => {
+          try {
+            console.log(`[REDIS_CACHE] Background revalidation started for: ${key}`);
+            const freshData = await fetchFunction();
+            await this.set(key, freshData, options);
+            console.log(`[REDIS_CACHE] Background revalidation completed for: ${key}`);
+          } catch (error) {
+            console.error(`[REDIS_CACHE] Background revalidation failed for: ${key}`, error);
+            // Stale data is still served to user, so this is non-fatal
+          }
+        });
+
+        return {
+          data: cached.data,
+          source: 'cache',
+          age: cached.age,
+          isStale: true,
+          revalidating: true
+        };
+      }
+
+      // Fresh cache - return immediately
+      return {
+        data: cached.data,
+        source: 'cache',
+        age: cached.age,
+        isStale: false,
+        revalidating: false
+      };
+    }
+
+    // Cache miss - fetch fresh data
+    console.log(`[REDIS_CACHE] Cache miss for ${key}, fetching fresh data`);
+    this.recordApiCall();
+    const freshData = await fetchFunction();
+    await this.set(key, freshData, options);
+
+    return {
+      data: freshData,
+      source: 'api',
+      age: 0,
+      isStale: false,
+      revalidating: false
+    };
+  }
+
+  /**
    * Invalidate cache entries by pattern
    */
   async invalidate(pattern?: string): Promise<number> {
@@ -349,12 +424,13 @@ export class RedisCacheManager {
       }
     }
 
-    // AGGRESSIVE: If still too large, remove oldest 50% (was 20%)
+    // BALANCED: If still too large, remove oldest 30% (was 50%)
+    // Less aggressive cleanup = better cache hit rates
     if (this.memoryCache.size > this.maxMemoryCacheSize) {
       const entries = Array.from(this.memoryCache.entries());
       entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
 
-      const toRemove = Math.floor(entries.length * 0.5); // Increased from 0.2 to 0.5
+      const toRemove = Math.floor(entries.length * 0.3); // Decreased from 0.5 to 0.3
       for (let i = 0; i < toRemove; i++) {
         this.memoryCache.delete(entries[i][0]);
         deletedCount++;

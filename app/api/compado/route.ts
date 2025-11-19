@@ -112,15 +112,13 @@ export async function POST(request: NextRequest) {
  * GET /api/compado
  * Fetch Compado conversions using query parameters
  */
-export const dynamic = 'force-dynamic';
-
 export async function GET(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams;
-    const startDate = searchParams.get('startDate');
-    const endDate = searchParams.get('endDate');
-    const action = searchParams.get('action') || 'conversions';
-    const campaignId = searchParams.get('campaignId');
+    const url = new URL(request.url);
+    const startDate = url.searchParams.get('startDate');
+    const endDate = url.searchParams.get('endDate');
+    const action = url.searchParams.get('action') || 'conversions';
+    const campaignId = url.searchParams.get('campaignId');
 
     if (!startDate || !endDate) {
       return NextResponse.json(
@@ -169,7 +167,7 @@ export async function GET(request: NextRequest) {
             'Content-Type': 'application/json'
           }
         });
-
+``
       case 'campaigns':
         const campaigns = await conversionService.getCampaignPerformance(startDate, endDate);
         return NextResponse.json(campaigns, {

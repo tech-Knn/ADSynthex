@@ -7,7 +7,6 @@ import {
 } from '@/lib/adsense-api';
 import { cookies } from 'next/headers';
 import { bulletproofAPI } from '@/lib/bulletproof-google-ads-api';
-import { getDashboardFromMongoDB } from '@/lib/db/dashboard-helper';
 
 interface RevenueByStyleId {
   style_id: string;
@@ -77,96 +76,37 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ==================== SMART FALLBACK: MongoDB → Live API ====================
-    // TEMPORARY: Bypass MongoDB sync until cron issues are resolved
-    // Users need reliable data NOW, sync can be fixed in background
+    // ==================== FETCH FROM APIS ====================
+    console.log('[ADSENSE_REVENUE] ⚡ Fetching data directly from APIs...');
 
-    // Check if forceLive flag is set (bypass MongoDB entirely)
-    const shouldUseMongoDB = !forceLive && process.env.USE_MONGODB_CACHE !== 'false';
+    // Check if querying "today's" data for smarter caching
+    const today = new Date().toISOString().split('T')[0];
+    const isToday = startDate === today || endDate === today;
+    const isOnlyToday = startDate === today && endDate === today;
 
-    if (shouldUseMongoDB) {
-      console.log('[ADSENSE_REVENUE] 🔍 Checking MongoDB for fresh data (< 60 min)...');
+    // For TODAY's data: Force shorter cache (30min) and allow stale = false for freshness
+    // For historical data: Use longer cache and allow stale = true
+    const forceRefreshForToday = isToday && !forceLive; // Moderate refresh for today
+    const allowStaleForHistorical = !isToday; // Always allow stale for historical
 
-      const accountToQuery = accountIds && accountIds.length > 0
-        ? accountIds
-        : (customerId || 'all');
-
-      const mongoData = await getDashboardFromMongoDB(
-        'afs',
-        accountToQuery,
-        startDate,
-        endDate,
-        60 // Accept data up to 60 minutes old (1-hour freshness)
-      );
-
-      if (mongoData) {
-        const nextSyncMinutes = 60 - (mongoData.age % 60);
-        const isFresh = mongoData.age <= 60;
-
-        console.log(`[ADSENSE_REVENUE] ✅ Returning MongoDB data (${mongoData.age} min old, next sync in ${nextSyncMinutes} min)`);
-        console.log(`[ADSENSE_REVENUE] MongoDB data includes ${mongoData.data.campaign_aggregated?.length || 0} campaigns`);
-
-        return NextResponse.json({
-          cost_revenue_mapping: mongoData.data.cost_revenue_mapping,
-          campaign_aggregated: mongoData.data.campaign_aggregated || [],
-          summary: mongoData.data.summary,
-          _source: 'mongodb',
-          _timestamp: new Date().toISOString(),
-          _message: `Data from MongoDB (${mongoData.age} minutes old). Sync runs every hour.`,
-          _dataFreshness: {
-            source: 'mongodb',
-            ageMinutes: mongoData.age,
-            isFresh,
-            nextSyncInMinutes: nextSyncMinutes,
-            message: `Data is ${mongoData.age} min old. Next sync in ~${nextSyncMinutes} min.`,
-            cronSchedule: 'Every hour'
-          }
-        });
-      }
-
-      console.log('[ADSENSE_REVENUE] ⚠️  MongoDB data stale (>60 min) or missing, fetching from API...');
-    } else {
-      console.log('[ADSENSE_REVENUE] 🔴 MongoDB cache bypassed (forceLive=true or USE_MONGODB_CACHE=false)');
-      console.log('[ADSENSE_REVENUE] ⚡ Fetching LIVE data directly from APIs for reliable results...');
-    }
+    console.log(`[ADSENSE_REVENUE] Date analysis: isToday=${isToday}, isOnlyToday=${isOnlyToday}, forceRefresh=${forceRefreshForToday}`);
 
     const fetchStartTime = Date.now();
 
     // Determine if we're viewing a single account or multiple
     const isMultiAccount = accountIds && accountIds.length > 0;
-    const isSingleAccountView = !isMultiAccount;
-
-    // CRITICAL: When viewing a single account, we need to fetch ALL AFS accounts' data
-    // to calculate proportional revenue allocation (since style_ids are shared)
-    let allAfsAccountIds: string[] = [];
-
-    if (isSingleAccountView) {
-      // Import account access control to get all AFS account IDs
-      const { ACCOUNT_FEED_ACCESS } = await import('@/lib/account-access-control');
-
-      // Get all account IDs that have AFS access
-      allAfsAccountIds = Object.keys(ACCOUNT_FEED_ACCESS)
-        .filter(key => {
-          const feeds = ACCOUNT_FEED_ACCESS[key];
-          return feeds && feeds.includes('adsense');
-        })
-        .map(key => key.replace('CID_', ''));
-
-      console.log(`[ADSENSE_COST_REVENUE] Single account view - fetching ALL ${allAfsAccountIds.length} AFS accounts for proportional allocation`);
-    }
 
     // Fetch Google Ads data
     let googleAdsDataPromises;
-    let allAccountsDataPromises;
 
     if (isMultiAccount) {
       console.log('[ADSENSE_COST_REVENUE] Fetching multiple accounts:', accountIds);
       googleAdsDataPromises = Promise.all(
         accountIds.map((accId: string) =>
           bulletproofAPI.getData(startDate, endDate, accId, {
-            priority: 8,
-            allowStale: true,
-            maxWait: 10000,
+            priority: isToday ? 9 : 8, // Higher priority for today's data
+            allowStale: allowStaleForHistorical, // Fresh for today, stale OK for historical
+            maxWait: 15000, // Increased from 10s to 15s for better reliability
             feedType: 'adsense'
           })
         )
@@ -174,23 +114,11 @@ export async function POST(request: NextRequest) {
     } else if (customerId) {
       console.log('[ADSENSE_COST_REVENUE] Fetching single account:', customerId);
       googleAdsDataPromises = bulletproofAPI.getData(startDate, endDate, customerId, {
-        priority: 8,
-        allowStale: true,
-        maxWait: 10000,
+        priority: isToday ? 9 : 8, // Higher priority for today's data
+        allowStale: allowStaleForHistorical, // Fresh for today, stale OK for historical
+        maxWait: 15000, // Increased from 10s to 15s for better reliability
         feedType: 'adsense'
       });
-
-      // Also fetch ALL AFS accounts for proportional allocation
-      allAccountsDataPromises = Promise.all(
-        allAfsAccountIds.map((accId: string) =>
-          bulletproofAPI.getData(startDate, endDate, accId, {
-            priority: 6,
-            allowStale: true,
-            maxWait: 10000,
-            feedType: 'adsense'
-          })
-        )
-      );
     } else {
       throw new Error('No Google Ads account specified');
     }
@@ -200,15 +128,9 @@ export async function POST(request: NextRequest) {
       fetchAdSenseRevenueByStyleId(adsenseAccountId, startDate, endDate)
     ];
 
-    // Add all accounts data promise for single account view
-    if (isSingleAccountView && allAccountsDataPromises) {
-      promisesToSettle.push(allAccountsDataPromises);
-    }
-
     const results = await Promise.allSettled(promisesToSettle);
     const googleAdsResult = results[0];
     const adsenseRevenue = results[1];
-    const allAccountsResult = isSingleAccountView && results.length > 2 ? results[2] : null;
 
     const fetchTime = Date.now() - fetchStartTime;
 
@@ -285,6 +207,24 @@ export async function POST(request: NextRequest) {
       return domain.replace(/^(search\.|www\.|m\.)/, '');
     };
 
+    // Helper function to clean campaign names (remove style ID patterns)
+    const cleanCampaignName = (name: string): string => {
+      if (!name) return name;
+
+      // Remove style ID patterns like:
+      // - "Ch64Xstyle1" → ""
+      // - "-style123" → ""
+      // - " style1" → ""
+      // - "16/09-UV Curing Equipment-Ch64Xstyle1" → "16/09-UV Curing Equipment"
+      let cleaned = name
+        .replace(/[-\s]?Ch\d+Xstyle\d+/gi, '')  // Remove -Ch64Xstyle1
+        .replace(/[-\s]?style\d+/gi, '')         // Remove -style1, style123
+        .replace(/[-\s]+$/,'')                   // Remove trailing dashes/spaces
+        .trim();
+
+      return cleaned || name; // Fallback to original if cleaned is empty
+    };
+
     // Build campaign to ads mapping (URLs are in ads, not campaigns)
     const campaignToStyleMap = new Map<string, { styleIds: Set<string>; domains: Set<string>; campaignName: string }>();
 
@@ -296,7 +236,10 @@ export async function POST(request: NextRequest) {
       if (!campaignToStyleMap.has(campaignId)) {
         // Get campaign name from campaigns data
         const campaign = (googleAdsData.campaigns || []).find((c: any) => String(c.campaign_id) === campaignId);
-        const campaignName = campaign?.campaign_name || campaign?.name || `Campaign ${campaignId}`;
+        let campaignName = campaign?.campaign_name || campaign?.name || `Campaign ${campaignId}`;
+
+        // CLEAN campaign name: Remove style_id patterns like "Ch64Xstyle1", "style123", etc.
+        campaignName = cleanCampaignName(campaignName);
 
         campaignToStyleMap.set(campaignId, {
           styleIds: new Set<string>(),
@@ -327,76 +270,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Build style_id+domain to campaign name mapping
+    // Build style_id+domain to campaign name mapping from current account(s) only
     const styleDomainToCampaignName = new Map<string, string>();
 
-    // For single account view, we need campaign names from ALL AFS accounts (not just selected account)
-    // because style_ids are shared across accounts
-    if (isSingleAccountView && allAccountsResult && allAccountsResult.status === 'fulfilled') {
-      console.log('[ADSENSE_COST_REVENUE] Building campaign name mapping from ALL AFS accounts for single account view');
-
-      const allAccountsData = allAccountsResult.value as any[];
-
-      // Process each account's data to extract campaign names
-      for (let i = 0; i < allAccountsData.length; i++) {
-        const accountResult = allAccountsData[i];
-        const accountData = accountResult.data;
-
-        if (!accountData || !accountData.campaigns || !accountData.ads) {
-          continue;
-        }
-
-        // Build campaign to style map for this account
-        const accountCampaignToStyleMap = new Map<string, { styleIds: Set<string>; domains: Set<string>; campaignName: string }>();
-
-        for (const ad of accountData.ads || []) {
-          const campaignId = String(ad.campaign_id);
-          const finalUrls = ad.final_urls || [];
-
-          if (!accountCampaignToStyleMap.has(campaignId)) {
-            const campaign = (accountData.campaigns || []).find((c: any) => String(c.campaign_id) === campaignId);
-            const campaignName = campaign?.campaign_name || campaign?.name || `Campaign ${campaignId}`;
-
-            accountCampaignToStyleMap.set(campaignId, {
-              styleIds: new Set<string>(),
-              domains: new Set<string>(),
-              campaignName: campaignName
-            });
-          }
-
-          const mapping = accountCampaignToStyleMap.get(campaignId)!;
-
-          for (const url of finalUrls) {
-            const styleId = extractStyleIdFromUrl(url);
-            let domain = extractDomainFromUrl(url);
-            if (domain) domain = normalizeDomain(domain);
-            if (styleId) mapping.styleIds.add(styleId);
-            if (domain) mapping.domains.add(domain);
-          }
-        }
-
-        // Add campaign names to global mapping
-        for (const [_campaignId, data] of accountCampaignToStyleMap.entries()) {
-          for (const styleId of data.styleIds) {
-            for (const domain of data.domains) {
-              const key = `${styleId}_${domain}`;
-              if (!styleDomainToCampaignName.has(key)) {
-                styleDomainToCampaignName.set(key, data.campaignName);
-              }
-            }
-          }
-        }
-      }
-    } else {
-      // For multi-account view or if all accounts data not available, use current account's data
-      for (const [_campaignId, data] of campaignToStyleMap.entries()) {
-        for (const styleId of data.styleIds) {
-          for (const domain of data.domains) {
-            const key = `${styleId}_${domain}`;
-            // If multiple campaigns use the same style_id+domain, keep the first one
-            if (!styleDomainToCampaignName.has(key)) {
-              styleDomainToCampaignName.set(key, data.campaignName);
-            }
+    for (const [_campaignId, data] of campaignToStyleMap.entries()) {
+      for (const styleId of data.styleIds) {
+        for (const domain of data.domains) {
+          const key = `${styleId}_${domain}`;
+          // If multiple campaigns use the same style_id+domain, keep the first one
+          if (!styleDomainToCampaignName.has(key)) {
+            styleDomainToCampaignName.set(key, data.campaignName);
           }
         }
       }
@@ -451,100 +334,12 @@ export async function POST(request: NextRequest) {
       }
     };
     
-    // Build a Set of style_ids that belong to the selected account
-    const accountStyleIds = new Set<string>();
-    for (const [_campaignId, data] of campaignToStyleMap.entries()) {
-      for (const styleId of data.styleIds) {
-        accountStyleIds.add(styleId);
-      }
-    }
-
-    console.log(`[ADSENSE_COST_REVENUE] Account has ${accountStyleIds.size} unique style_ids from campaigns`);
-
-    // Calculate the TOTAL cost for each style_id+domain across ALL AFS accounts
-    // This helps us determine each account's share of the revenue
-    const totalCostByStyleDomain = new Map<string, number>();
-
-    if (isSingleAccountView && allAccountsResult && allAccountsResult.status === 'fulfilled') {
-      console.log('[ADSENSE_COST_REVENUE] Building total cost map from ALL AFS accounts');
-
-      const allAccountsData = allAccountsResult.value as any[];
-
-      // Process each account's data
-      for (let i = 0; i < allAccountsData.length; i++) {
-        const accountResult = allAccountsData[i];
-        const accountData = accountResult.data;
-        const accountId = allAfsAccountIds[i];
-
-        if (!accountData || !accountData.campaigns || !accountData.ads) {
-          console.log(`[ADSENSE_COST_REVENUE] Skipping account ${accountId} - no data`);
-          continue;
-        }
-
-        // Build campaign to style map for this account
-        const accountCampaignToStyleMap = new Map<string, { styleIds: Set<string>; domains: Set<string> }>();
-
-        for (const ad of accountData.ads || []) {
-          const campaignId = String(ad.campaign_id);
-          const finalUrls = ad.final_urls || [];
-
-          if (!accountCampaignToStyleMap.has(campaignId)) {
-            accountCampaignToStyleMap.set(campaignId, {
-              styleIds: new Set<string>(),
-              domains: new Set<string>()
-            });
-          }
-
-          const mapping = accountCampaignToStyleMap.get(campaignId)!;
-
-          for (const url of finalUrls) {
-            const styleId = extractStyleIdFromUrl(url);
-            let domain = extractDomainFromUrl(url);
-            if (domain) domain = normalizeDomain(domain);
-            if (styleId) mapping.styleIds.add(styleId);
-            if (domain) mapping.domains.add(domain);
-          }
-        }
-
-        // Add this account's cost to the total cost map
-        for (const campaign of accountData.campaigns || []) {
-          const campaignId = String(campaign.campaign_id);
-          const urlData = accountCampaignToStyleMap.get(campaignId);
-
-          if (!urlData || urlData.styleIds.size === 0) continue;
-
-          const cost = campaign.metrics?.cost || 0;
-
-          for (const styleId of urlData.styleIds) {
-            for (const domain of urlData.domains) {
-              const key = `${styleId}_${domain}`;
-              const currentTotal = totalCostByStyleDomain.get(key) || 0;
-              totalCostByStyleDomain.set(key, currentTotal + cost);
-            }
-          }
-        }
-      }
-
-      console.log(`[ADSENSE_COST_REVENUE] Total cost map built from all accounts: ${totalCostByStyleDomain.size} entries`);
-    } else {
-      // For multi-account view, total cost = account cost
-      for (const [key, costData] of costByStyleDomain.entries()) {
-        totalCostByStyleDomain.set(key, costData.cost);
-      }
-      console.log(`[ADSENSE_COST_REVENUE] Multi-account view - using account cost as total: ${totalCostByStyleDomain.size} entries`);
-    }
-
-    // Build revenue map with proportional allocation
+    // Build revenue map - No proportional allocation needed since style_ids are unique per account
     const revenueByStyleDomain = new Map<string, any>();
 
     for (const rev of adsenseData) {
       const normalizedDomain = rev.domain_name ? normalizeDomain(rev.domain_name) : 'N/A';
       const key = `${rev.style_id}_${normalizedDomain}`;
-
-      // For single account view, only process style_ids that belong to this account
-      if (isSingleAccountView && !accountStyleIds.has(rev.style_id)) {
-        continue;
-      }
 
       if (!revenueByStyleDomain.has(key)) {
         // Get the campaign name from our mapping
@@ -573,31 +368,13 @@ export async function POST(request: NextRequest) {
 
       const existing = revenueByStyleDomain.get(key)!;
 
-      // When viewing a single account, we need to allocate revenue proportionally
-      // based on this account's cost share (since multiple accounts may use same style_id)
-      if (isSingleAccountView && costByStyleDomain.has(key)) {
-        const accountCost = costByStyleDomain.get(key)!.cost;
-        const totalCost = totalCostByStyleDomain.get(key) || accountCost;
-
-        // Allocate revenue proportionally based on cost share
-        // If this account spent 30% of total cost for this style_id, give it 30% of revenue
-        const costShare = totalCost > 0 ? accountCost / totalCost : 1;
-        existing.revenue += rev.earnings * costShare;
-        existing.clicks += Math.round(rev.clicks * costShare);
-        existing.conversions += Math.round(rev.clicks * costShare);
-
-        if (costShare < 1) {
-          console.log(`[ADSENSE_COST_REVENUE] Proportional allocation for ${key}: cost_share=${(costShare * 100).toFixed(1)}%, revenue=$${(rev.earnings * costShare).toFixed(2)} of $${rev.earnings.toFixed(2)}`);
-        }
-      } else {
-        // For "all accounts" view, use full revenue
-        existing.revenue += rev.earnings;
-        existing.clicks += rev.clicks;
-        existing.conversions += rev.clicks;
-      }
+      // Direct revenue allocation - No proportional logic needed since style_ids are unique per account
+      existing.revenue += rev.earnings;
+      existing.clicks += rev.clicks;
+      existing.conversions += rev.clicks;
     }
 
-    console.log(`[ADSENSE_COST_REVENUE] After filtering, processing revenue for ${revenueByStyleDomain.size} style_id/domain combinations`);
+    console.log(`[ADSENSE_COST_REVENUE] Processing revenue for ${revenueByStyleDomain.size} style_id/domain combinations`);
 
     // Extract article information from Google Ads campaign URLs
     console.log(`[ADSENSE_COST_REVENUE] Extracting article names from campaign URLs...`);
@@ -682,7 +459,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`[ADSENSE_COST_REVENUE] Cost mapping: ${matchedCost} matched with revenue, ${unmatchedCost} without revenue`);
 
-    // Calculate metrics for entries with only revenue (no cost)
+    // Calculate  matrices with entry 
     for (const [, data] of revenueByStyleDomain.entries()) {
       if (data.cost === 0 && data.revenue > 0) {
         data.profit = data.revenue;

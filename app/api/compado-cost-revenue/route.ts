@@ -18,7 +18,6 @@ import { productionCache } from '@/lib/production-cache-strategy';
 import { userRateLimiter } from '@/lib/user-rate-limiter';
 import { googleAdsRateLimiter } from '@/lib/redis-rate-limiter';
 import { cookies } from 'next/headers';
-import { getDashboardFromMongoDB } from '@/lib/db/dashboard-helper';
 
 interface CompadoCostRevenueResponse {
   google_ads_data: any;
@@ -96,55 +95,8 @@ export async function POST(request: NextRequest) {
       console.log(`[COMPADO_COST_REVENUE] 🔒 User ${userAccountId} accessing their own account data`);
     }
 
-    // ==================== MONGODB FIRST: Check for fresh data (1-hour freshness) ====================
-    // Professional Dashboard Strategy: Always use MongoDB if data is < 60 minutes old
-    // Background sync worker runs every 1 hour to keep data fresh
-    // Users see data that's max 1 hour old - perfect balance between freshness & API quota
-    if (!forceRefresh) {
-      console.log('[COMPADO_COST_REVENUE] 🔍 Checking MongoDB for fresh data (< 60 min)...');
-
-      const accountToQuery = accountIds && Array.isArray(accountIds) && accountIds.length > 0
-        ? accountIds
-        : (customerId || 'all');
-
-      const mongoData = await getDashboardFromMongoDB(
-        'compado',
-        accountToQuery,
-        startDate,
-        endDate,
-        60 // Accept data up to 60 minutes old (1-hour freshness)
-      );
-
-      if (mongoData) {
-        const nextSyncMinutes = 60 - (mongoData.age % 60);
-        const isFresh = mongoData.age <= 60;
-
-        console.log(`[COMPADO_COST_REVENUE] ✅ Returning MongoDB data (${mongoData.age} min old, next sync in ${nextSyncMinutes} min)`);
-
-        return NextResponse.json({
-          cost_revenue_mapping: mongoData.data.cost_revenue_mapping,
-          campaign_aggregated: mongoData.data.campaign_aggregated || [],
-          summary: mongoData.data.summary,
-          _source: 'mongodb',
-          _timestamp: new Date().toISOString(),
-          _message: `Data from MongoDB (${mongoData.age} minutes old). Sync runs every hour.`,
-          _dataFreshness: {
-            source: 'mongodb',
-            ageMinutes: mongoData.age,
-            isFresh,
-            nextSyncInMinutes: nextSyncMinutes,
-            message: `Data is ${mongoData.age} min old. Next sync in ~${nextSyncMinutes} min.`,
-            cronSchedule: 'Every hour'
-          }
-        });
-      }
-
-      console.log('[COMPADO_COST_REVENUE] ⚠️  MongoDB data stale (>60 min) or missing, checking Redis aggregated cache...');
-    } else {
-      console.log('[COMPADO_COST_REVENUE] 🔄 Force refresh requested - skipping MongoDB and Redis cache...');
-    }
-
     // Determine if we're processing multiple accounts (needed for cache key generation)
+    console.log(`[COMPADO_COST_REVENUE] ${forceRefresh ? '🔄 Force refresh requested - skipping Redis cache' : '🔍 Checking Redis cache'}...`);
     const isMultiAccount = accountIds && Array.isArray(accountIds) && accountIds.length > 0;
 
     // ==================== REDIS AGGREGATED CACHE: Check for cached aggregated results ====================
@@ -706,11 +658,11 @@ export async function POST(request: NextRequest) {
       try {
         await redisCacheManager.set(aggregatedCacheKey, cachePayload, {
           dataType: 'compado',
-          ttl: 1800 // 30 minutes - shorter than 1-hour sync to ensure fresh data after sync
+          ttl: 300 // 5 minutes - fresh data every 5 minutes
         });
 
         const cacheSize = JSON.stringify(cachePayload).length / 1024;
-        console.log(`[COMPADO_COST_REVENUE] ✓ Cached aggregated results: ${cacheSize.toFixed(2)}KB (TTL: 30 min)`);
+        console.log(`[COMPADO_COST_REVENUE] ✓ Cached aggregated results: ${cacheSize.toFixed(2)}KB (TTL: 5 min)`);
       } catch (cacheError: any) {
         console.error(`[COMPADO_COST_REVENUE] ⚠️  Failed to cache aggregated results:`, cacheError.message);
         // Continue even if caching fails

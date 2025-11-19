@@ -406,7 +406,6 @@ export function mapCompadoCostRevenue(
   const totalRevenueEurBeforeFilter = compadoConversions.reduce((sum, c) => sum + c.revenue, 0);
 
   // Filter Compado conversions to only include those with matching GCLIDs from this account
-  // NOTE: We filter by GCLID only since Compado might not have accurate campaign_id mapping
   // Using normalized GCLIDs for better matching (handles case, whitespace, special chars)
   const accountSpecificConversions = compadoConversions.filter(conv =>
     googleAdsGclids.has(normalizeGclid(conv.gclid))

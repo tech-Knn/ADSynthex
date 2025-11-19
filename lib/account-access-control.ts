@@ -62,6 +62,13 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_1751028486': ['compado'],
   'CID_9248809715': ['compado'],
   'CID_9922466223': ['compado'],
+
+  // Compado BoldmoveGuide Accounts
+  'CID_1235076035': ['compado'],
+  'CID_3471023162': ['compado'],
+  'CID_8871395768': ['compado'],
+  'CID_3475645746': ['compado'],
+  'CID_8994182684': ['compado'],
   'CID_9524489917': ['compado'],
 
   // Compado BoldmoveGuide Accounts (new domain)

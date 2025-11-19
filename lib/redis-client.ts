@@ -289,8 +289,9 @@ class RedisClient {
     const expiry = ttlSeconds ? Date.now() + (ttlSeconds * 1000) : 0;
     this.fallbackCache.set(key, { value, expiry });
 
-    // AGGRESSIVE cleanup to prevent memory issues on production (Render has limited memory)
-    if (this.fallbackCache.size > 50) { // Reduced from 1000 to 50
+    // BALANCED cleanup - increased from 50 to 200 for better cache hit rates
+    // Still prevents memory issues while allowing more caching
+    if (this.fallbackCache.size > 200) { // Increased from 50 to 200
       this.cleanupFallbackCache();
     }
   }
@@ -390,9 +391,9 @@ class RedisClient {
 
     console.log(`[REDIS_FALLBACK] Cleaned up ${deleteCount} expired entries`);
 
-    // AGGRESSIVE: If still too large, remove oldest 50% (was 20%)
-    if (this.fallbackCache.size > 50) { // Reduced from 1000 to 50
-      const toDelete = Math.floor(this.fallbackCache.size * 0.5); // Increased from 0.2 to 0.5
+    // BALANCED: If still too large, remove oldest 30% (was 50%)
+    if (this.fallbackCache.size > 200) { // Increased from 50 to 200
+      const toDelete = Math.floor(this.fallbackCache.size * 0.3); // Decreased from 0.5 to 0.3 - less aggressive
       const keys = Array.from(this.fallbackCache.keys());
       for (let i = 0; i < toDelete; i++) {
         this.fallbackCache.delete(keys[i]);
