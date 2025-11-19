@@ -92,6 +92,15 @@ export async function GET(request: Request) {
           // Google Ads API structure: { campaigns: [...], ads: [...cost data...], clicks: [...GCLIDs...] }
           if (data.data?.ads && data.data.ads.length > 0) {
             const clicks = data.data.ads.map((ad: any) => {
+              // IMPORTANT: Use the actual date from the ad metrics, not hardcoded yesterday
+              // Google Ads can return data for yesterday OR today depending on when it was fetched
+              const adDate = ad.date || ad.segments?.date || yesterday;
+
+              // Log warning if date is missing from API response
+              if (!ad.date && !ad.segments?.date) {
+                console.warn(`[CRON_SYNC] ${feedType}: Ad missing date, using fallback: ${adDate} for campaign ${ad.campaign_id}`);
+              }
+
               const clickData: any = {
                 account_id: account.id,
                 campaign_id: ad.campaign_id || '',
@@ -100,7 +109,7 @@ export async function GET(request: Request) {
                 ad_group_name: ad.ad_group_name || '',
                 ad_id: ad.ad_id || '',
                 ad_name: ad.ad_name || '',
-                date: yesterday, // Use sync date
+                date: adDate, // Use actual ad date from API
 
                 // Cost metrics
                 cost_micros: ad.metrics?.cost_micros || 0,
@@ -168,6 +177,13 @@ export async function GET(request: Request) {
             });
 
             if (clicks.length > 0) {
+              // Log date distribution to verify we're saving correct dates
+              const dateBreakdown = clicks.reduce((acc: any, click: any) => {
+                acc[click.date] = (acc[click.date] || 0) + 1;
+                return acc;
+              }, {});
+              console.log(`[CRON_SYNC] ${feedType}: Cost data dates for ${account.id}:`, dateBreakdown);
+
               const savedCount = await saveClicks(clicks, feedType);
               results[feedType].clicks += savedCount;
               console.log(`[CRON_SYNC] ${feedType}: ✓ Saved ${savedCount} cost records (ads) for ${account.id}`);
