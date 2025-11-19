@@ -44,4 +44,7 @@ google-ads-auth.json
 *.md
 !README.md
 test-*.js
-test-*.sh 
+test-*.sh
+
+# Reference folders (not to be pushed)
+AFS_REVENUE_REPORT_DASHBOARD/ 
