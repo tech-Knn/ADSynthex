@@ -34,13 +34,14 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { startDate, endDate, adsenseAccountId, customerId, accountIds } = body;
+    const { startDate, endDate, adsenseAccountId, customerId, accountIds, forceLive } = body;
 
     console.log('[ADSENSE_REVENUE] ===== REQUEST START =====');
     console.log('[ADSENSE_REVENUE] Date range:', startDate, 'to', endDate);
     console.log('[ADSENSE_REVENUE] AdSense Account:', adsenseAccountId);
     console.log('[ADSENSE_REVENUE] Customer ID:', customerId);
     console.log('[ADSENSE_REVENUE] Account IDs:', accountIds);
+    console.log('[ADSENSE_REVENUE] Force Live:', forceLive || false);
 
     if (!startDate || !endDate) {
       console.error('[ADSENSE_REVENUE] Missing date range');
@@ -76,49 +77,58 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ==================== MONGODB FIRST: Check for fresh data (1-hour freshness) ====================
-    // Professional Dashboard Strategy: Always use MongoDB if data is < 60 minutes old
-    // Background sync worker runs every 1 hour to keep data fresh
-    console.log('[ADSENSE_REVENUE] 🔍 Checking MongoDB for fresh data (< 60 min)...');
+    // ==================== SMART FALLBACK: MongoDB → Live API ====================
+    // TEMPORARY: Bypass MongoDB sync until cron issues are resolved
+    // Users need reliable data NOW, sync can be fixed in background
 
-    const accountToQuery = accountIds && accountIds.length > 0
-      ? accountIds
-      : (customerId || 'all');
+    // Check if forceLive flag is set (bypass MongoDB entirely)
+    const shouldUseMongoDB = !forceLive && process.env.USE_MONGODB_CACHE !== 'false';
 
-    const mongoData = await getDashboardFromMongoDB(
-      'afs',
-      accountToQuery,
-      startDate,
-      endDate,
-      60 // Accept data up to 60 minutes old (1-hour freshness)
-    );
+    if (shouldUseMongoDB) {
+      console.log('[ADSENSE_REVENUE] 🔍 Checking MongoDB for fresh data (< 60 min)...');
 
-    if (mongoData) {
-      const nextSyncMinutes = 60 - (mongoData.age % 60);
-      const isFresh = mongoData.age <= 60;
+      const accountToQuery = accountIds && accountIds.length > 0
+        ? accountIds
+        : (customerId || 'all');
 
-      console.log(`[ADSENSE_REVENUE] ✅ Returning MongoDB data (${mongoData.age} min old, next sync in ${nextSyncMinutes} min)`);
-      console.log(`[ADSENSE_REVENUE] MongoDB data includes ${mongoData.data.campaign_aggregated?.length || 0} campaigns`);
+      const mongoData = await getDashboardFromMongoDB(
+        'afs',
+        accountToQuery,
+        startDate,
+        endDate,
+        60 // Accept data up to 60 minutes old (1-hour freshness)
+      );
 
-      return NextResponse.json({
-        cost_revenue_mapping: mongoData.data.cost_revenue_mapping,
-        campaign_aggregated: mongoData.data.campaign_aggregated || [],
-        summary: mongoData.data.summary,
-        _source: 'mongodb',
-        _timestamp: new Date().toISOString(),
-        _message: `Data from MongoDB (${mongoData.age} minutes old). Sync runs every hour.`,
-        _dataFreshness: {
-          source: 'mongodb',
-          ageMinutes: mongoData.age,
-          isFresh,
-          nextSyncInMinutes: nextSyncMinutes,
-          message: `Data is ${mongoData.age} min old. Next sync in ~${nextSyncMinutes} min.`,
-          cronSchedule: 'Every hour'
-        }
-      });
+      if (mongoData) {
+        const nextSyncMinutes = 60 - (mongoData.age % 60);
+        const isFresh = mongoData.age <= 60;
+
+        console.log(`[ADSENSE_REVENUE] ✅ Returning MongoDB data (${mongoData.age} min old, next sync in ${nextSyncMinutes} min)`);
+        console.log(`[ADSENSE_REVENUE] MongoDB data includes ${mongoData.data.campaign_aggregated?.length || 0} campaigns`);
+
+        return NextResponse.json({
+          cost_revenue_mapping: mongoData.data.cost_revenue_mapping,
+          campaign_aggregated: mongoData.data.campaign_aggregated || [],
+          summary: mongoData.data.summary,
+          _source: 'mongodb',
+          _timestamp: new Date().toISOString(),
+          _message: `Data from MongoDB (${mongoData.age} minutes old). Sync runs every hour.`,
+          _dataFreshness: {
+            source: 'mongodb',
+            ageMinutes: mongoData.age,
+            isFresh,
+            nextSyncInMinutes: nextSyncMinutes,
+            message: `Data is ${mongoData.age} min old. Next sync in ~${nextSyncMinutes} min.`,
+            cronSchedule: 'Every hour'
+          }
+        });
+      }
+
+      console.log('[ADSENSE_REVENUE] ⚠️  MongoDB data stale (>60 min) or missing, fetching from API...');
+    } else {
+      console.log('[ADSENSE_REVENUE] 🔴 MongoDB cache bypassed (forceLive=true or USE_MONGODB_CACHE=false)');
+      console.log('[ADSENSE_REVENUE] ⚡ Fetching LIVE data directly from APIs for reliable results...');
     }
-
-    console.log('[ADSENSE_REVENUE] ⚠️  MongoDB data stale (>60 min) or missing, fetching from API...');
 
     const fetchStartTime = Date.now();
 
