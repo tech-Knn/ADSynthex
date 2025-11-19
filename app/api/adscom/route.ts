@@ -321,7 +321,7 @@ export async function POST(request: NextRequest) {
         group_by: ['subid_1', 'subid_5', 'country_code'],
         order_by: [{ column: 'estimated_revenue', order: 'desc' }],
         page: 1,
-        per_page: 500  // Balanced value - not too large to cause timeout, not too small to require many pages
+        per_page: 1000  // Increased from 500 to reduce API calls by ~50%
       };
 
       // Extract just the domain part from ADSCOM_API_URL to avoid path duplication
@@ -549,34 +549,34 @@ export async function POST(request: NextRequest) {
           const customerSubidMap: { [key: string]: string[] } = {
             '8677814915': [], // IST account handled separately below
             '9071440966': ['utc02'],
-            '5723554317': ['utc03'],
+            // '5723554317': ['utc03'], // DEPRECATED
             '3146253756': ['utc04'],
-            '5857090949': ['utc05'],
+            // '5857090949': ['utc05'], // DEPRECATED
             '6201189752': ['utc06'],
             '4071621621': ['utc07'],
-            '7579121709': ['utc08'],
+            // '7579121709': ['utc08'], // DEPRECATED
             '1918795911': ['utc09'],
-            '2849704713': ['utc10'],
-            '7605096292': ['utc11'],
-            '5719842337': ['utc12'],
-            '9341614254': ['utc13'],
+            // '2849704713': ['utc10'], // DEPRECATED
+            // '7605096292': ['utc11'], // DEPRECATED
+            // '5719842337': ['utc12'], // DEPRECATED
+            // '9341614254': ['utc13'], // DEPRECATED
             '9790364217': ['utc14'],
             '2420687578': ['utc16'],
-            '6324595978': ['utc17'],
+            // '6324595978': ['utc17'], // DEPRECATED
             '5133038944': ['utc18'],
-            '9084731648': ['utc19'],
-            '5109995931': ['utc20'],
+            // '9084731648': ['utc19'], // DEPRECATED
+            // '5109995931': ['utc20'], // DEPRECATED
             '3218250684': ['utc21'],
-            '7035336235': ['utc22'],
-            '5343981146': ['utc23'],
+            // '7035336235': ['utc22'], // DEPRECATED
+            // '5343981146': ['utc23'], // DEPRECATED
             '1908857409': ['utc24'],
             '3848887282': ['utc25'],
             '4213092623': ['utc26'],
-            '6626619603': ['utc27'],
-            '8914190629': ['utc28'],
+            // '6626619603': ['utc27'], // DEPRECATED
+            // '8914190629': ['utc28'], // DEPRECATED
             '9876515601': ['utc29'],
             '8600545272': ['utc30'],
-            '3118222043': ['utc31'],
+            // '3118222043': ['utc31'], // DEPRECATED
             '7824950746': ['utc32'],
             '5675630727': ['utc34'],
             '3304906147': ['utc35'],
@@ -590,7 +590,7 @@ export async function POST(request: NextRequest) {
             // The IST customer (8677814915) will be handled as the fallback below
           };
 
-          const excludeSubidsForIst = ['utc02', 'utc03', 'utc04', 'utc05', 'utc06', 'utc07', 'utc08', 'utc09', 'utc10', 'utc11', 'utc12', 'utc13', 'utc14', 'utc16', 'utc17', 'utc18', 'utc19', 'utc20', 'utc21', 'utc22', 'utc23', 'utc24', 'utc25', 'utc26', 'utc27', 'utc28', 'utc29', 'utc30', 'utc31', 'utc32', 'utc34', 'utc35', 'utc36', 'utc37', 'utc38', 'utc39', 'utc40', 'yahoo', 'utcyahoo', 'siddhi'];
+          const excludeSubidsForIst = ['utc02', 'utc04', 'utc06', 'utc07', 'utc09', 'utc14', 'utc16', 'utc18', 'utc21', 'utc24', 'utc25', 'utc26', 'utc29', 'utc30', 'utc32', 'utc34', 'utc35', 'utc36', 'utc37', 'utc38', 'utc39', 'utc40', 'yahoo', 'utcyahoo', 'siddhi'];
 
           if (customerSubidMap[customerId]) {
             const allowedSubids = customerSubidMap[customerId];
@@ -669,34 +669,34 @@ export async function POST(request: NextRequest) {
         const customerDomainMap: { [key: string]: string } = {
           '8677814915': 'futuretechtoday.com', // IST account
           '9071440966': 'innovationspotlight.net', // UTC-02
-          '5723554317': 'techinsightsweekly.com', // UTC-03
+          // '5723554317': 'techinsightsweekly.com', // UTC-03 - DEPRECATED
           '3146253756': 'freshcuesdaily.com', // UTC-04
-          '5857090949': 'freshcuesdaily.com', // UTC-05
+          // '5857090949': 'freshcuesdaily.com', // UTC-05 - DEPRECATED
           '6201189752': 'techinsightsweekly.com', // UTC-06
           '4071621621': 'innovationspotlight.net', // UTC-07
-          '7579121709': 'futuretechtoday.com', // UTC-08
+          // '7579121709': 'futuretechtoday.com', // UTC-08 - DEPRECATED
           '1918795911': 'digitaltrendstoday.com', // UTC-09
-          '2849704713': 'techreviewcentral.net', // UTC-10
-          '7605096292': 'futuristinsights.org', // UTC-11
-          '5719842337': 'innovationdigest.com', // UTC-12
-          '9341614254': 'emergingtechreview.com', // UTC-13
+          // '2849704713': 'techreviewcentral.net', // UTC-10 - DEPRECATED
+          // '7605096292': 'futuristinsights.org', // UTC-11 - DEPRECATED
+          // '5719842337': 'innovationdigest.com', // UTC-12 - DEPRECATED
+          // '9341614254': 'emergingtechreview.com', // UTC-13 - DEPRECATED
           '9790364217': 'nextgentechnology.info', // UTC-14
           '2420687578': 'digitaltransformationhub.com', // UTC-16
-          '6324595978': 'techinsightsweekly.com', // UTC-17
+          // '6324595978': 'techinsightsweekly.com', // UTC-17 - DEPRECATED
           '5133038944': 'innovationspotlight.net', // UTC-18
-          '9084731648': 'futuretechtoday.com', // UTC-19
-          '5109995931': 'emergingtrendsreport.org', // UTC-20
+          // '9084731648': 'futuretechtoday.com', // UTC-19 - DEPRECATED
+          // '5109995931': 'emergingtrendsreport.org', // UTC-20 - DEPRECATED
           '3218250684': 'digitaltrendstoday.com', // UTC-21
-          '7035336235': 'techreviewcentral.net', // UTC-22
-          '5343981146': 'futuristinsights.org', // UTC-23
+          // '7035336235': 'techreviewcentral.net', // UTC-22 - DEPRECATED
+          // '5343981146': 'futuristinsights.org', // UTC-23 - DEPRECATED
           '1908857409': 'innovationdigest.com', // UTC-24
           '3848887282': 'emergingtechreview.com', // UTC-25
           '4213092623': 'nextgentechnology.info', // UTC-26
-          '6626619603': 'digitaltrendstoday.com', // UTC-27
-          '8914190629': 'techreviewcentral.net', // UTC-28
+          // '6626619603': 'digitaltrendstoday.com', // UTC-27 - DEPRECATED
+          // '8914190629': 'techreviewcentral.net', // UTC-28 - DEPRECATED
           '9876515601': 'digitaltransformationhub.com', // UTC-29
           '8600545272': 'futuretechtoday.com', // UTC-30
-          '3118222043': 'innovationspotlight.net', // UTC-31
+          // '3118222043': 'innovationspotlight.net', // UTC-31 - DEPRECATED
           '7824950746': 'futuretechtoday.com', // UTC-32
           '5675630727': 'innovationspotlight.net', // UTC-34
           '3304906147': 'techinsightsweekly.com', // UTC-35
@@ -815,34 +815,34 @@ export async function GET(request: NextRequest) {
       const customerDomainMap: { [key: string]: string } = {
         '8677814915': 'futuretechtoday.com', // IST account
         '9071440966': 'innovationspotlight.net', // UTC-02
-        '5723554317': 'techinsightsweekly.com', // UTC-03
+        // '5723554317': 'techinsightsweekly.com', // UTC-03 - DEPRECATED
         '3146253756': 'freshcuesdaily.com', // UTC-04
-        '5857090949': 'freshcuesdaily.com', // UTC-05
+        // '5857090949': 'freshcuesdaily.com', // UTC-05 - DEPRECATED
         '6201189752': 'techinsightsweekly.com', // UTC-06
         '4071621621': 'innovationspotlight.net', // UTC-07
-        '7579121709': 'futuretechtoday.com', // UTC-08
+        // '7579121709': 'futuretechtoday.com', // UTC-08 - DEPRECATED
         '1918795911': 'digitaltrendstoday.com', // UTC-09
-        '2849704713': 'techreviewcentral.net', // UTC-10
-        '7605096292': 'futuristinsights.org', // UTC-11
-        '5719842337': 'innovationdigest.com', // UTC-12
-        '9341614254': 'emergingtechreview.com', // UTC-13
+        // '2849704713': 'techreviewcentral.net', // UTC-10 - DEPRECATED
+        // '7605096292': 'futuristinsights.org', // UTC-11 - DEPRECATED
+        // '5719842337': 'innovationdigest.com', // UTC-12 - DEPRECATED
+        // '9341614254': 'emergingtechreview.com', // UTC-13 - DEPRECATED
         '9790364217': 'nextgentechnology.info', // UTC-14
         '2420687578': 'digitaltransformationhub.com', // UTC-16
-        '6324595978': 'techinsightsweekly.com', // UTC-17
+        // '6324595978': 'techinsightsweekly.com', // UTC-17 - DEPRECATED
         '5133038944': 'innovationspotlight.net', // UTC-18
-        '9084731648': 'futuretechtoday.com', // UTC-19
-        '5109995931': 'emergingtrendsreport.org', // UTC-20
+        // '9084731648': 'futuretechtoday.com', // UTC-19 - DEPRECATED
+        // '5109995931': 'emergingtrendsreport.org', // UTC-20 - DEPRECATED
         '3218250684': 'digitaltrendstoday.com', // UTC-21
-        '7035336235': 'techreviewcentral.net', // UTC-22
-        '5343981146': 'futuristinsights.org', // UTC-23
+        // '7035336235': 'techreviewcentral.net', // UTC-22 - DEPRECATED
+        // '5343981146': 'futuristinsights.org', // UTC-23 - DEPRECATED
         '1908857409': 'innovationdigest.com', // UTC-24
         '3848887282': 'emergingtechreview.com', // UTC-25
         '4213092623': 'nextgentechnology.info', // UTC-26
-        '6626619603': 'digitaltrendstoday.com', // UTC-27
-        '8914190629': 'techreviewcentral.net', // UTC-28
+        // '6626619603': 'digitaltrendstoday.com', // UTC-27 - DEPRECATED
+        // '8914190629': 'techreviewcentral.net', // UTC-28 - DEPRECATED
         '9876515601': 'digitaltransformationhub.com', // UTC-29
         '8600545272': 'futuretechtoday.com', // UTC-30
-        '3118222043': 'innovationspotlight.net', // UTC-31
+        // '3118222043': 'innovationspotlight.net', // UTC-31 - DEPRECATED
         '7824950746': 'futuretechtoday.com', // UTC-32
         '5675630727': 'innovationspotlight.net', // UTC-34
         '3304906147': 'techinsightsweekly.com', // UTC-35

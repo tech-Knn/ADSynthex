@@ -381,10 +381,15 @@ function DashboardContent() {
     // Clean up function
     return () => {
       window.removeEventListener('accountChanged', handleAccountChangedEvent as EventListener);
-      
+
       // Clear any active auto-refresh timer
       if (autoRefreshTimerRef.current) {
         clearTimeout(autoRefreshTimerRef.current);
+      }
+
+      // Clear any active debounce timer
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
       }
     };
   }, [searchParams]); // Add searchParams as dependency so the effect runs when URL changes
@@ -435,6 +440,9 @@ function DashboardContent() {
     };
   }, [nextUpdateIn, autoRefresh]); // Re-run when these values change
 
+  // Debounce timer for date/account changes to prevent rapid-fire API calls
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   const handleDateChange = (
     dates: [Dayjs | null, Dayjs | null] | null,
     dateStrings: [string, string]
@@ -442,15 +450,23 @@ function DashboardContent() {
     if (dates && dates[0] && dates[1]) {
       // Calculate difference in days
       const diffDays = dates[1].diff(dates[0], 'days');
-      
+
       // Warn if range is too long for Ads.com API
       if (diffDays > 30) {
         message.warning('Very large date ranges may cause performance issues.');
       }
-      
+
       setDateRange([dates[0], dates[1]]);
-      // Fetch data whenever date range changes
-      setTimeout(() => fetchData(dates[0]!.format('YYYY-MM-DD'), dates[1]!.format('YYYY-MM-DD'), selectedCustomerId), 100);
+
+      // Clear existing debounce timer
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+
+      // Debounce API calls by 500ms to prevent rapid-fire requests
+      debounceTimerRef.current = setTimeout(() => {
+        fetchData(dates[0]!.format('YYYY-MM-DD'), dates[1]!.format('YYYY-MM-DD'), selectedCustomerId);
+      }, 500);
     }
   };
 
@@ -893,11 +909,11 @@ function DashboardContent() {
                     const startDate = dateRange[0].format('YYYY-MM-DD');
                     const endDate = dateRange[1].format('YYYY-MM-DD');
                     
-                    makeApiCall('/api/adscom', { 
-                      startDate, 
-                      endDate, 
-                      customerId: selectedCustomerId,
-                      forceRefresh: true // Add a flag to indicate this is a manual refresh
+                    makeApiCall('/api/adscom', {
+                      startDate,
+                      endDate,
+                      customerId: selectedCustomerId
+                      // Removed forceRefresh to use MongoDB cache when available (<60 min old)
                     })
                     .then(adscomData => {
                       // Handle null data safely

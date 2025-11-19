@@ -15,7 +15,6 @@ import { ACCOUNT_FEED_ACCESS } from '@/lib/account-access-control';
 import config from '@/lib/google-ads-config';
 import { fetchAllCompadoConversions } from '@/lib/compado-api';
 import { fetchAdSenseRevenueByStyleId } from '@/lib/adsense-api';
-import { fetchInuvoRealtimeData } from '@/lib/inuvo-api';
 import { fetchArticlePerformance } from '@/lib/adscom-api';
 
 export const maxDuration = 600; // 10 minutes timeout (initial sync takes longer)
@@ -37,21 +36,19 @@ export async function GET(request: Request) {
     const results = {
       adscom: { clicks: 0, revenue: 0, errors: [] as string[] },
       afs: { clicks: 0, revenue: 0, errors: [] as string[] },
-      compado: { clicks: 0, revenue: 0, errors: [] as string[] },
-      inuvo: { clicks: 0, revenue: 0, errors: [] as string[] }
+      compado: { clicks: 0, revenue: 0, errors: [] as string[] }
     };
 
     // Map 'adsense' to 'afs' for MongoDB compatibility
     const feedTypeMap: Record<string, FeedType> = {
       'adsense': 'afs',
       'adscom': 'adscom',
-      'compado': 'compado',
-      'inuvo': 'inuvo'
+      'compado': 'compado'
     };
 
     // ==================== SYNC GOOGLE ADS COST DATA ====================
 
-    const feeds: FeedType[] = ['adscom', 'afs', 'compado', 'inuvo'];
+    const feeds: FeedType[] = ['adscom', 'afs', 'compado'];
 
     for (const feedType of feeds) {
       console.log(`\n[CRON_SYNC] ========== Syncing ${feedType.toUpperCase()} ==========`);
@@ -143,22 +140,10 @@ export async function GET(request: Request) {
                     }
                   }
                   break;
-
-                case 'inuvo':
-                  // Extract TKID from URL
-                  if (finalUrl) {
-                    try {
-                      const url = new URL(finalUrl);
-                      clickData.tkid = url.searchParams.get('tkid') || url.searchParams.get('TKID') || '';
-                    } catch (e) {
-                      console.error(`[CRON_SYNC] Failed to extract TKID from ${finalUrl}:`, e);
-                    }
-                  }
-                  break;
               }
 
-              // For Compado and Inuvo: try to get GCLID from click_view data
-              if ((feedType === 'compado' || feedType === 'inuvo') && data.data?.clicks && data.data.clicks.length > 0) {
+              // For Compado: try to get GCLID from click_view data
+              if (feedType === 'compado' && data.data?.clicks && data.data.clicks.length > 0) {
                 const matchingClick = data.data.clicks.find((c: any) =>
                   c.campaign_id === ad.campaign_id && c.ad_group_id === ad.ad_group_id
                 );
@@ -177,8 +162,6 @@ export async function GET(request: Request) {
                   return c.campaign_id; // Compado requires campaign_id (gclid added later)
                 case 'adscom':
                   return c.article; // Ads.com requires article
-                case 'inuvo':
-                  return c.tkid || c.campaign_id; // Inuvo requires tkid
                 default:
                   return c.campaign_id;
               }
@@ -279,7 +262,9 @@ export async function GET(request: Request) {
 
       for (const account of afsAccountsToSync) {
         try {
-          console.log(`[CRON_SYNC] Fetching AFS revenue for account ${account.id}...`);
+          console.log(`[CRON_SYNC] ========================================`);
+          console.log(`[CRON_SYNC] Fetching AFS revenue for account ${account.id}`);
+          console.log(`[CRON_SYNC] Date range: ${yesterday} to ${today}`);
 
           // Fetch AdSense revenue by style_id with increased timeout
           const afsData = await Promise.race([
@@ -293,7 +278,26 @@ export async function GET(request: Request) {
             )
           ]) as any[];
 
+          console.log(`[CRON_SYNC] AFS: Received ${afsData.length} total records from AdSense API for ${account.id}`);
+
           if (afsData.length > 0) {
+            // CRITICAL: Log what dates we actually received
+            const dateBreakdown = afsData.reduce((acc: any, rev: any) => {
+              const date = rev.date;
+              if (!acc[date]) {
+                acc[date] = { count: 0, totalRevenue: 0 };
+              }
+              acc[date].count++;
+              acc[date].totalRevenue += rev.earnings || 0;
+              return acc;
+            }, {});
+
+            console.log(`[CRON_SYNC] AFS: Date breakdown for ${account.id}:`);
+            Object.keys(dateBreakdown).sort().forEach(date => {
+              const info = dateBreakdown[date];
+              console.log(`[CRON_SYNC]   ${date}: ${info.count} records, $${info.totalRevenue.toFixed(2)} revenue`);
+            });
+
             const revenues = afsData.map((rev: any) => ({
               style_id: rev.style_id,
               domain: rev.domain_name,
@@ -309,8 +313,12 @@ export async function GET(request: Request) {
               const savedCount = await saveRevenue(revenues, 'afs');
               totalAfsSaved += savedCount;
               results.afs.revenue += savedCount;
-              console.log(`[CRON_SYNC] AFS: ✓ Saved ${savedCount} revenue records for ${account.id}`);
+              console.log(`[CRON_SYNC] AFS: ✓ Saved ${savedCount} revenue records to MongoDB for ${account.id}`);
+            } else {
+              console.warn(`[CRON_SYNC] AFS: ⚠️  All records filtered out (no style_id) for ${account.id}`);
             }
+          } else {
+            console.error(`[CRON_SYNC] AFS: ✗ NO DATA returned from AdSense API for ${account.id} (${yesterday} to ${today})`);
           }
 
           // Rate limit protection: 3 seconds between AFS accounts (Google API has stricter limits)
@@ -331,59 +339,6 @@ export async function GET(request: Request) {
     } catch (error: any) {
       console.error('[CRON_SYNC] AFS revenue error:', error.message);
       results.afs.errors.push(`Revenue: ${error.message}`);
-    }
-
-    // ==================== SYNC INUVO REVENUE ====================
-    try {
-      console.log('[CRON_SYNC] Fetching Inuvo revenue...');
-
-      // Get all Inuvo accounts
-      const inuvoAccounts = config.TARGET_ACCOUNTS.filter((acc: any) => {
-        const accountKey = `CID_${acc.id}`;
-        const allowedFeeds = ACCOUNT_FEED_ACCESS[accountKey];
-        return allowedFeeds && allowedFeeds.includes('inuvo');
-      });
-
-      if (inuvoAccounts.length > 0) {
-        // Fetch realtime data for all accounts with timeout
-        const inuvoData = await Promise.race([
-          fetchInuvoRealtimeData(yesterday, today),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Inuvo API timeout after 45s')), 45000)
-          )
-        ]) as any;
-
-        if (inuvoData.data && inuvoData.data.length > 0) {
-          const revenues = inuvoData.data.map((item: any) => ({
-            tkid: item.TKID || '', // Inuvo uses TKID (not GCLID!)
-            revenue_usd: item.ESTIMATED_EARNINGS || 0,
-            revenue_eur: 0, // Inuvo reports in USD
-            clicks: item.CLICKS || item.ESTIMATED_CLICKS || 0,
-            impressions: item.IMPRESSIONS || item.INDIVIDUAL_AD_IMPRESSIONS || 0,
-            date: item.DATE || yesterday,
-            agid: item.AGID,
-            platform_type: item.PLATFORM_TYPE_CODE,
-            ad_requests: item.AD_REQUESTS || 0,
-            page_views: item.PAGE_VIEWS || 0,
-            estimated_clicks: item.ESTIMATED_CLICKS || 0
-          })).filter((r: any) => r.tkid);
-
-          if (revenues.length > 0) {
-            const savedCount = await saveRevenue(revenues, 'inuvo');
-            results.inuvo.revenue = savedCount;
-            console.log(`[CRON_SYNC] Inuvo: ✓ Saved ${savedCount} revenue records`);
-
-            // Re-run cost-revenue mapping after saving revenue
-            await createCostRevenueMapping('inuvo', yesterday, today);
-            await aggregateCampaigns('inuvo', yesterday, today);
-          }
-        } else {
-          console.log('[CRON_SYNC] Inuvo: No data returned');
-        }
-      }
-    } catch (error: any) {
-      console.error('[CRON_SYNC] Inuvo revenue error:', error.message);
-      results.inuvo.errors.push(`Revenue: ${error.message}`);
     }
 
     // ==================== SYNC ADS.COM REVENUE ====================

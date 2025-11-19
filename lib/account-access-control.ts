@@ -72,46 +72,46 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_8994182684': ['compado'],
 
   // Ads.com Accounts - Only access Ads.com feed
-  'CID_8677814915': ['adscom'],
-  'CID_9071440966': ['adscom'],
-  'CID_5723554317': ['adscom'],
-  'CID_3146253756': ['adscom'],
-  'CID_5857090949': ['adscom'],
-  'CID_6201189752': ['adscom'],
-  'CID_4071621621': ['adscom'],
-  'CID_7579121709': ['adscom'],
-  'CID_1918795911': ['adscom'],
-  'CID_2849704713': ['adscom'],
-  'CID_7605096292': ['adscom'],
-  'CID_5719842337': ['adscom'],
-  'CID_9341614254': ['adscom'],
-  'CID_9790364217': ['adscom', 'inuvo'], // Special: Has both Ads.com and Inuvo access
-  'CID_2420687578': ['adscom'],
-  'CID_6324595978': ['adscom'],
-  'CID_5133038944': ['adscom'],
-  'CID_9084731648': ['adscom'],
-  'CID_5109995931': ['adscom'],
-  'CID_3218250684': ['adscom'],
-  'CID_7035336235': ['adscom'],
-  'CID_5343981146': ['adscom'],
-  'CID_1908857409': ['adscom'],
-  'CID_3848887282': ['adscom'],
-  'CID_4213092623': ['adscom'],
-  'CID_6626619603': ['adscom'],
-  'CID_8914190629': ['adscom'],
-  'CID_9876515601': ['adscom'],
-  'CID_8600545272': ['adscom'],
-  'CID_3118222043': ['adscom'],
-  'CID_7824950746': ['adscom'],
-  'CID_5675630727': ['adscom'],
-  'CID_3304906147': ['adscom'],
-  'CID_8825176554': ['adscom'],
-  'CID_8321499303': ['adscom'],
-  'CID_7953604784': ['adscom'],
-  'CID_9436130288': ['adscom'],
-  'CID_7572891295': ['adscom'],
-  'CID_8807720960': ['adscom'],
-  'CID_4277350349': ['adscom', 'inuvo'], // Special: Has both Ads.com and Inuvo access
+  'CID_8677814915': ['adscom'], // IST
+  'CID_9071440966': ['adscom'], // UTC02
+  // 'CID_5723554317': ['adscom'], // UTC03 - DEPRECATED (no longer using ads.com)
+  'CID_3146253756': ['adscom'], // UTC04
+  // 'CID_5857090949': ['adscom'], // UTC05 - DEPRECATED (no longer using ads.com)
+  'CID_6201189752': ['adscom'], // UTC06
+  'CID_4071621621': ['adscom'], // UTC07
+  // 'CID_7579121709': ['adscom'], // UTC08 - DEPRECATED (no longer using ads.com)
+  'CID_1918795911': ['adscom'], // UTC09
+  // 'CID_2849704713': ['adscom'], // UTC10 - DEPRECATED (no longer using ads.com)
+  // 'CID_7605096292': ['adscom'], // UTC11 - DEPRECATED (no longer using ads.com)
+  // 'CID_5719842337': ['adscom'], // UTC12 - DEPRECATED (no longer using ads.com)
+  // 'CID_9341614254': ['adscom'], // UTC13 - DEPRECATED (no longer using ads.com)
+  'CID_9790364217': ['adscom'], // UTC14 - Special: Previously had inuvo access too
+  'CID_2420687578': ['adscom'], // UTC16
+  // 'CID_6324595978': ['adscom'], // UTC17 - DEPRECATED (no longer using ads.com)
+  'CID_5133038944': ['adscom'], // UTC18
+  // 'CID_9084731648': ['adscom'], // UTC19 - DEPRECATED (no longer using ads.com)
+  // 'CID_5109995931': ['adscom'], // UTC20 - DEPRECATED (no longer using ads.com)
+  'CID_3218250684': ['adscom'], // UTC21
+  // 'CID_7035336235': ['adscom'], // UTC22 - DEPRECATED (no longer using ads.com)
+  // 'CID_5343981146': ['adscom'], // UTC23 - DEPRECATED (no longer using ads.com)
+  'CID_1908857409': ['adscom'], // UTC24
+  'CID_3848887282': ['adscom'], // UTC25
+  'CID_4213092623': ['adscom'], // UTC26
+  // 'CID_6626619603': ['adscom'], // UTC27 - DEPRECATED (no longer using ads.com)
+  // 'CID_8914190629': ['adscom'], // UTC28 - DEPRECATED (no longer using ads.com)
+  'CID_9876515601': ['adscom'], // UTC29
+  'CID_8600545272': ['adscom'], // UTC30
+  // 'CID_3118222043': ['adscom'], // UTC31 - DEPRECATED (no longer using ads.com)
+  'CID_7824950746': ['adscom'], // UTC32
+  'CID_5675630727': ['adscom'], // UTC34
+  'CID_3304906147': ['adscom'], // UTC35
+  'CID_8825176554': ['adscom'], // UTC36
+  'CID_8321499303': ['adscom'], // UTC37
+  'CID_7953604784': ['adscom'], // UTC38
+  'CID_9436130288': ['adscom'], // UTC39
+  'CID_7572891295': ['adscom'], // UTC40
+  'CID_8807720960': ['adscom'], // Yahoo
+  'CID_4277350349': ['adscom'], // Siddhi - Special: Previously had inuvo access too
 };
 
 /**
