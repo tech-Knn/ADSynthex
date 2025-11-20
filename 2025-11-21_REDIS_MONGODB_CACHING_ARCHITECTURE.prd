@@ -1,0 +1,811 @@
+# Product Requirements Document: Redis + MongoDB Caching Architecture
+**Date:** November 21, 2025
+**Version:** 1.0
+**Author:** System Architect
+**Project:** AdSyntheX - Dual-Layer Caching System
+
+---
+
+## Executive Summary
+
+This document outlines the implementation of a **dual-layer caching architecture** combining Redis (hot cache) and MongoDB (warm/persistent storage) to solve data inconsistency issues, improve dashboard load times, and handle historical data queries efficiently.
+
+### Current Problems
+1. ❌ **Data Inconsistency**: Individual account totals don't match overall totals
+2. ❌ **Slow Historical Queries**: Custom date ranges take 30-60 seconds
+3. ❌ **No Data Persistence**: Redis-only cache expires, requiring repeated API calls
+4. ❌ **Failed MongoDB Syncs**: Previous implementation had timeout and connection issues
+5. ❌ **Rate Limit Concerns**: 10k daily Google Ads API quota with 83 accounts
+
+### Solution Overview
+- **Redis Cache**: 15-minute TTL for hot data (today/yesterday)
+- **MongoDB Storage**: Permanent storage for all historical data
+- **Smart Querying**: Automatic routing to fastest data source
+- **Reliable Syncing**: 15-minute cron job with error handling
+- **Data Consistency**: Verify totals by querying MongoDB aggregations
+
+---
+
+## Architecture Overview
+
+### Three-Tier Data Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  TIER 1: REDIS CACHE (Hot Data - Last 2 days)                   │
+│  • TTL: 15 minutes                                               │
+│  • Size: ~50-100 MB                                              │
+│  • Hit Rate: 85-95% (most users view today)                      │
+│  • Load Time: 50-100ms                                           │
+└─────────────┬───────────────────────────────────────────────────┘
+              │ Cache Miss
+              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  TIER 2: MONGODB (Warm Data - All Historical)                   │
+│  • TTL: Permanent                                                │
+│  • Size: ~500 MB (90 days) - grows over time                     │
+│  • Hit Rate: 10-15% (historical queries)                         │
+│  • Load Time: 200-500ms (indexed queries)                        │
+└─────────────┬───────────────────────────────────────────────────┘
+              │ Data Not Found
+              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  TIER 3: LIVE API (Cold Data - Never Synced)                    │
+│  • TTL: N/A (live fetch)                                         │
+│  • Hit Rate: <1% (very old or custom ranges)                     │
+│  • Load Time: 30-60 seconds                                      │
+│  • After fetch: Save to MongoDB for future queries               │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## MongoDB Schema Design
+
+### Database Structure
+
+**Database Name:** `adsynthex`
+
+**Collections (9 total):**
+
+| Collection Name | Purpose | Size Estimate | Indexes |
+|----------------|---------|---------------|---------|
+| `afs_cost` | Google Ads cost data for AFS accounts | 50 MB/month | 3 |
+| `afs_revenue` | AdSense revenue data by style_id | 30 MB/month | 3 |
+| `compado_cost` | Google Ads cost for Compado accounts | 40 MB/month | 3 |
+| `compado_revenue` | Compado conversions data | 20 MB/month | 3 |
+| `adscom_cost` | Google Ads cost for Ads.com accounts | 80 MB/month | 3 |
+| `adscom_revenue` | Ads.com article performance data | 40 MB/month | 2 |
+| `sync_status` | Track sync status per account/feed | <1 MB | 2 |
+| `sync_history` | Audit log of all sync operations | 10 MB/year | 2 |
+| `data_snapshots` | Daily aggregated snapshots for reports | 5 MB/month | 2 |
+
+**Total Storage:** ~260 MB/month × 3 months retention = **~780 MB**
+**MongoDB Atlas Free Tier:** 512 MB ❌ **Need paid tier ($9/month for 2GB)**
+
+---
+
+### Collection Schemas
+
+#### 1. Cost Collections (afs_cost, compado_cost, adscom_cost)
+
+```typescript
+interface CostDocument {
+  _id: ObjectId;
+
+  // Account & Campaign Info
+  account_id: string;           // Google Ads account ID
+  campaign_id: string;
+  campaign_name: string;
+  ad_group_id?: string;
+  ad_group_name?: string;
+  ad_id?: string;
+  ad_name?: string;
+
+  // Date
+  date: string;                 // YYYY-MM-DD format
+
+  // Cost Metrics
+  cost_micros: number;          // Cost in micros ($1.50 = 1500000)
+  clicks: number;
+  impressions: number;
+  conversions: number;
+  ctr: number;
+  cpc: number;
+
+  // Feed-Specific Matching Keys
+  style_id?: string;            // AFS only
+  domain?: string;              // AFS only
+  gclid?: string;               // Compado only
+  article?: string;             // Ads.com only
+
+  // Metadata
+  feed_type: 'afs' | 'compado' | 'adscom';
+  created_at: Date;
+  updated_at: Date;
+}
+```
+
+**Indexes:**
+```javascript
+// Unique constraint to prevent duplicates
+db.afs_cost.createIndex(
+  { account_id: 1, date: 1, style_id: 1, campaign_id: 1 },
+  { unique: true, name: 'unique_cost_entry' }
+);
+
+// Query performance indexes
+db.afs_cost.createIndex(
+  { date: 1, feed_type: 1 },
+  { name: 'date_feed_lookup' }
+);
+
+db.afs_cost.createIndex(
+  { style_id: 1, date: 1 },
+  { name: 'style_date_lookup', sparse: true }  // Sparse for AFS only
+);
+```
+
+#### 2. Revenue Collections (afs_revenue, compado_revenue, adscom_revenue)
+
+```typescript
+interface RevenueDocument {
+  _id: ObjectId;
+
+  // Revenue Metrics
+  revenue_usd: number;
+  revenue_eur: number;
+  clicks: number;
+  impressions: number;
+  date: string;
+
+  // Feed-Specific Matching Keys
+  style_id?: string;            // AFS
+  domain?: string;              // AFS
+  country_name?: string;        // AFS
+  gclid?: string;               // Compado
+  article?: string;             // Ads.com
+
+  // Feed-Specific Metrics
+  // AFS: country_name
+  // Compado: conversion_type, device, country, traffic_source
+  // Ads.com: visits, ctr, rpm, epc, ivt_correction, finalized
+
+  // Metadata
+  feed_type: 'afs' | 'compado' | 'adscom';
+  created_at: Date;
+  updated_at: Date;
+}
+```
+
+**Indexes:**
+```javascript
+db.afs_revenue.createIndex(
+  { style_id: 1, date: 1 },
+  { unique: true, name: 'unique_revenue_entry', sparse: true }
+);
+
+db.afs_revenue.createIndex(
+  { date: 1, feed_type: 1 },
+  { name: 'date_feed_lookup' }
+);
+```
+
+#### 3. Sync Status Collection
+
+```typescript
+interface SyncStatusDocument {
+  _id: ObjectId;
+  feed_type: 'afs' | 'compado' | 'adscom';
+  account_id: string;
+  last_sync_date: string;       // Last date successfully synced
+  last_sync_time: Date;
+  status: 'success' | 'failed' | 'in_progress' | 'skipped';
+  error_message?: string;
+  records_synced: number;
+  duration_ms: number;
+  updated_at: Date;
+}
+```
+
+**Indexes:**
+```javascript
+db.sync_status.createIndex(
+  { feed_type: 1, account_id: 1 },
+  { unique: true, name: 'unique_sync_status' }
+);
+
+db.sync_status.createIndex(
+  { last_sync_time: -1 },
+  { name: 'recent_syncs' }
+);
+```
+
+---
+
+## Cron Sync Worker Design
+
+### Worker Configuration
+
+**File:** `scripts/mongodb-sync-worker.js`
+
+**Execution:**
+- **Interval:** Every 15 minutes
+- **Timeout:** 10 minutes max (per sync cycle)
+- **Deployment:** Render Background Worker
+- **Health Check:** HTTP endpoint on port 10000
+
+### Sync Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  STEP 1: Initialize (5 seconds)                                  │
+│  • Connect to MongoDB (connection pool)                          │
+│  • Connect to Redis                                              │
+│  • Verify environment variables                                  │
+└─────────────┬───────────────────────────────────────────────────┘
+              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  STEP 2: Fetch Cost Data (2-4 minutes)                          │
+│  • Batch accounts: 5 at a time (prevent rate limits)            │
+│  • For each feed (AFS, Compado, Ads.com):                       │
+│    - Fetch Google Ads data for TODAY only                       │
+│    - Extract cost metrics (clicks, cost, impressions)           │
+│    - Store in memory buffer                                      │
+└─────────────┬───────────────────────────────────────────────────┘
+              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  STEP 3: Fetch Revenue Data (1-3 minutes)                       │
+│  • AFS: Fetch AdSense revenue by style_id                       │
+│  • Compado: Fetch conversions by GCLID                          │
+│  • Ads.com: Fetch article performance                           │
+│  • Store in memory buffer                                        │
+└─────────────┬───────────────────────────────────────────────────┘
+              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  STEP 4: Save to MongoDB (30-60 seconds)                        │
+│  • Use bulkWrite with upsert (prevent duplicates)               │
+│  • Batch size: 1000 documents per write                         │
+│  • Error handling: Log failures, continue with others           │
+│  • Update sync_status collection                                │
+└─────────────┬───────────────────────────────────────────────────┘
+              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  STEP 5: Update Redis Cache (10-20 seconds)                     │
+│  • Cache today's aggregated data                                │
+│  • Cache yesterday's data (if not already cached)               │
+│  • Set TTL: 15 minutes                                          │
+│  • Clear stale cache entries                                    │
+└─────────────┬───────────────────────────────────────────────────┘
+              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  STEP 6: Health Check & Metrics (5 seconds)                     │
+│  • Update sync_history                                          │
+│  • Log success/failure metrics                                  │
+│  • Respond to health check endpoint                             │
+│  • Wait 15 minutes for next cycle                               │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Total Time per Cycle:** 3-8 minutes (well under 10-minute timeout)
+
+---
+
+## API Query Strategy
+
+### Smart Data Routing
+
+```typescript
+// lib/smart-data-fetcher.ts
+
+async function getDataSmartly(
+  feed: FeedType,
+  accountId: string | null,
+  startDate: string,
+  endDate: string
+) {
+  const today = new Date().toISOString().split('T')[0];
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+
+  // STRATEGY 1: Hot Data (Today/Yesterday) → Redis
+  if (startDate >= yesterday && endDate <= today) {
+    console.log('[SMART_FETCH] Hot data query - checking Redis cache');
+
+    const cached = await redisCache.get(feed, accountId, startDate, endDate);
+    if (cached) {
+      return { data: cached, source: 'redis', loadTime: '50-100ms' };
+    }
+
+    // Redis miss → Check MongoDB
+    console.log('[SMART_FETCH] Redis miss - checking MongoDB');
+    const dbData = await mongodb.query(feed, accountId, startDate, endDate);
+
+    if (dbData.length > 0) {
+      // Cache in Redis for next time
+      await redisCache.set(feed, accountId, startDate, endDate, dbData);
+      return { data: dbData, source: 'mongodb', loadTime: '200-500ms' };
+    }
+
+    // MongoDB miss → Fetch from API
+    console.log('[SMART_FETCH] MongoDB miss - fetching from API');
+    const apiData = await fetchFromAPI(feed, accountId, startDate, endDate);
+
+    // Save to MongoDB
+    await mongodb.save(feed, apiData);
+
+    // Cache in Redis
+    await redisCache.set(feed, accountId, startDate, endDate, apiData);
+
+    return { data: apiData, source: 'api', loadTime: '30-60s' };
+  }
+
+  // STRATEGY 2: Warm Data (Last 90 days) → MongoDB
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
+
+  if (startDate >= ninetyDaysAgo) {
+    console.log('[SMART_FETCH] Warm data query - checking MongoDB');
+
+    const dbData = await mongodb.query(feed, accountId, startDate, endDate);
+
+    if (dbData.length > 0) {
+      return { data: dbData, source: 'mongodb', loadTime: '200-500ms' };
+    }
+
+    // Not in MongoDB → Fetch from API and save
+    const apiData = await fetchFromAPI(feed, accountId, startDate, endDate);
+    await mongodb.save(feed, apiData);
+
+    return { data: apiData, source: 'api', loadTime: '30-60s', cached: true };
+  }
+
+  // STRATEGY 3: Cold Data (>90 days) → API only
+  console.log('[SMART_FETCH] Cold data query - fetching from API');
+
+  const apiData = await fetchFromAPI(feed, accountId, startDate, endDate);
+
+  // Optional: Save to MongoDB for future queries
+  await mongodb.save(feed, apiData);
+
+  return { data: apiData, source: 'api', loadTime: '30-60s' };
+}
+```
+
+---
+
+## Rate Limit Management
+
+### Daily API Call Budget
+
+**Google Ads API Quota:** 10,000 calls/day
+
+**Breakdown:**
+
+| Operation | Frequency | Calls per Operation | Daily Calls |
+|-----------|-----------|---------------------|-------------|
+| **Sync Worker** | Every 15 min (96×/day) | 83 accounts × 1 query | 7,968 |
+| **User Queries (Cache Miss)** | ~100/day | 1 per miss | 100 |
+| **Historical Backfill** | Manual/once | Variable | 500 |
+| **Buffer** | - | - | 1,432 |
+| **TOTAL** | - | - | **10,000** |
+
+**Safety Measures:**
+- ✅ **Circuit Breaker**: Stop syncing if quota >90% used
+- ✅ **Cooldown Period**: 1-hour cooldown if rate limit hit
+- ✅ **Priority Queue**: User queries > Sync worker > Backfill
+- ✅ **Stale Cache Serving**: Serve old data if quota exhausted
+
+---
+
+## Data Consistency Validation
+
+### Verification Queries
+
+```typescript
+// Check if individual account totals match overall totals
+
+async function verifyDataConsistency(feed: FeedType, date: string) {
+  // Get individual account totals
+  const individualTotals = await mongodb.aggregate([
+    { $match: { feed_type: feed, date: date } },
+    { $group: {
+        _id: '$account_id',
+        total_cost: { $sum: '$cost_micros' },
+        total_revenue: { $sum: '$revenue_usd' }
+      }
+    }
+  ]);
+
+  // Get overall total
+  const overallTotal = await mongodb.aggregate([
+    { $match: { feed_type: feed, date: date } },
+    { $group: {
+        _id: null,
+        total_cost: { $sum: '$cost_micros' },
+        total_revenue: { $sum: '$revenue_usd' }
+      }
+    }
+  ]);
+
+  // Verify
+  const individualSum = individualTotals.reduce((sum, acc) =>
+    sum + acc.total_cost, 0
+  );
+
+  const difference = Math.abs(individualSum - overallTotal.total_cost);
+
+  if (difference > 100) { // Allow $0.01 rounding error
+    console.error(`[CONSISTENCY_CHECK] Data mismatch for ${feed} on ${date}`);
+    console.error(`Individual sum: ${individualSum}, Overall: ${overallTotal.total_cost}`);
+    return { valid: false, difference };
+  }
+
+  return { valid: true, difference: 0 };
+}
+```
+
+---
+
+## Deployment Plan
+
+### Phase 1: MongoDB Setup (Day 1)
+
+**Tasks:**
+1. ✅ Provision MongoDB Atlas cluster ($9/month, 2GB)
+2. ✅ Create database and collections
+3. ✅ Set up indexes
+4. ✅ Configure connection string in `.env`
+5. ✅ Test connection from local environment
+
+**Deliverables:**
+- MongoDB cluster URL
+- Database schema created
+- Connection verified
+
+---
+
+### Phase 2: Code Implementation (Day 2-3)
+
+**Files to Create:**
+
+```
+lib/
+├── db/
+│   ├── mongodb.ts              (MongoDB connection manager)
+│   ├── operations.ts           (CRUD operations)
+│   ├── queries.ts              (Complex queries & aggregations)
+│   └── types.ts                (TypeScript interfaces)
+├── smart-data-fetcher.ts       (Smart routing logic)
+└── consistency-checker.ts      (Data validation)
+
+scripts/
+└── mongodb-sync-worker.js      (Cron worker)
+
+app/api/
+├── adsense-cost-revenue/route.ts (Update with MongoDB queries)
+├── compado-cost-revenue/route.ts (Update with MongoDB queries)
+├── adscom/route.ts               (Update with MongoDB queries)
+└── sync-status/route.ts          (New: Show sync health)
+```
+
+**Tasks:**
+1. ✅ Implement MongoDB connection pooling
+2. ✅ Create CRUD operations with error handling
+3. ✅ Update API routes to use smart data fetcher
+4. ✅ Create sync worker with health checks
+5. ✅ Add consistency validation
+6. ✅ Write unit tests
+
+---
+
+### Phase 3: Testing (Day 4)
+
+**Test Scenarios:**
+
+| Test Case | Expected Result | Pass Criteria |
+|-----------|----------------|---------------|
+| **Sync worker runs successfully** | All accounts synced | >95% success rate |
+| **Redis cache hit for today** | Data from cache | <100ms load time |
+| **MongoDB query for last month** | Data from DB | <500ms load time |
+| **API fallback for old data** | Data fetched & saved | Saved to MongoDB |
+| **Data consistency check** | Totals match | <$0.01 difference |
+| **Rate limit handling** | Serves stale data | No errors |
+| **Worker stays alive 24 hours** | No crashes | 96+ sync cycles |
+
+---
+
+### Phase 4: Render Deployment (Day 5)
+
+**Render Configuration:**
+
+**1. Background Worker (Sync Worker):**
+```yaml
+# render.yaml
+services:
+  - type: worker
+    name: mongodb-sync-worker
+    env: node
+    buildCommand: npm install
+    startCommand: node scripts/mongodb-sync-worker.js
+    healthCheckPath: /health
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: CRON_SECRET
+        sync: false
+      - key: NEXT_PUBLIC_APP_URL
+        value: https://adsynthex.onrender.com
+      # ... all other env vars
+```
+
+**2. Web Service (Next.js):**
+```yaml
+  - type: web
+    name: adsynthex-web
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      # ... same env vars
+```
+
+**Environment Variables Required:**
+```bash
+# MongoDB
+MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/adsynthex
+
+# Redis
+UPSTASH_REDIS_REST_URL=https://...
+UPSTASH_REDIS_REST_TOKEN=...
+
+# Google Ads API
+GOOGLE_ADS_CLIENT_ID=...
+GOOGLE_ADS_CLIENT_SECRET=...
+GOOGLE_ADS_DEVELOPER_TOKEN=...
+GOOGLE_ADS_MANAGER_ID=...
+GOOGLE_ADS_REFRESH_TOKEN=...
+
+# Revenue APIs
+ADSENSE_REFRESH_TOKEN=...
+COMPADO_API_USER=...
+COMPADO_API_PASSWORD=...
+ADSCOM_API_KEY=...
+
+# App Config
+NEXT_PUBLIC_APP_URL=https://adsynthex.onrender.com
+CRON_SECRET=your_secret_key
+NODE_ENV=production
+```
+
+---
+
+## Success Metrics
+
+### Performance KPIs
+
+| Metric | Target | Current (Redis-only) | Expected Improvement |
+|--------|--------|----------------------|----------------------|
+| **Dashboard Load Time (Today)** | <200ms | 50-100ms ✅ | No change |
+| **Historical Query (Last Month)** | <1s | 30-60s ❌ | **60× faster** |
+| **Cache Hit Rate** | >80% | 40-50% | **2× better** |
+| **Data Consistency** | 100% | 70-80% ❌ | **100%** ✅ |
+| **API Calls per Day** | <8,000 | ~10,000 ⚠️ | **20% reduction** |
+| **Worker Uptime** | >99.5% | 85% ❌ | **99.9%** ✅ |
+
+### Data Quality KPIs
+
+| Metric | Target | Validation Method |
+|--------|--------|-------------------|
+| **Sync Success Rate** | >98% | Check sync_status collection |
+| **Data Completeness** | >99% | Compare API vs MongoDB record count |
+| **Duplicate Records** | 0% | Unique index violations |
+| **Stale Data (>1 hour old)** | <2% | Query updated_at timestamps |
+
+---
+
+## Rollback Plan
+
+If deployment fails or causes issues:
+
+### Immediate Rollback (5 minutes)
+
+1. ✅ Disable MongoDB sync worker on Render
+2. ✅ Revert API routes to Redis-only version
+3. ✅ Redeploy previous git commit
+4. ✅ Verify Redis cache is working
+
+### Gradual Rollback (1 hour)
+
+1. ✅ Keep MongoDB syncing but don't query it
+2. ✅ Monitor MongoDB for data quality issues
+3. ✅ Fix issues offline
+4. ✅ Re-enable MongoDB queries when stable
+
+---
+
+## Maintenance & Monitoring
+
+### Daily Monitoring
+
+**Automated Alerts:**
+- ❌ Sync worker down for >30 minutes
+- ❌ Sync success rate <90%
+- ❌ API quota usage >90%
+- ❌ MongoDB storage >80% full
+- ❌ Data consistency check fails
+
+**Dashboard Metrics:**
+- Total records in MongoDB
+- Sync success rate (last 24 hours)
+- Cache hit rates (Redis vs MongoDB)
+- API call budget remaining
+- Average query response times
+
+### Weekly Maintenance
+
+**Tasks:**
+1. Review sync error logs
+2. Check MongoDB index usage
+3. Verify data consistency across all feeds
+4. Clean up old Redis cache entries
+5. Review API quota usage trends
+
+### Monthly Maintenance
+
+**Tasks:**
+1. Archive old data (>90 days) to aggregated snapshots
+2. Optimize MongoDB indexes based on query patterns
+3. Review and adjust cache TTLs
+4. Update rate limit thresholds if needed
+5. Performance audit and optimization
+
+---
+
+## Cost Analysis
+
+### Infrastructure Costs
+
+| Service | Plan | Monthly Cost | Annual Cost |
+|---------|------|--------------|-------------|
+| **Render Web Service** | Starter | $7 | $84 |
+| **Render Background Worker** | Starter | $7 | $84 |
+| **MongoDB Atlas** | M2 (2GB) | $9 | $108 |
+| **Upstash Redis** | Current plan | $20 | $240 |
+| **TOTAL** | | **$43/month** | **$516/year** |
+
+**Current Cost:** $27/month (Render + Redis)
+**New Cost:** $43/month
+**Increase:** $16/month (+59%)
+
+**ROI:**
+- ✅ 60× faster historical queries
+- ✅ 100% data consistency
+- ✅ Infinite historical data retention
+- ✅ Better user experience
+- ✅ Reduced API calls = more headroom
+
+---
+
+## Open Questions & Risks
+
+### Technical Risks
+
+| Risk | Impact | Probability | Mitigation |
+|------|--------|-------------|------------|
+| **MongoDB connection pool exhaustion** | High | Medium | Implement connection pooling with limits |
+| **Sync worker timeout on large datasets** | Medium | Low | Batch processing, skip if taking >8 min |
+| **Data inconsistency during migration** | High | Medium | Incremental migration, validate each step |
+| **Redis cache invalidation issues** | Medium | Low | Explicit cache clearing after MongoDB writes |
+
+### Business Risks
+
+| Risk | Impact | Probability | Mitigation |
+|------|--------|-------------|------------|
+| **Increased costs** | Low | High | Monitor usage, optimize if needed |
+| **Migration downtime** | Medium | Low | Deploy during low-traffic hours |
+| **User confusion with load times** | Low | Medium | Add loading indicators |
+
+---
+
+## Timeline
+
+### Week 1: Implementation
+- **Day 1:** MongoDB setup + schema creation
+- **Day 2-3:** Code implementation
+- **Day 4:** Testing
+- **Day 5:** Deployment to Render
+
+### Week 2: Monitoring & Optimization
+- **Day 1-3:** Monitor sync worker, fix issues
+- **Day 4-5:** Optimize queries based on real usage
+- **Day 6-7:** Final validation
+
+### Week 3+: Steady State
+- **Ongoing:** Daily monitoring
+- **Weekly:** Performance reviews
+- **Monthly:** Optimization cycles
+
+---
+
+## Approval & Sign-off
+
+**Document Status:** ✅ Ready for Review
+
+**Approvals Required:**
+- [ ] Technical Lead - Architecture Review
+- [ ] DevOps - Infrastructure & Deployment
+- [ ] Product Owner - Cost & Timeline Approval
+
+**Next Steps:**
+1. Review this PRD
+2. Get stakeholder approval
+3. Begin implementation (Phase 1)
+
+---
+
+## Appendix
+
+### A. MongoDB Connection String Format
+
+```
+mongodb+srv://<username>:<password>@<cluster>.mongodb.net/<database>?retryWrites=true&w=majority
+```
+
+### B. Sample Queries
+
+**Get today's total revenue for AFS:**
+```javascript
+db.afs_revenue.aggregate([
+  { $match: { date: '2025-11-21', feed_type: 'afs' } },
+  { $group: { _id: null, total: { $sum: '$revenue_usd' } } }
+])
+```
+
+**Get last 30 days cost by account:**
+```javascript
+db.afs_cost.aggregate([
+  { $match: {
+      date: { $gte: '2025-10-22', $lte: '2025-11-21' },
+      feed_type: 'afs'
+    }
+  },
+  { $group: {
+      _id: '$account_id',
+      total_cost: { $sum: '$cost_micros' },
+      total_clicks: { $sum: '$clicks' }
+    }
+  },
+  { $sort: { total_cost: -1 } }
+])
+```
+
+### C. Health Check Endpoint Response
+
+```json
+{
+  "status": "healthy",
+  "uptime": 86400,
+  "lastSync": "2025-11-21T10:30:00Z",
+  "nextSync": "2025-11-21T10:45:00Z",
+  "mongodb": {
+    "connected": true,
+    "collections": 9,
+    "totalDocuments": 1500000
+  },
+  "redis": {
+    "connected": true,
+    "cacheSize": 50,
+    "hitRate": 87.5
+  },
+  "sync": {
+    "lastSuccess": "2025-11-21T10:30:00Z",
+    "successRate24h": 98.6,
+    "recordsSynced": 15000
+  }
+}
+```
+
+---
+
+**END OF DOCUMENT**

@@ -22,16 +22,54 @@ services:
       - key: ADSCOM_API_SECRET
         sync: false
 
+  # Background Worker: MongoDB Sync Worker
+  # Syncs data from APIs to MongoDB every 15 minutes
+  - type: worker
+    name: mongodb-sync-worker
+    env: node
+    buildCommand: npm install
+    startCommand: node scripts/mongodb-sync-worker.js
+    healthCheckPath: /health
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+      - key: GOOGLE_ADS_CLIENT_ID
+        sync: false
+      - key: GOOGLE_ADS_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_ADS_DEVELOPER_TOKEN
+        sync: false
+      - key: GOOGLE_ADS_REFRESH_TOKEN
+        sync: false
+      - key: GOOGLE_ADS_MANAGER_ID
+        sync: false
+      - key: ADSENSE_REFRESH_TOKEN
+        sync: false
+      - key: COMPADO_API_USER
+        sync: false
+      - key: COMPADO_API_PASSWORD
+        sync: false
+      - key: ADSCOM_API_KEY
+        sync: false
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+      - key: NODE_ENV
+        value: production
+
   # Cron Job: Daily Exchange Rate Refresh
   # Automatically refreshes EUR/USD exchange rate every day at midnight UTC
   - type: cron
     name: exchange-rate-refresh
     env: node
-    schedule: "0 0 * * *"  
+    schedule: "0 0 * * *"
     buildCommand: npm install
     startCommand: node scripts/refresh-exchange-rate.js
     envVars:
       - key: APP_URL
-        sync: false  
+        sync: false
       - key: NODE_ENV
         value: production
