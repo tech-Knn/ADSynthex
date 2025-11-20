@@ -5,6 +5,7 @@ import config from './google-ads-config';
 import * as utils from './google-ads-utils';
 import { ACCOUNT_FEED_ACCESS, FeedType } from './account-access-control';
 import { googleAdsRateLimiter } from './redis-rate-limiter';
+import { customer } from 'google-ads-api/build/src/protos/autogen/resourceNames';
 
 // Target accounts configuration
 const TARGET_ACCOUNTS = config.TARGET_ACCOUNTS;

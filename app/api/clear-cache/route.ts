@@ -4,23 +4,24 @@ import { redisClient } from '@/lib/redis-client';
 
 export async function POST(request: NextRequest) {
   try {
-    const { secret } = await request.json();
+    const { secret, pattern } = await request.json();
 
     // Security check
     if (secret !== process.env.CRON_SECRET) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    console.log('[CLEAR_CACHE] Starting cache clear...');
+    const cachePattern = pattern || 'google-ads:*';
+    console.log(`[CLEAR_CACHE] Starting cache clear for pattern: ${cachePattern}...`);
 
-    // Clear all Google Ads cache keys
+    // Clear cache keys matching pattern
     const client = redisClient.getClient();
     if (!client) {
       throw new Error('Redis client not available');
     }
 
-    // Get all keys matching google-ads pattern
-    const keys = await client.keys('google-ads:*');
+    // Get all keys matching the pattern
+    const keys = await client.keys(cachePattern);
     console.log(`[CLEAR_CACHE] Found ${keys.length} cache keys`);
 
     if (keys.length > 0) {

@@ -20,6 +20,9 @@ const publicPaths = [
   '/api/sync-status',
   '/api/manual-sync',
   '/api/currency/refresh',
+  '/api/debug-adsense-revenue',  // Debug endpoint for revenue diagnostics
+  '/api/clear-cache',  // Cache clearing endpoint
+  '/api/find-duplicate-style-ids',  // Find duplicate style_ids across accounts
   '/logout'
 ];
 

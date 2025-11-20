@@ -16,6 +16,7 @@ interface AdSenseCostRevenueResponse {
   adsense_data: any;
   cost_revenue_mapping: any[];
   campaign_aggregated: any[];
+  account_level_aggregated: any[];
   summary: any;
   _source: string;
   _timestamp: string;
@@ -186,7 +187,7 @@ export default function AdSensePage() {
     }
   };
 
-  const fetchData = async () => {
+  const fetchData = async (forceLive = false) => {
     if (!selectedGoogleAdsAccount || !selectedAdsenseAccount) {
       console.warn('[AFS] Missing required fields:', { selectedGoogleAdsAccount, selectedAdsenseAccount });
       return;
@@ -203,6 +204,7 @@ export default function AdSensePage() {
         startDate: startDate.format('YYYY-MM-DD'),
         endDate: endDate.format('YYYY-MM-DD'),
         adsenseAccountId: selectedAdsenseAccount,
+        forceLive, // Add forceLive parameter to bypass cache
       };
 
       if (selectedGoogleAdsAccount === 'all') {
@@ -216,6 +218,9 @@ export default function AdSensePage() {
         console.log('[AFS] Fetching data for single account:', selectedGoogleAdsAccount);
       }
 
+      if (forceLive) {
+        console.log('[AFS] 🔥 FORCE REFRESH - Bypassing cache!');
+      }
       console.log('[AFS] Fetching data with params:', requestBody);
 
       const response = await fetch('/api/adsense-cost-revenue', {
@@ -400,11 +405,22 @@ export default function AdSensePage() {
               <Button
                 type="primary"
                 icon={<ReloadOutlined />}
-                onClick={fetchData}
+                onClick={() => fetchData(false)}
                 loading={loading}
                 disabled={!selectedGoogleAdsAccount || !selectedAdsenseAccount}
+                style={{ marginRight: 8 }}
               >
                 Fetch Data
+              </Button>
+              <Button
+                type="default"
+                icon={<ReloadOutlined />}
+                onClick={() => fetchData(true)}
+                loading={loading}
+                disabled={!selectedGoogleAdsAccount || !selectedAdsenseAccount}
+                danger
+              >
+                Force Refresh (Bypass Cache)
               </Button>
             </Col>
           </Row>
