@@ -503,7 +503,7 @@ export default function AdSensePage() {
                         <Option value="clicks">Revenue Clicks</Option>
                         <Option value="rpc">RPC</Option>
                         <Option value="cpa">CPA</Option>
-                        <Option value="conversionRate">Conversion Rate</Option>
+                        <Option value="conversions">Conversions</Option>
                       </Select>
                     </Col>
                     <Col xs={24} md={8}>
@@ -594,7 +594,7 @@ export default function AdSensePage() {
                               <th style={{ textAlign: 'left' }}></th>
                               <th style={{ textAlign: 'right', fontSize: '12px' }}>Cost</th>
                               <th style={{ textAlign: 'right', fontSize: '12px' }}>CPA</th>
-                              <th style={{ textAlign: 'right', fontSize: '12px' }}>Conv. Rate</th>
+                              <th style={{ textAlign: 'right', fontSize: '12px' }}>Conversions</th>
                               <th style={{ textAlign: 'right', fontSize: '12px' }}>Revenue</th>
                               <th style={{ textAlign: 'right', fontSize: '12px' }}>Clicks</th>
                               <th style={{ textAlign: 'right', fontSize: '12px' }}>RPC</th>
@@ -619,7 +619,7 @@ export default function AdSensePage() {
                                   ${campaign.cpa?.toFixed(2) || '0.00'}
                                 </td>
                                 <td style={{ textAlign: 'right', color: '#722ed1', fontWeight: '500' }}>
-                                  {campaign.conversionRate?.toFixed(2) || '0.00'}%
+                                  {campaign.conversions?.toFixed(0) || '0'}
                                 </td>
                                 <td style={{ textAlign: 'right', color: '#52c41a', fontWeight: '600' }}>
                                   ${campaign.revenue?.toFixed(2) || '0.00'}

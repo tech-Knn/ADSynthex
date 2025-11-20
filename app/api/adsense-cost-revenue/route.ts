@@ -7,6 +7,7 @@ import {
 } from '@/lib/adsense-api';
 import { cookies } from 'next/headers';
 import { bulletproofAPI } from '@/lib/bulletproof-google-ads-api';
+import { redisCacheManager } from '@/lib/redis-cache-manager';
 
 interface RevenueByStyleId {
   style_id: string;
@@ -41,6 +42,43 @@ export async function POST(request: NextRequest) {
     console.log('[ADSENSE_REVENUE] Customer ID:', customerId);
     console.log('[ADSENSE_REVENUE] Account IDs:', accountIds);
     console.log('[ADSENSE_REVENUE] Force Live:', forceLive || false);
+
+    // CRITICAL: Create cache key for cost+revenue mapping (ensures they're cached together)
+    const cacheKey = `adsense_cost_revenue:${adsenseAccountId}:${startDate}:${endDate}:${customerId || accountIds?.join('_') || 'all'}`;
+    const CACHE_TTL = 15 * 60 * 1000; // 15 minutes in milliseconds
+
+    // Check if we have cached cost+revenue mapping
+    if (!forceLive) {
+      try {
+        const cached = await redisCacheManager.get(cacheKey, {
+          dataType: 'unified',
+          forceRefresh: false
+        });
+
+        if (cached.data && !cached.isStale && cached.age < CACHE_TTL) {
+          console.log(`[ADSENSE_COST_REVENUE] ✅ Cache HIT! Age: ${Math.round(cached.age / 1000)}s (valid for ${Math.round((CACHE_TTL - cached.age) / 1000)}s more)`);
+
+          return NextResponse.json({
+            ...cached.data,
+            _cached: true,
+            _cacheAge: `${Math.round(cached.age / 1000)}s`,
+            _cacheExpiresIn: `${Math.round((CACHE_TTL - cached.age) / 1000)}s`
+          }, {
+            headers: {
+              'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+              'Pragma': 'no-cache',
+              'Expires': '0'
+            }
+          });
+        } else if (cached.data) {
+          console.log(`[ADSENSE_COST_REVENUE] Cache STALE (age: ${Math.round(cached.age / 1000)}s > ${CACHE_TTL / 1000}s), fetching fresh...`);
+        } else {
+          console.log(`[ADSENSE_COST_REVENUE] Cache MISS, fetching fresh...`);
+        }
+      } catch (err) {
+        console.warn('[ADSENSE_COST_REVENUE] Cache check failed:', err);
+      }
+    }
 
     if (!startDate || !endDate) {
       console.error('[ADSENSE_REVENUE] Missing date range');
@@ -84,12 +122,7 @@ export async function POST(request: NextRequest) {
     const isToday = startDate === today || endDate === today;
     const isOnlyToday = startDate === today && endDate === today;
 
-    // For TODAY's data: Force shorter cache (30min) and allow stale = false for freshness
-    // For historical data: Use longer cache and allow stale = true
-    const forceRefreshForToday = isToday && !forceLive; // Moderate refresh for today
-    const allowStaleForHistorical = !isToday; // Always allow stale for historical
-
-    console.log(`[ADSENSE_REVENUE] Date analysis: isToday=${isToday}, isOnlyToday=${isOnlyToday}, forceRefresh=${forceRefreshForToday}`);
+    console.log(`[ADSENSE_REVENUE] Date analysis: isToday=${isToday}, isOnlyToday=${isOnlyToday}`);
 
     const fetchStartTime = Date.now();
 
@@ -100,23 +133,52 @@ export async function POST(request: NextRequest) {
     let googleAdsDataPromises;
 
     if (isMultiAccount) {
-      console.log('[ADSENSE_COST_REVENUE] Fetching multiple accounts:', accountIds);
-      googleAdsDataPromises = Promise.all(
-        accountIds.map((accId: string) =>
-          bulletproofAPI.getData(startDate, endDate, accId, {
-            priority: isToday ? 9 : 8, // Higher priority for today's data
-            allowStale: allowStaleForHistorical, // Fresh for today, stale OK for historical
-            maxWait: 15000, // Increased from 10s to 15s for better reliability
-            feedType: 'adsense'
-          })
-        )
-      );
+      console.log('[ADSENSE_COST_REVENUE] Fetching multiple accounts:', accountIds.length, 'accounts');
+
+      // CRITICAL FIX: Batch requests to prevent overwhelming API and rate limits
+      // Process 3 accounts at a time instead of all 21 simultaneously
+      // This prevents timeouts and ensures consistent data
+      const BATCH_SIZE = 3;
+      const batches: string[][] = [];
+      for (let i = 0; i < accountIds.length; i += BATCH_SIZE) {
+        batches.push(accountIds.slice(i, i + BATCH_SIZE));
+      }
+
+      console.log(`[ADSENSE_COST_REVENUE] Processing ${batches.length} batches of max ${BATCH_SIZE} accounts each`);
+
+      // Process batches sequentially, but accounts within each batch in parallel
+      const allResults: any[] = [];
+      for (let i = 0; i < batches.length; i++) {
+        const batch = batches[i];
+        console.log(`[ADSENSE_COST_REVENUE] Batch ${i + 1}/${batches.length}: Fetching ${batch.length} accounts: ${batch.join(', ')}`);
+
+        const batchResults = await Promise.all(
+          batch.map((accId: string) =>
+            bulletproofAPI.getData(startDate, endDate, accId, {
+              priority: isToday ? 9 : 8,
+              allowStale: true, // Allow stale for reliability (full response is cached separately)
+              maxWait: 30000, // Increased to 30s for better reliability
+              feedType: 'adsense'
+            })
+          )
+        );
+
+        allResults.push(...batchResults);
+        console.log(`[ADSENSE_COST_REVENUE] Batch ${i + 1}/${batches.length}: Completed, ${batchResults.filter(r => r.data).length}/${batch.length} succeeded`);
+
+        // Delay between batches to prevent rate limit spikes (1 second)
+        if (i < batches.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      googleAdsDataPromises = Promise.resolve(allResults);
     } else if (customerId) {
       console.log('[ADSENSE_COST_REVENUE] Fetching single account:', customerId);
       googleAdsDataPromises = bulletproofAPI.getData(startDate, endDate, customerId, {
-        priority: isToday ? 9 : 8, // Higher priority for today's data
-        allowStale: allowStaleForHistorical, // Fresh for today, stale OK for historical
-        maxWait: 15000, // Increased from 10s to 15s for better reliability
+        priority: isToday ? 9 : 8,
+        allowStale: true, // Allow stale for reliability (full response is cached separately)
+        maxWait: 30000,
         feedType: 'adsense'
       });
     } else {
@@ -146,19 +208,41 @@ export async function POST(request: NextRequest) {
       if (isMultiAccount) {
         const accountsData = googleAdsResult.value as any[];
         googleAdsData = { campaigns: [], ads: [] };
+
+        // CRITICAL FIX: Track which accounts succeeded/failed
+        let successCount = 0;
+        let failedAccounts: string[] = [];
+
         accountsData.forEach((accountResult: any, index: number) => {
           const accData = accountResult.data;
-          if (accData?.campaigns) {
-            accData.campaigns.forEach((c: any) => c.account_id = accountIds[index]);
-            googleAdsData.campaigns.push(...accData.campaigns);
-          }
-          if (accData?.ads) {
-            accData.ads.forEach((a: any) => a.account_id = accountIds[index]);
-            googleAdsData.ads.push(...accData.ads);
+          const accountId = accountIds[index];
+
+          if (accData?.campaigns || accData?.ads) {
+            // Account succeeded
+            successCount++;
+            if (accData?.campaigns) {
+              accData.campaigns.forEach((c: any) => c.account_id = accountId);
+              googleAdsData.campaigns.push(...accData.campaigns);
+            }
+            if (accData?.ads) {
+              accData.ads.forEach((a: any) => a.account_id = accountId);
+              googleAdsData.ads.push(...accData.ads);
+            }
+          } else {
+            // Account failed - log it!
+            failedAccounts.push(accountId);
+            console.warn(`[ADSENSE_COST_REVENUE] ⚠️  Account ${accountId} returned no data: ${accountResult.message || 'Unknown error'}`);
           }
         });
-        message += `Google Ads: ${accountsData.length} accounts, ${googleAdsData.campaigns.length} campaigns, ${googleAdsData.ads.length} ads. `;
-        console.log(`[ADSENSE_COST_REVENUE] Multi-account: Aggregated ${googleAdsData.campaigns.length} campaigns, ${googleAdsData.ads.length} ads from ${accountsData.length} accounts`);
+
+        message += `Google Ads: ${successCount}/${accountsData.length} accounts, ${googleAdsData.campaigns.length} campaigns, ${googleAdsData.ads.length} ads. `;
+        console.log(`[ADSENSE_COST_REVENUE] Multi-account: ${successCount}/${accountsData.length} succeeded, ${googleAdsData.campaigns.length} campaigns, ${googleAdsData.ads.length} ads`);
+
+        // CRITICAL: Warn if some accounts failed (partial data)
+        if (failedAccounts.length > 0) {
+          console.error(`[ADSENSE_COST_REVENUE] ❌ PARTIAL DATA! ${failedAccounts.length} accounts failed: ${failedAccounts.join(', ')}`);
+          message += `⚠️ Warning: ${failedAccounts.length} accounts failed! Data may be incomplete. `;
+        }
       } else {
         const singleResult = googleAdsResult.value as any;
         googleAdsData = singleResult.data;
@@ -324,7 +408,7 @@ export async function POST(request: NextRequest) {
 
     // Build cost lookup by style_id + domain from campaigns
     // CRITICAL: Only process ENABLED campaigns (exclude PAUSED, REMOVED, etc.)
-    const costByStyleDomain = new Map<string, { cost: number; clicks: number; impressions: number }>();
+    const costByStyleDomain = new Map<string, { cost: number; clicks: number; impressions: number; conversions: number; cpa: number }>();
 
     let totalCampaigns = 0;
     let enabledCampaigns = 0;
@@ -354,22 +438,33 @@ export async function POST(request: NextRequest) {
       const clicks = campaign.metrics?.clicks || 0;
       const impressions = campaign.metrics?.impressions || 0;
 
+      // CRITICAL: Fetch actual conversions from Google Ads, not AdSense clicks
+      const conversions = campaign.metrics?.conversions || 0;
+
       // Add cost for each style_id + domain combination
       for (const styleId of urlData.styleIds) {
         for (const domain of urlData.domains) {
           const key = `${styleId}_${domain}`;
           if (!costByStyleDomain.has(key)) {
-            costByStyleDomain.set(key, { cost: 0, clicks: 0, impressions: 0 });
+            costByStyleDomain.set(key, { cost: 0, clicks: 0, impressions: 0, conversions: 0, cpa: 0 });
           }
           const existing = costByStyleDomain.get(key)!;
           existing.cost += cost;
           existing.clicks += clicks;
           existing.impressions += impressions;
+          existing.conversions += conversions;
+          // Average CPA across multiple campaigns for the same style_id/domain
+          existing.cpa = existing.conversions > 0 ? existing.cost / existing.conversions : 0;
         }
       }
     }
 
     console.log(`[ADSENSE_COST_REVENUE] Campaign filtering: ${enabledCampaigns} ENABLED (status=2) / ${totalCampaigns} total campaigns (skipped ${skippedCampaigns} non-ENABLED)`);
+
+    // Calculate total conversions from Google Ads
+    const totalGoogleAdsConversions = Array.from(costByStyleDomain.values()).reduce((sum, data) => sum + data.conversions, 0);
+    console.log(`[ADSENSE_COST_REVENUE] Total Google Ads conversions: ${totalGoogleAdsConversions.toFixed(2)}`);
+
     console.log(`[ADSENSE_COST_REVENUE] Built cost lookup for ${costByStyleDomain.size} style_id/domain combinations from ENABLED campaigns`);
 
     // Helper function to extract article from URL
@@ -433,10 +528,9 @@ export async function POST(request: NextRequest) {
           profit: 0,
           clicks: 0,
           impressions: 0,
-          conversions: 0,
+          conversions: 0, // Actual number of conversions from Google Ads
           costClicks: 0,
-          cpa: 0,
-          conversionRate: 0,
+          cpa: 0, // Cost per conversion (cost / conversions)
           rpc: 0,
           roi: 0,
           roas: 0
@@ -448,7 +542,7 @@ export async function POST(request: NextRequest) {
       // Direct revenue allocation - Only revenue for THIS account's style_ids
       existing.revenue += rev.earnings;
       existing.clicks += rev.clicks;
-      existing.conversions += rev.clicks;
+      // Note: conversions will be populated from Google Ads data, not AdSense clicks
     }
 
     console.log(`[ADSENSE_COST_REVENUE] Revenue allocation: ${allocatedRevenueItems} items / $${allocatedRevenueValue.toFixed(2)} allocated to this account`);
@@ -491,15 +585,16 @@ export async function POST(request: NextRequest) {
         existing.cost = costData.cost;
         existing.costClicks = costData.clicks; // Google Ads clicks
         existing.impressions = costData.impressions;
+
+        // CRITICAL: Use actual Google Ads conversions (NUMBER, not percentage)
+        existing.conversions = costData.conversions;
+
+        // CRITICAL: Use actual Google Ads CPA (cost / conversions)
+        existing.cpa = costData.cpa;
+
         existing.profit = existing.revenue - existing.cost;
         existing.roi = existing.cost > 0 ? (existing.profit / existing.cost) * 100 : 0;
         existing.roas = existing.cost > 0 ? existing.revenue / existing.cost : 0;
-
-        // Calculate CPA (Cost Per Acquisition) - cost per AdSense click
-        existing.cpa = existing.conversions > 0 ? existing.cost / existing.conversions : 0;
-
-        // Calculate Conversion Rate - (AdSense clicks / Google Ads clicks) * 100
-        existing.conversionRate = existing.costClicks > 0 ? (existing.conversions / existing.costClicks) * 100 : 0;
 
         // Calculate RPC (Revenue Per Click) - revenue per AdSense click
         existing.rpc = existing.clicks > 0 ? existing.revenue / existing.clicks : 0;
@@ -526,9 +621,8 @@ export async function POST(request: NextRequest) {
           clicks: 0,
           costClicks: costData.clicks,
           impressions: costData.impressions,
-          conversions: 0,
-          cpa: 0,
-          conversionRate: 0,
+          conversions: costData.conversions, // Actual NUMBER of conversions from Google Ads
+          cpa: costData.cpa, // Actual Google Ads CPA (cost / conversions)
           rpc: 0,
           roi: -100,
           roas: 0
@@ -553,11 +647,14 @@ export async function POST(request: NextRequest) {
 
     console.log(`[ADSENSE_COST_REVENUE] Created ${campaign_aggregated.length} style_id/domain entries (revenue + cost mapped)`);
 
-    // Debug: Show first few entries
+    // Debug: Show first few entries with conversions and CPA
     if (campaign_aggregated.length > 0) {
       console.log(`[ADSENSE_COST_REVENUE] Sample entries (first 3):`);
       campaign_aggregated.slice(0, 3).forEach((entry, idx) => {
-        console.log(`  ${idx + 1}. Style: ${entry.style_id}, Domain: ${entry.domain}, Cost: $${entry.cost.toFixed(2)}, Revenue: $${entry.revenue.toFixed(2)}, Campaign: ${entry.campaign_name}`);
+        console.log(`  ${idx + 1}. Campaign: ${entry.campaign_name}`);
+        console.log(`      Style: ${entry.style_id}, Domain: ${entry.domain}`);
+        console.log(`      Cost: $${entry.cost.toFixed(2)}, Revenue: $${entry.revenue.toFixed(2)}, Profit: $${entry.profit.toFixed(2)}`);
+        console.log(`      Conversions: ${entry.conversions} (actual number), CPA: $${entry.cpa.toFixed(2)}`);
       });
     } else {
       console.warn(`[ADSENSE_COST_REVENUE] WARNING: No entries created! Check if style_ids are being matched correctly.`);
@@ -574,6 +671,12 @@ export async function POST(request: NextRequest) {
     const uniqueStyleIds = new Set(adsenseData.map(r => r.style_id));
     const uniqueDomains = new Set(adsenseData.map(r => r.domain_name).filter(Boolean));
     const uniqueCountries = new Set(adsenseData.map(r => r.country_name).filter(Boolean));
+
+    // Log summary with clear conversion metrics
+    console.log(`[ADSENSE_COST_REVENUE] SUMMARY:`);
+    console.log(`  Total Cost: $${totalCost.toFixed(2)}, Total Revenue: $${totalRevenue.toFixed(2)}, Total Profit: $${totalProfit.toFixed(2)}`);
+    console.log(`  Total Conversions: ${totalConversions} (actual number from Google Ads)`);
+    console.log(`  Overall CPA: $${totalConversions > 0 ? (totalCost / totalConversions).toFixed(2) : '0.00'} (cost / conversions)`);
 
     const response = {
       success: true,
@@ -605,8 +708,25 @@ export async function POST(request: NextRequest) {
       _message: message.trim()
     };
 
+    // CRITICAL: Cache the complete cost+revenue mapping for 15 minutes
+    // This ensures cost and revenue are ALWAYS fetched and stored together
+    try {
+      await redisCacheManager.set(cacheKey, response, {
+        dataType: 'unified',
+        priority: 'high'
+      });
+      console.log(`[ADSENSE_COST_REVENUE] ✅ Cached cost+revenue mapping for 15 minutes`);
+    } catch (err) {
+      console.warn('[ADSENSE_COST_REVENUE] Failed to cache response:', err);
+    }
+
+    // Disable HTTP caching (but Redis cache is used above)
     return NextResponse.json(response, {
-      headers: { 'Cache-Control': 'public, max-age=300' }
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
     });
 
   } catch (error) {
