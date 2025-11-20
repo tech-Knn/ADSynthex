@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
     if (googleAdsResult.status === 'rejected') {
       console.error('[ADSENSE_COST_REVENUE] Google Ads API failed:', googleAdsResult.reason);
       message += 'Google Ads: Failed. ';
-      googleAdsData = { campaigns: [] };
+      googleAdsData = { campaigns: [], ads: [] };
     } else {
       if (isMultiAccount) {
         const accountsData = googleAdsResult.value as any[];
@@ -158,10 +158,12 @@ export async function POST(request: NextRequest) {
           }
         });
         message += `Google Ads: ${accountsData.length} accounts, ${googleAdsData.campaigns.length} campaigns, ${googleAdsData.ads.length} ads. `;
+        console.log(`[ADSENSE_COST_REVENUE] Multi-account: Aggregated ${googleAdsData.campaigns.length} campaigns, ${googleAdsData.ads.length} ads from ${accountsData.length} accounts`);
       } else {
         const singleResult = googleAdsResult.value as any;
         googleAdsData = singleResult.data;
         message += `Google Ads: ${googleAdsData?.campaigns?.length || 0} campaigns, ${googleAdsData?.ads?.length || 0} ads. `;
+        console.log(`[ADSENSE_COST_REVENUE] Single account: ${googleAdsData?.campaigns?.length || 0} campaigns, ${googleAdsData?.ads?.length || 0} ads`);
       }
     }
 
@@ -170,6 +172,16 @@ export async function POST(request: NextRequest) {
     if (adsenseRevenue.status === 'fulfilled') {
       adsenseData = adsenseRevenue.value as AdSenseRevenue[];
       message += `AdSense: ${adsenseData.length} records. `;
+
+      // Debug: Show sample AdSense data
+      if (adsenseData.length > 0) {
+        const totalAdSenseRevenue = adsenseData.reduce((sum, r) => sum + r.earnings, 0);
+        console.log(`[ADSENSE_COST_REVENUE] AdSense: ${adsenseData.length} records, Total: $${totalAdSenseRevenue.toFixed(2)}`);
+        console.log(`[ADSENSE_COST_REVENUE] Sample AdSense records (first 3):`);
+        adsenseData.slice(0, 3).forEach((r, idx) => {
+          console.log(`  ${idx + 1}. Style: ${r.style_id}, Domain: ${r.domain_name}, Earnings: $${r.earnings}`);
+        });
+      }
     } else {
       console.error('[ADSENSE_COST_REVENUE] AdSense API failed:', adsenseRevenue.reason);
       message += 'AdSense: Failed. ';
@@ -226,11 +238,33 @@ export async function POST(request: NextRequest) {
     };
 
     // Build campaign to ads mapping (URLs are in ads, not campaigns)
+    // CRITICAL: Only process ads from ENABLED campaigns
     const campaignToStyleMap = new Map<string, { styleIds: Set<string>; domains: Set<string>; campaignName: string }>();
+
+    // Track filtering stats
+    let totalAds = 0;
+    let enabledAds = 0;
+    let skippedAds = 0;
 
     // Extract style_id and domain from ads
     for (const ad of googleAdsData.ads || []) {
+      totalAds++;
       const campaignId = String(ad.campaign_id);
+
+      // CRITICAL FIX: Only process ads from ENABLED campaigns
+      // Google Ads API returns status as enum: 2=ENABLED, 3=PAUSED, 4=REMOVED
+      const adCampaignStatus = String(ad.campaign_status || '').trim().toUpperCase();
+
+      // Accept both numeric (2) and string (ENABLED) formats
+      const isEnabled = adCampaignStatus === 'ENABLED' || adCampaignStatus === '2';
+
+      if (adCampaignStatus && !isEnabled) {
+        // Skip ads from paused/removed campaigns
+        skippedAds++;
+        continue;
+      }
+      enabledAds++;
+
       const finalUrls = ad.final_urls || [];
 
       if (!campaignToStyleMap.has(campaignId)) {
@@ -259,7 +293,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log(`[ADSENSE_COST_REVENUE] Extracted style_ids from ${campaignToStyleMap.size} campaigns with ads`);
+    console.log(`[ADSENSE_COST_REVENUE] Ad filtering: ${enabledAds} ENABLED (status=2) / ${totalAds} total ads (skipped ${skippedAds} non-ENABLED)`);
+    console.log(`[ADSENSE_COST_REVENUE] Extracted style_ids from ${campaignToStyleMap.size} ENABLED campaigns with ads`);
 
     // Debug: Show sample style_id extractions (now with normalized domains)
     let debugCount = 0;
@@ -288,13 +323,32 @@ export async function POST(request: NextRequest) {
     console.log(`[ADSENSE_COST_REVENUE] Built style_id+domain to campaign name mapping for ${styleDomainToCampaignName.size} combinations`);
 
     // Build cost lookup by style_id + domain from campaigns
+    // CRITICAL: Only process ENABLED campaigns (exclude PAUSED, REMOVED, etc.)
     const costByStyleDomain = new Map<string, { cost: number; clicks: number; impressions: number }>();
 
+    let totalCampaigns = 0;
+    let enabledCampaigns = 0;
+    let skippedCampaigns = 0;
+
     for (const campaign of googleAdsData.campaigns || []) {
+      totalCampaigns++;
       const campaignId = String(campaign.campaign_id);
       const urlData = campaignToStyleMap.get(campaignId);
 
       if (!urlData || urlData.styleIds.size === 0) continue;
+
+      // CRITICAL FIX: Only include ENABLED campaigns, skip PAUSED/REMOVED campaigns
+      // Google Ads API returns status as enum: 2=ENABLED, 3=PAUSED, 4=REMOVED
+      const campaignStatus = String(campaign.campaign_status || campaign.status || '').trim().toUpperCase();
+
+      // Accept both numeric (2) and string (ENABLED) formats
+      const isEnabled = campaignStatus === 'ENABLED' || campaignStatus === '2';
+
+      if (campaignStatus && !isEnabled) {
+        skippedCampaigns++;
+        continue;
+      }
+      enabledCampaigns++;
 
       const cost = campaign.metrics?.cost || 0;
       const clicks = campaign.metrics?.clicks || 0;
@@ -315,7 +369,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log(`[ADSENSE_COST_REVENUE] Built cost lookup for ${costByStyleDomain.size} style_id/domain combinations`);
+    console.log(`[ADSENSE_COST_REVENUE] Campaign filtering: ${enabledCampaigns} ENABLED (status=2) / ${totalCampaigns} total campaigns (skipped ${skippedCampaigns} non-ENABLED)`);
+    console.log(`[ADSENSE_COST_REVENUE] Built cost lookup for ${costByStyleDomain.size} style_id/domain combinations from ENABLED campaigns`);
 
     // Helper function to extract article from URL
     const extractArticleFromUrl = (url: string): string => {
@@ -334,12 +389,34 @@ export async function POST(request: NextRequest) {
       }
     };
     
-    // Build revenue map - No proportional allocation needed since style_ids are unique per account
+    // Build revenue map - CRITICAL: Only allocate revenue for style_ids that belong to current account(s)
     const revenueByStyleDomain = new Map<string, any>();
 
+    let totalRevenueItems = 0;
+    let allocatedRevenueItems = 0;
+    let skippedRevenueItems = 0;
+    let totalRevenueValue = 0;
+    let allocatedRevenueValue = 0;
+    let skippedRevenueValue = 0;
+
     for (const rev of adsenseData) {
+      totalRevenueItems++;
+      totalRevenueValue += rev.earnings;
+
       const normalizedDomain = rev.domain_name ? normalizeDomain(rev.domain_name) : 'N/A';
       const key = `${rev.style_id}_${normalizedDomain}`;
+
+      // CRITICAL FIX: Only allocate revenue if this style_id+domain belongs to the current account's campaigns
+      // This prevents total revenue from being shown in each individual account
+      if (!styleDomainToCampaignName.has(key)) {
+        // This revenue belongs to a different account's style_id, skip it
+        skippedRevenueItems++;
+        skippedRevenueValue += rev.earnings;
+        continue;
+      }
+
+      allocatedRevenueItems++;
+      allocatedRevenueValue += rev.earnings;
 
       if (!revenueByStyleDomain.has(key)) {
         // Get the campaign name from our mapping
@@ -368,12 +445,15 @@ export async function POST(request: NextRequest) {
 
       const existing = revenueByStyleDomain.get(key)!;
 
-      // Direct revenue allocation - No proportional logic needed since style_ids are unique per account
+      // Direct revenue allocation - Only revenue for THIS account's style_ids
       existing.revenue += rev.earnings;
       existing.clicks += rev.clicks;
       existing.conversions += rev.clicks;
     }
 
+    console.log(`[ADSENSE_COST_REVENUE] Revenue allocation: ${allocatedRevenueItems} items / $${allocatedRevenueValue.toFixed(2)} allocated to this account`);
+    console.log(`[ADSENSE_COST_REVENUE] Revenue skipped: ${skippedRevenueItems} items / $${skippedRevenueValue.toFixed(2)} (belongs to other accounts)`);
+    console.log(`[ADSENSE_COST_REVENUE] Revenue total: ${totalRevenueItems} items / $${totalRevenueValue.toFixed(2)}`);
     console.log(`[ADSENSE_COST_REVENUE] Processing revenue for ${revenueByStyleDomain.size} style_id/domain combinations`);
 
     // Extract article information from Google Ads campaign URLs
@@ -472,6 +552,16 @@ export async function POST(request: NextRequest) {
       .sort((a, b) => b.revenue - a.revenue);
 
     console.log(`[ADSENSE_COST_REVENUE] Created ${campaign_aggregated.length} style_id/domain entries (revenue + cost mapped)`);
+
+    // Debug: Show first few entries
+    if (campaign_aggregated.length > 0) {
+      console.log(`[ADSENSE_COST_REVENUE] Sample entries (first 3):`);
+      campaign_aggregated.slice(0, 3).forEach((entry, idx) => {
+        console.log(`  ${idx + 1}. Style: ${entry.style_id}, Domain: ${entry.domain}, Cost: $${entry.cost.toFixed(2)}, Revenue: $${entry.revenue.toFixed(2)}, Campaign: ${entry.campaign_name}`);
+      });
+    } else {
+      console.warn(`[ADSENSE_COST_REVENUE] WARNING: No entries created! Check if style_ids are being matched correctly.`);
+    }
 
     // Calculate totals
     const totalCost = campaign_aggregated.reduce((sum, c) => sum + c.cost, 0);
