@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     console.log('[ADSENSE_REVENUE] Force Live:', forceLive || false);
 
     if (forceLive) {
-      console.log('[ADSENSE_REVENUE] 🔥🔥🔥 FORCE LIVE MODE - ALL CACHES BYPASSED 🔥🔥🔥');
+      console.log('[ADSENSE_REVENUE] FORCE LIVE MODE - ALL CACHES BYPASSED ');
     }
 
     // IMPORTANT: Account-level caching strategy with separation of concerns
@@ -410,7 +410,7 @@ export async function POST(request: NextRequest) {
       let cleaned = name
         .replace(/[-\s]?Ch\d+Xstyle\d+/gi, '')  // Remove -Ch64Xstyle1
         .replace(/[-\s]?style\d+/gi, '')         // Remove -style1, style123
-        .replace(/[-\s]+$/,'')                   // Remove trailing dashes/spaces
+        .replace(/[-\s]+$/, '')                   // Remove trailing dashes/spaces
         .trim();
 
       return cleaned || name; // Fallback to original if cleaned is empty
@@ -574,6 +574,18 @@ export async function POST(request: NextRequest) {
     const totalGoogleAdsCost = Array.from(costByStyleDomain.values()).reduce((sum, data) => sum + data.cost, 0);
     console.log(`[ADSENSE_COST_REVENUE] Total Google Ads cost: $${totalGoogleAdsCost.toFixed(2)}, conversions: ${totalGoogleAdsConversions.toFixed(2)}`);
 
+    // DEBUG: Show first 5 cost entries
+    console.log(`[ADSENSE_COST_REVENUE] 📊 First 5 COST entries:`);
+    let costEntryCount = 0;
+    for (const [key, data] of costByStyleDomain.entries()) {
+      if (costEntryCount < 5) {
+        const [styleId, ...domainParts] = key.split('_');
+        const domain = domainParts.join('_');
+        console.log(`  ${costEntryCount + 1}. style_id="${styleId}", domain="${domain}", cost=$${data.cost.toFixed(2)}, clicks=${data.clicks}, conversions=${data.conversions}`);
+        costEntryCount++;
+      }
+    }
+
     // Debug: Show cost distribution by campaign status
     const costByStatus = new Map<string, { count: number; totalCost: number }>();
     for (const [, data] of costByStyleDomain.entries()) {
@@ -609,7 +621,7 @@ export async function POST(request: NextRequest) {
         return 'N/A';
       }
     };
-    
+
     // Build revenue map - CRITICAL: Only allocate revenue for style_ids that belong to current account(s)
     const revenueByStyleDomain = new Map<string, any>();
 
@@ -637,11 +649,12 @@ export async function POST(request: NextRequest) {
         skippedRevenueItems++;
         skippedRevenueValue += rev.earnings;
 
-        // Log first 10 skipped items for debugging
-        if (skippedRevenueItems <= 10) {
+        // Log first 20 skipped items for debugging (increased from 10)
+        if (skippedRevenueItems <= 20) {
           const hasStyleId = currentAccountStyleIds.has(rev.style_id);
+          const hasCost = costByStyleDomain.has(key);
           const reason = hasStyleId ? 'domain mismatch' : 'style_id not in account';
-          console.log(`[ADSENSE_COST_REVENUE] ⚠️  SKIPPED #${skippedRevenueItems}: style=${rev.style_id}, domain=${normalizedDomain}, earnings=$${rev.earnings.toFixed(2)}, reason=${reason}, key="${key}"`);
+          console.log(`[ADSENSE_COST_REVENUE] ⚠️  SKIPPED #${skippedRevenueItems}: style=${rev.style_id}, domain=${normalizedDomain}, earnings=$${rev.earnings.toFixed(2)}, reason=${reason}, hasCost=${hasCost}, key="${key}"`);
         }
         continue;
       }
@@ -693,6 +706,34 @@ export async function POST(request: NextRequest) {
     console.log(`[ADSENSE_COST_REVENUE] Revenue skipped: ${skippedRevenueItems} items / $${skippedRevenueValue.toFixed(2)} (belongs to other accounts)`);
     console.log(`[ADSENSE_COST_REVENUE] Revenue total: ${totalRevenueItems} items / $${totalRevenueValue.toFixed(2)}`);
     console.log(`[ADSENSE_COST_REVENUE] Processing revenue for ${revenueByStyleDomain.size} style_id/domain combinations`);
+
+    // DEBUG: Show first 5 revenue entries that were allocated
+    console.log(`[ADSENSE_COST_REVENUE] 📊 First 5 REVENUE entries (allocated):`);
+    let revenueEntryCount = 0;
+    for (const [key, data] of revenueByStyleDomain.entries()) {
+      if (revenueEntryCount < 5) {
+        console.log(`  ${revenueEntryCount + 1}. style_id="${data.style_id}", domain="${data.domain}", revenue=$${data.revenue.toFixed(2)}, clicks=${data.clicks}`);
+        revenueEntryCount++;
+      }
+    }
+
+    // DEBUG: Check for cost entries that have NO matching revenue
+    console.log(`[ADSENSE_COST_REVENUE] 🔍 Checking for COST entries with NO revenue:`);
+    let noRevenueCount = 0;
+    let noRevenueTotalCost = 0;
+    for (const [key, costData] of costByStyleDomain.entries()) {
+      const revenueData = revenueByStyleDomain.get(key);
+      if (!revenueData || revenueData.revenue === 0) {
+        if (noRevenueCount < 10) {
+          const [styleId, ...domainParts] = key.split('_');
+          const domain = domainParts.join('_');
+          console.log(`  ${noRevenueCount + 1}. style_id="${styleId}", domain="${domain}", cost=$${costData.cost.toFixed(2)} - NO REVENUE`);
+        }
+        noRevenueCount++;
+        noRevenueTotalCost += costData.cost;
+      }
+    }
+    console.log(`[ADSENSE_COST_REVENUE] ⚠️ Total: ${noRevenueCount} cost entries with NO revenue, total cost: $${noRevenueTotalCost.toFixed(2)}`);
 
     // Extract article information from Google Ads campaign URLs
     console.log(`[ADSENSE_COST_REVENUE] Extracting article names from campaign URLs...`);
@@ -918,19 +959,10 @@ export async function POST(request: NextRequest) {
       _message: message.trim()
     };
 
-    // CRITICAL: Cache the complete cost+revenue mapping for 15 minutes
-    // This ensures cost and revenue are ALWAYS fetched and stored together
-    try {
-      await redisCacheManager.set(cacheKey, response, {
-        dataType: 'unified',
-        priority: 'high'
-      });
-      console.log(`[ADSENSE_COST_REVENUE] ✅ Cached cost+revenue mapping for 15 minutes`);
-    } catch (err) {
-      console.warn('[ADSENSE_COST_REVENUE] Failed to cache response:', err);
-    }
+    // Note: Caching is handled at the account level earlier in the code (see getAccountCacheKey)
+    // Each account's data is cached separately for better reusability
 
-    // Disable HTTP caching (but Redis cache is used above)
+    // Disable HTTP caching (account-level Redis cache is used above)
     return NextResponse.json(response, {
       headers: {
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',

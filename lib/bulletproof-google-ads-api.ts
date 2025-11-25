@@ -112,15 +112,22 @@ export class BulletproofGoogleAdsAPI {
     if (cached.data && !cached.isStale) {
       const quotaStatus = await googleAdsRateLimiter.getQuotaStatus();
 
-      console.log(`[BULLETPROOF_API] ${cached.source} cache hit, age: ${Math.round(cached.age / 1000)}s`);
+      // CRITICAL FIX: Invalidate cache if it has campaigns but NO ads
+      // This prevents negative profit issues in AFS where style_ids can't be extracted
+      if (feedType === 'adsense' && cached.data.campaigns?.length > 0 && (!cached.data.ads || cached.data.ads.length === 0)) {
+        console.warn(`[BULLETPROOF_API] ⚠️ Cache has ${cached.data.campaigns.length} campaigns but 0 ads - INVALIDATING for AFS feed`);
+        // Don't return cached data - fetch fresh data instead
+      } else {
+        console.log(`[BULLETPROOF_API] ${cached.source} cache hit, age: ${Math.round(cached.age / 1000)}s`);
 
-      return {
-        data: cached.data,
-        source: 'cache',
-        age: cached.age,
-        message: `Fresh data from ${cached.source} cache (${Math.round(cached.age / 1000)}s old)`,
-        quotaStatus
-      };
+        return {
+          data: cached.data,
+          source: 'cache',
+          age: cached.age,
+          message: `Fresh data from ${cached.source} cache (${Math.round(cached.age / 1000)}s old)`,
+          quotaStatus
+        };
+      }
     }
 
     // Step 2: Check Redis-based rate limiter (persistent across restarts!)
