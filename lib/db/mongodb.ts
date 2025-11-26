@@ -1,4 +1,8 @@
-console.warn('[MongoDB] MONGODB_URI not set - MongoDB features disabled');
+import { MongoClient, Db, Collection } from 'mongodb';
+
+// Warn if MongoDB is not configured (non-blocking)
+if (!process.env.MONGODB_URI) {
+  console.warn('[MongoDB] MONGODB_URI not set - MongoDB features disabled');
 }
 
 const uri = process.env.MONGODB_URI || '';
@@ -29,15 +33,34 @@ async function getClient(): Promise<MongoClient> {
 
   // Return existing client if connected
   if (client && client.topology && client.topology.isConnected()) {
-    client.on('connectionPoolReady', () => {
-      console.log('[MongoDB] ✓ Connection pool ready');
-    });
+    return client;
+  }
 
-    client.on('error', (error) => {
-      console.error('[MongoDB] ✗ Client error:', error);
-      // Reset connection on error
-      clientPromise = null;
-    });
+  // Create new client if not exists
+  if (!clientPromise) {
+    clientPromise = MongoClient.connect(uri, options)
+      .then((newClient) => {
+        client = newClient;
+        console.log('[MongoDB] ✓ Connected successfully');
+
+        client.on('connectionPoolReady', () => {
+          console.log('[MongoDB] ✓ Connection pool ready');
+        });
+
+        client.on('error', (error) => {
+          console.error('[MongoDB] ✗ Client error:', error);
+          // Reset connection on error
+          client = null;
+          clientPromise = null;
+        });
+
+        return newClient;
+      })
+      .catch((error) => {
+        console.error('[MongoDB] ✗ Connection failed:', error);
+        clientPromise = null;
+        throw error;
+      });
   }
 
   return clientPromise;
