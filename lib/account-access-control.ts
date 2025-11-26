@@ -43,8 +43,6 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_9227278944': ['adsense'],
   'CID_7833025125': ['adsense'],
   'CID_1622548445': ['adsense'],
-  'CID_9622143895': ['adsense'],
-  'CID_7949737807': ['adsense'],
   'CID_9249163427': ['adsense'],
 
   // Compado Accounts - Only access Compado feed
@@ -70,13 +68,10 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_3475645746': ['compado'],
   'CID_8994182684': ['compado'],
   'CID_9524489917': ['compado'],
-
-  // Compado BoldmoveGuide Accounts (new domain)
-  'CID_1235076035': ['compado'],
-  'CID_3471023162': ['compado'],
-  'CID_8871395768': ['compado'],
-  'CID_3475645746': ['compado'],
-  'CID_8994182684': ['compado'],
+  'CID_9622143895': ['compado'], // Compado - BoldmoveGuide - UTC06
+  'CID_7949737807': ['compado'], // Compado - BoldmoveGuide - UTC07
+  'CID_8138817445': ['compado'], // Compado - BoldmoveGuide - UTC08
+  'CID_4315436458': ['compado'], // Compado - BoldmoveGuide - UTC09
 
   // Ads.com Accounts - Only access Ads.com feed
   'CID_8677814915': ['adscom'], // IST

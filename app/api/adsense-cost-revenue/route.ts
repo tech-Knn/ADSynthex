@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
       });
 
       if (forceLive) {
-        console.log('[ADSENSE_COST_REVENUE] 🔥 Force Live: bulletproofAPI allowStale=FALSE (fresh data)');
+        console.log('[ADSENSE_COST_REVENUE] Force Live: bulletproofAPI allowStale=FALSE (fresh data)');
       }
 
       // STEP 2: Fetch only uncached accounts
@@ -233,7 +233,7 @@ export async function POST(request: NextRequest) {
       } else {
         // STEP 2: Fetch if not cached
         if (forceLive) {
-          console.log('[ADSENSE_COST_REVENUE] 🔥 Force Live: bulletproofAPI allowStale=FALSE (fresh data)');
+          console.log('[ADSENSE_COST_REVENUE] Force Live: bulletproofAPI allowStale=FALSE (fresh data)');
         } else {
           console.log('[ADSENSE_COST_REVENUE] Cache MISS, fetching from bulletproofAPI');
         }
@@ -575,7 +575,7 @@ export async function POST(request: NextRequest) {
     console.log(`[ADSENSE_COST_REVENUE] Total Google Ads cost: $${totalGoogleAdsCost.toFixed(2)}, conversions: ${totalGoogleAdsConversions.toFixed(2)}`);
 
     // DEBUG: Show first 5 cost entries
-    console.log(`[ADSENSE_COST_REVENUE] 📊 First 5 COST entries:`);
+    console.log(`[ADSENSE_COST_REVENUE] First 5 COST entries:`);
     let costEntryCount = 0;
     for (const [key, data] of costByStyleDomain.entries()) {
       if (costEntryCount < 5) {
@@ -708,7 +708,7 @@ export async function POST(request: NextRequest) {
     console.log(`[ADSENSE_COST_REVENUE] Processing revenue for ${revenueByStyleDomain.size} style_id/domain combinations`);
 
     // DEBUG: Show first 5 revenue entries that were allocated
-    console.log(`[ADSENSE_COST_REVENUE] 📊 First 5 REVENUE entries (allocated):`);
+    console.log(`[ADSENSE_COST_REVENUE] First 5 REVENUE entries (allocated):`);
     let revenueEntryCount = 0;
     for (const [key, data] of revenueByStyleDomain.entries()) {
       if (revenueEntryCount < 5) {
@@ -873,7 +873,7 @@ export async function POST(request: NextRequest) {
           clicks: 0,
           impressions: 0,
           conversions: 0,
-          campaignCount:0,
+          campaignCount: 0,
         });
       }
 

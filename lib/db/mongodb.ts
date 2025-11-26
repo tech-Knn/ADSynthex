@@ -41,14 +41,14 @@ async function getClient(): Promise<MongoClient> {
     clientPromise = MongoClient.connect(uri, options)
       .then((newClient) => {
         client = newClient;
-        console.log('[MongoDB] ✓ Connected successfully');
+        console.log('[MongoDB] Connected successfully');
 
         client.on('connectionPoolReady', () => {
-          console.log('[MongoDB] ✓ Connection pool ready');
+          console.log('[MongoDB] Connection pool ready');
         });
 
         client.on('error', (error) => {
-          console.error('[MongoDB] ✗ Client error:', error);
+          console.error('[MongoDB] Client error:', error);
           // Reset connection on error
           client = null;
           clientPromise = null;
@@ -57,7 +57,7 @@ async function getClient(): Promise<MongoClient> {
         return newClient;
       })
       .catch((error) => {
-        console.error('[MongoDB] ✗ Connection failed:', error);
+        console.error('[MongoDB] Connection failed:', error);
         clientPromise = null;
         throw error;
       });
@@ -107,7 +107,7 @@ export async function testConnection(): Promise<{
       // Get connection stats
       const stats = await db.stats();
 
-      console.log('[MongoDB] ✓ Connection test successful');
+      console.log('[MongoDB] Connection test successful');
       console.log(`[MongoDB] Database: ${DB_NAME}`);
       console.log(`[MongoDB] Collections: ${stats.collections}`);
       console.log(`[MongoDB] Data size: ${(stats.dataSize / 1024 / 1024).toFixed(2)} MB`);
@@ -129,7 +129,7 @@ export async function testConnection(): Promise<{
       message: 'Ping failed',
     };
   } catch (error: any) {
-    console.error('[MongoDB] ✗ Connection test failed:', error.message);
+    console.error('[MongoDB] Connection test failed:', error.message);
     return {
       connected: false,
       message: error.message,
@@ -144,7 +144,7 @@ export async function closeConnection(): Promise<void> {
   try {
     if (client) {
       await client.close();
-      console.log('[MongoDB] ✓ Connection closed gracefully');
+      console.log('[MongoDB] Connection closed gracefully');
       client = null;
       clientPromise = null;
     }
@@ -217,12 +217,12 @@ export async function createIndexes(
     for (const index of indexes) {
       const name = await collection.createIndex(index.keys, index.options || {});
       indexNames.push(name);
-      console.log(`[MongoDB] ✓ Created index "${name}" on ${collectionName}`);
+      console.log(`[MongoDB] Created index "${name}" on ${collectionName}`);
     }
 
     return indexNames;
   } catch (error: any) {
-    console.error(`[MongoDB] ✗ Error creating indexes on ${collectionName}:`, error.message);
+    console.error(`[MongoDB] Error creating indexes on ${collectionName}:`, error.message);
     throw error;
   }
 }
@@ -330,9 +330,9 @@ export async function setupAllIndexes(): Promise<void> {
       },
     ]);
 
-    console.log('[MongoDB] ✓ All indexes created successfully');
+    console.log('[MongoDB] All indexes created successfully');
   } catch (error) {
-    console.error('[MongoDB] ✗ Error setting up indexes:', error);
+    console.error('[MongoDB] Error setting up indexes:', error);
     throw error;
   }
 }
