@@ -192,6 +192,8 @@ export async function POST(request: NextRequest) {
 
       // Clear cache if forceRefresh is requested AND we're not in cooldown
       if (actualForceRefresh) {
+        console.log(`[COMPADO_COST_REVENUE] 🔥 FORCE REFRESH DETECTED - Clearing ALL Compado caches...`);
+
         for (const accId of accountsToClear) {
           console.log(`[COMPADO_COST_REVENUE] ⚡ Clearing cache for account ${accId} to ensure fresh data...`);
           try {
@@ -205,13 +207,27 @@ export async function POST(request: NextRequest) {
             const oldCacheKey = `cache:google-ads:${accId}:${startDate}:${endDate}`;
             await redisClient.del(oldCacheKey);
 
-            // Clear aggregated cache too
+            // Clear individual account aggregated cache
             const aggCacheKey = `compado-agg:${accId}:${startDate}:${endDate}`;
             await redisClient.del(aggCacheKey);
+            console.log(`[COMPADO_COST_REVENUE] ✓ Cleared aggregated cache: ${aggCacheKey}`);
           } catch (cacheError) {
             console.warn(`[COMPADO_COST_REVENUE] ⚠️  Failed to clear cache:`, cacheError);
           }
         }
+
+        // CRITICAL: Also clear the combined aggregated cache key for multi-account requests
+        try {
+          const { redisClient } = await import('@/lib/redis-client');
+          // This matches the aggregatedCacheKey format used when SETTING the cache
+          const combinedAggCacheKey = `compado-agg:${isMultiAccount ? accountIds?.join(',') : (customerId || 'all')}:${startDate}:${endDate}`;
+          await redisClient.del(combinedAggCacheKey);
+          console.log(`[COMPADO_COST_REVENUE] ✓ Cleared combined aggregated cache: ${combinedAggCacheKey}`);
+        } catch (cacheError) {
+          console.warn(`[COMPADO_COST_REVENUE] ⚠️  Failed to clear combined aggregated cache:`, cacheError);
+        }
+      } else {
+        console.log(`[COMPADO_COST_REVENUE] ℹ️  Force refresh NOT requested - using cache if available`);
       }
 
       // PERFORMANCE OPTIMIZATION: Fetch Google Ads and Compado data IN PARALLEL
