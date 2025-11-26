@@ -1,16 +1,4 @@
-/**
- * MongoDB Connection Manager with Connection Pooling
- * Fixes previous issues:
- * - ✅ Persistent connection pool (no new connection per request)
- * - ✅ Automatic reconnection
- * - ✅ Production-ready error handling
- * - ✅ Connection monitoring
- */
-
-import { MongoClient, Db, Collection } from 'mongodb';
-
-if (!process.env.MONGODB_URI) {
-  console.warn('[MongoDB] MONGODB_URI not set - MongoDB features disabled');
+console.warn('[MongoDB] MONGODB_URI not set - MongoDB features disabled');
 }
 
 const uri = process.env.MONGODB_URI || '';
@@ -41,24 +29,6 @@ async function getClient(): Promise<MongoClient> {
 
   // Return existing client if connected
   if (client && client.topology && client.topology.isConnected()) {
-    return client;
-  }
-
-  // Create new connection if needed
-  if (!clientPromise) {
-    console.log('[MongoDB] Creating new connection pool...');
-    client = new MongoClient(uri, options);
-    clientPromise = client.connect();
-
-    // Connection event listeners
-    client.on('connectionPoolCreated', () => {
-      console.log('[MongoDB] ✓ Connection pool created');
-    });
-
-    client.on('connectionPoolClosed', () => {
-      console.log('[MongoDB] Connection pool closed');
-    });
-
     client.on('connectionPoolReady', () => {
       console.log('[MongoDB] ✓ Connection pool ready');
     });

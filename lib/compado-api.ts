@@ -698,7 +698,7 @@ export function aggregateMappingsByCampaign(
         const costDifference = Math.abs(campaign.cost - originalCampaignData.total_cost);
 
         if (costDifference > 0.01) { // Allow 1 cent tolerance for floating point
-          console.warn(`[COMPADO_AGGREGATION] ⚠️  Cost discrepancy detected for "${campaign.campaign_name}":`);
+          console.warn(`[COMPADO_AGGREGATION] Cost discrepancy detected for "${campaign.campaign_name}":`);
           console.warn(`[COMPADO_AGGREGATION]     Campaign-level cost (Google Ads): $${originalCampaignData.total_cost.toFixed(2)}`);
           console.warn(`[COMPADO_AGGREGATION]     Aggregated cost (calculated): $${campaign.cost.toFixed(2)}`);
           console.warn(`[COMPADO_AGGREGATION]     Difference: $${costDifference.toFixed(2)}`);
@@ -717,7 +717,7 @@ export function aggregateMappingsByCampaign(
     });
 
     if (correctionsMade > 0) {
-      console.warn(`[COMPADO_AGGREGATION] ✅ Fixed ${correctionsMade} campaigns with cost discrepancies`);
+      console.warn(`[COMPADO_AGGREGATION] Fixed ${correctionsMade} campaigns with cost discrepancies`);
     }
   } else {
     campaignMap.forEach((campaign) => {

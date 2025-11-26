@@ -115,7 +115,7 @@ export class BulletproofGoogleAdsAPI {
       // CRITICAL FIX: Invalidate cache if it has campaigns but NO ads
       // This prevents negative profit issues in AFS where style_ids can't be extracted
       if (feedType === 'adsense' && cached.data.campaigns?.length > 0 && (!cached.data.ads || cached.data.ads.length === 0)) {
-        console.warn(`[BULLETPROOF_API] ⚠️ Cache has ${cached.data.campaigns.length} campaigns but 0 ads - INVALIDATING for AFS feed`);
+        console.warn(`[BULLETPROOF_API] Cache has ${cached.data.campaigns.length} campaigns but 0 ads - INVALIDATING for AFS feed`);
         // Don't return cached data - fetch fresh data instead
       } else {
         console.log(`[BULLETPROOF_API] ${cached.source} cache hit, age: ${Math.round(cached.age / 1000)}s`);
@@ -264,10 +264,10 @@ export class BulletproofGoogleAdsAPI {
   private isRateLimitError(error: any): boolean {
     const errorStr = JSON.stringify(error).toLowerCase();
     return errorStr.includes('too many requests') ||
-           errorStr.includes('rate limit') ||
-           errorStr.includes('429') ||
-           errorStr.includes('resource_exhausted') ||
-           errorStr.includes('retry in');
+      errorStr.includes('rate limit') ||
+      errorStr.includes('429') ||
+      errorStr.includes('resource_exhausted') ||
+      errorStr.includes('retry in');
   }
 
   /**
@@ -383,7 +383,7 @@ export class BulletproofGoogleAdsAPI {
 
     // Log memory status if map is getting large
     if (this.inflightRequests.size > 10) {
-      console.warn(`[BULLETPROOF_API] ⚠️  Large inflightRequests map: ${this.inflightRequests.size} entries`);
+      console.warn(`[BULLETPROOF_API] Large inflightRequests map: ${this.inflightRequests.size} entries`);
     }
   }
 

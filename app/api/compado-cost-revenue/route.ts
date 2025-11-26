@@ -631,7 +631,10 @@ export async function POST(request: NextRequest) {
       const totalRevenueFromCampaigns = campaignAggregated.reduce((sum, c) => sum + c.revenue, 0);
       const totalConversionsFromCampaigns = campaignAggregated.reduce((sum, c) => sum + c.conversions, 0);
 
-      const summary = getCompadoCostRevenueSummary(costRevenueMapping);
+      // CRITICAL FIX: Calculate summary from campaignAggregated, NOT costRevenueMapping
+      // costRevenueMapping contains click-level data (can be 1000s of clicks)
+      // campaignAggregated contains campaign-level data (actual campaigns to display)
+      const summary = getCompadoCostRevenueSummary(campaignAggregated);
 
       console.log(`[COMPADO_COST_REVENUE] ✅ Mapping complete:`, {
         click_level_mappings: costRevenueMapping.length,
