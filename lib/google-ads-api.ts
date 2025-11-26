@@ -314,26 +314,26 @@ function processCampaignData(response: any[], account: any): GoogleAdsCampaign[]
       const cost = costMicros / 1000000; // Convert micros to standard currency
       const conversions = Number(item.metrics?.conversions || 0);
       const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
-      
+
       // Extract additional cost metrics
       const averageCostMicros = Number(item.metrics?.average_cost || 0);
       const averageCost = averageCostMicros / 1000000;
-      
+
       const averageCpcMicros = Number(item.metrics?.average_cpc || 0);
       const averageCpc = averageCpcMicros / 1000000;
-      
+
       const averageCpeMicros = Number(item.metrics?.average_cpe || 0);
       const averageCpe = averageCpeMicros / 1000000;
-      
+
       const averageTargetCpaMicros = Number(item.metrics?.average_target_cpa_micros || 0);
       const averageTargetCpa = averageTargetCpaMicros / 1000000;
-      
+
       // Extract campaign data
       const campaignId = item.campaign ? item.campaign.id : 'unknown';
       const campaignName = item.campaign ? item.campaign.name : 'Unknown Campaign';
       const campaignStatus = item.campaign && item.campaign.status ? item.campaign.status : 'unknown';
       const finalUrlSuffix = item.campaign && item.campaign.final_url_suffix ? item.campaign.final_url_suffix : '';
-      
+
       return {
         customer_id: account.id,
         customer_name: account.name,

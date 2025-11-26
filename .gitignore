@@ -41,10 +41,13 @@ next-env.d.ts
 google-ads-auth.json
 
 # Documentation and test files
+# Allow markdown files in docs folder
+!docs/**/*.md
+# Ignore all other markdown files except README.md
 *.md
 !README.md
 test-*.js
 test-*.sh
 
 # Reference folders (not to be pushed)
-AFS_REVENUE_REPORT_DASHBOARD/ 
+AFS_REVENUE_REPORT_DASHBOARD/

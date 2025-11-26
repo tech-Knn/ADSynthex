@@ -595,6 +595,7 @@ export function aggregateMappingsByCampaign(
     conversions: number;
     revenue: number;
     dates: Set<string>;
+    costSource: 'campaign-level' | 'click-level';
   }>();
 
   // Start with campaign-level metrics (cost, clicks) even if no click-level data exists
@@ -605,12 +606,13 @@ export function aggregateMappingsByCampaign(
         campaign_id: String(campaignId),
         campaign_name: campaignData.campaign_name,
         gclids: new Set(),
-        cost: campaignData.total_cost || 0, 
-        clicks: campaignData.total_clicks || 0, 
-        impressions: campaignData.impressions || 0, 
-        conversions: 0, 
-        revenue: 0, 
-        dates: new Set()
+        cost: campaignData.total_cost || 0,
+        clicks: campaignData.total_clicks || 0,
+        impressions: campaignData.impressions || 0,
+        conversions: 0,
+        revenue: 0,
+        dates: new Set(),
+        costSource: 'campaign-level'
       });
       console.log(`[COMPADO_AGGREGATION]   - Campaign ${campaignId}: ${campaignData.campaign_name} | $${campaignData.total_cost?.toFixed(2)} cost, ${campaignData.total_clicks} clicks`);
     });
@@ -623,7 +625,7 @@ export function aggregateMappingsByCampaign(
   console.log(`[COMPADO_AGGREGATION] Found ${mappingsWithConversions.length} mappings with conversions out of ${mappings.length} total`);
 
   // Add conversion and revenue data from mappings
-  // NOTE: We DON'T add cost/clicks here since we already have campaign-level totals
+  // CRITICAL: We DON'T add cost/clicks for Google Ads campaigns - only conversions/revenue
   let totalConversionsAdded = 0;
   let totalRevenueAdded = 0;
 
@@ -631,18 +633,19 @@ export function aggregateMappingsByCampaign(
     const campaignId = String(mapping.campaign_id);
 
     if (!campaignMap.has(campaignId)) {
-      
+
       console.log(`[COMPADO_AGGREGATION]   💰 Revenue-only campaign: ${campaignId} (${mapping.campaign_name})`);
       campaignMap.set(campaignId, {
         campaign_id: campaignId,
         campaign_name: mapping.campaign_name || `Campaign ${campaignId}`,
         gclids: new Set(),
-        cost: 0, 
-        clicks: 0, 
-        impressions: 0, 
+        cost: 0,
+        clicks: 0,
+        impressions: 0,
         conversions: 0,
         revenue: 0,
-        dates: new Set()
+        dates: new Set(),
+        costSource: 'click-level'
       });
     }
 
@@ -658,12 +661,15 @@ export function aggregateMappingsByCampaign(
       campaign.conversions += mapping.conversions;
       campaign.revenue += mapping.revenue;
       campaign.dates.add(mapping.date);
+      campaign.costSource = 'click-level';
     } else {
-      // For Google Ads campaigns, only add conversion/revenue (cost/clicks come from campaign-level)
+      // CRITICAL FIX: For Google Ads campaigns, NEVER add cost/clicks from mappings
+      // Only add conversion/revenue data (cost/clicks already set from campaign-level)
       campaign.gclids.add(mapping.gclid);
       campaign.conversions += mapping.conversions;
       campaign.revenue += mapping.revenue;
       campaign.dates.add(mapping.date);
+      // Keep costSource as 'campaign-level' (already set during initialization)
     }
 
     if (mapping.conversions > 0) {
@@ -673,7 +679,7 @@ export function aggregateMappingsByCampaign(
 
     // Log first few mappings for debugging
     if (index < 5) {
-      console.log(`[COMPADO_AGGREGATION]   - Mapping ${index + 1}: Campaign ID: ${campaignId} | Name: ${mapping.campaign_name} | GCLID: ${mapping.gclid.substring(0, 20)}... | Conversions: ${mapping.conversions}, Revenue: $${mapping.revenue.toFixed(2)}`);
+      console.log(`[COMPADO_AGGREGATION]   - Mapping ${index + 1}: Campaign ID: ${campaignId} | Name: ${mapping.campaign_name} | Type: ${isRevenueOnlyCampaign ? 'revenue-only' : 'Google Ads'} | GCLID: ${mapping.gclid.substring(0, 20)}... | Conversions: ${mapping.conversions}, Revenue: $${mapping.revenue.toFixed(2)}`);
     }
   });
 
@@ -681,35 +687,41 @@ export function aggregateMappingsByCampaign(
 
   console.log(`[COMPADO_AGGREGATION] Aggregated into ${campaignMap.size} unique campaigns`);
 
-  // COST VALIDATION: Check for inflation and correct it
+  // CRITICAL COST VALIDATION: Ensure Google Ads campaigns ALWAYS use campaign-level costs
   if (allCampaignsMap) {
+    let correctionsMade = 0;
     campaignMap.forEach((campaign, campaignId) => {
       const originalCampaignData = allCampaignsMap.get(campaignId);
 
-      if (originalCampaignData && originalCampaignData.total_cost > 0) {
-        const inflationAmount = campaign.cost - originalCampaignData.total_cost;
-        const inflationPercent = (inflationAmount / originalCampaignData.total_cost) * 100;
+      if (originalCampaignData) {
+        // ALWAYS use campaign-level cost for Google Ads campaigns (ignore any click-level inflation)
+        const costDifference = Math.abs(campaign.cost - originalCampaignData.total_cost);
 
-        // If aggregated cost is more than 5% higher than campaign-level cost, it's inflated
-        if (inflationPercent > 5) {
-          console.warn(`[COMPADO_AGGREGATION] ⚠️  Cost inflation detected for ${campaign.campaign_name}:`);
-          console.warn(`[COMPADO_AGGREGATION]     Campaign-level cost: $${originalCampaignData.total_cost.toFixed(2)}`);
-          console.warn(`[COMPADO_AGGREGATION]     Aggregated cost: $${campaign.cost.toFixed(2)}`);
-          console.warn(`[COMPADO_AGGREGATION]     Inflation: +$${inflationAmount.toFixed(2)} (+${inflationPercent.toFixed(1)}%)`);
-          console.warn(`[COMPADO_AGGREGATION]     CORRECTING: Using campaign-level cost instead`);
+        if (costDifference > 0.01) { // Allow 1 cent tolerance for floating point
+          console.warn(`[COMPADO_AGGREGATION] ⚠️  Cost discrepancy detected for "${campaign.campaign_name}":`);
+          console.warn(`[COMPADO_AGGREGATION]     Campaign-level cost (Google Ads): $${originalCampaignData.total_cost.toFixed(2)}`);
+          console.warn(`[COMPADO_AGGREGATION]     Aggregated cost (calculated): $${campaign.cost.toFixed(2)}`);
+          console.warn(`[COMPADO_AGGREGATION]     Difference: $${costDifference.toFixed(2)}`);
+          console.warn(`[COMPADO_AGGREGATION]     FIXING: Using campaign-level cost from Google Ads`);
 
-          // Correct the inflation by using campaign-level cost
+          // ALWAYS use the campaign-level cost from Google Ads (the source of truth)
           campaign.cost = originalCampaignData.total_cost;
           campaign.clicks = originalCampaignData.total_clicks;
           campaign.impressions = originalCampaignData.impressions;
+          campaign.costSource = 'campaign-level';
+          correctionsMade++;
         }
       }
 
-      console.log(`[COMPADO_AGGREGATION]   - ${campaign.campaign_name}: ${campaign.clicks} clicks, $${campaign.cost.toFixed(2)} cost, ${campaign.conversions} conversions, $${campaign.revenue.toFixed(2)} revenue`);
+      console.log(`[COMPADO_AGGREGATION]   - ${campaign.campaign_name}: ${campaign.clicks} clicks, $${campaign.cost.toFixed(2)} cost (${campaign.costSource}), ${campaign.conversions} conversions, $${campaign.revenue.toFixed(2)} revenue`);
     });
+
+    if (correctionsMade > 0) {
+      console.warn(`[COMPADO_AGGREGATION] ✅ Fixed ${correctionsMade} campaigns with cost discrepancies`);
+    }
   } else {
     campaignMap.forEach((campaign) => {
-      console.log(`[COMPADO_AGGREGATION]   - ${campaign.campaign_name}: ${campaign.clicks} clicks, $${campaign.cost.toFixed(2)} cost, ${campaign.conversions} conversions, $${campaign.revenue.toFixed(2)} revenue`);
+      console.log(`[COMPADO_AGGREGATION]   - ${campaign.campaign_name}: ${campaign.clicks} clicks, $${campaign.cost.toFixed(2)} cost (${campaign.costSource}), ${campaign.conversions} conversions, $${campaign.revenue.toFixed(2)} revenue`);
     });
   }
 
