@@ -45,7 +45,7 @@ export class SmartDataFetcher {
     console.log(`[SMART_FETCH] ${feedType}: ${startDate} to ${endDate}${accountId ? `, account: ${accountId}` : ''}`);
 
     if (forceLive) {
-      console.log('[SMART_FETCH] 🔥 Force live mode - bypassing all caches');
+      console.log('[SMART_FETCH] Force live mode - bypassing all caches');
       return await this.fetchFromAPI(options);
     }
 
@@ -116,7 +116,7 @@ export class SmartDataFetcher {
 
     if (cached.data && !cached.isStale) {
       const loadTime = Date.now() - startTime;
-      console.log(`[SMART_FETCH] ✅ Redis cache HIT (${loadTime}ms)`);
+      console.log(`[SMART_FETCH] Redis cache HIT (${loadTime}ms)`);
 
       return {
         cost: cached.data.cost || [],
@@ -160,7 +160,7 @@ export class SmartDataFetcher {
         const revenue = await getRevenue(feedType, startDate, endDate, accountId);
 
         const loadTime = Date.now() - startTime;
-        console.log(`[SMART_FETCH] ✅ MongoDB HIT (${loadTime}ms) - ${cost.length} cost, ${revenue.length} revenue`);
+        console.log(`[SMART_FETCH] MongoDB HIT (${loadTime}ms) - ${cost.length} cost, ${revenue.length} revenue`);
 
         // Cache in Redis for next time (if hot data)
         const isHot = this.getDataTemperature(startDate, endDate) === 'hot';
@@ -261,7 +261,7 @@ export class SmartDataFetcher {
         }
       }
 
-      console.log(`[SMART_FETCH] ✓ Fetched ${costData.length} cost records from Google Ads`);
+      console.log(`[SMART_FETCH] Fetched ${costData.length} cost records from Google Ads`);
 
       // STEP 2: Fetch Revenue Data (depends on feed type)
       switch (feedType) {
@@ -273,7 +273,7 @@ export class SmartDataFetcher {
               startDate,
               endDate
             );
-            console.log(`[SMART_FETCH] ✓ Fetched ${revenueData.length} revenue records from AdSense`);
+            console.log(`[SMART_FETCH] Fetched ${revenueData.length} revenue records from AdSense`);
           }
           break;
 
@@ -281,14 +281,14 @@ export class SmartDataFetcher {
           console.log('[SMART_FETCH] Fetching Compado conversions');
           const compadoData = await fetchAllCompadoConversions(startDate, endDate);
           revenueData = compadoData;
-          console.log(`[SMART_FETCH] ✓ Fetched ${revenueData.length} revenue records from Compado`);
+          console.log(`[SMART_FETCH] Fetched ${revenueData.length} revenue records from Compado`);
           break;
 
         case 'adscom':
           console.log('[SMART_FETCH] Fetching Ads.com article performance');
           const adscomData = await fetchArticlePerformance(startDate, endDate);
           revenueData = adscomData.articles || [];
-          console.log(`[SMART_FETCH] ✓ Fetched ${revenueData.length} revenue records from Ads.com`);
+          console.log(`[SMART_FETCH] Fetched ${revenueData.length} revenue records from Ads.com`);
           break;
       }
 
@@ -310,9 +310,9 @@ export class SmartDataFetcher {
             await saveRevenue(revenueDocuments, feedType);
           }
 
-          console.log('[SMART_FETCH] ✓ Saved to MongoDB - future queries will be fast');
+          console.log('[SMART_FETCH] Saved to MongoDB - future queries will be fast');
         } catch (error: any) {
-          console.error('[SMART_FETCH] ⚠️  Failed to save to MongoDB:', error.message);
+          console.error('[SMART_FETCH] Failed to save to MongoDB:', error.message);
           // Continue anyway - we have the data
         }
       }
@@ -328,7 +328,7 @@ export class SmartDataFetcher {
         message: `Fetched from live APIs${mongoAvailable ? ' and saved to MongoDB' : ''}`,
       };
     } catch (error: any) {
-      console.error('[SMART_FETCH] ✗ API fetch error:', error.message);
+      console.error('[SMART_FETCH] API fetch error:', error.message);
       throw error;
     }
   }

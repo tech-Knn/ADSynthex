@@ -110,11 +110,11 @@ export class ProductionCacheStrategy {
 
     // STEP 3: If cache exists and is acceptable, return immediately
     if (cached.data && (strategy.serveStaleWhileRevalidate || !isExpired)) {
-      console.log(`[PROD_CACHE] ✅ Serving from cache (${cached.source}, age: ${cacheAgeSeconds}s)`);
+      console.log(`[PROD_CACHE] Serving from cache (${cached.source}, age: ${cacheAgeSeconds}s)`);
 
       // Trigger background refresh if needed (non-blocking)
       if (shouldRefresh && !this.isJobQueued(cacheKey)) {
-        console.log(`[PROD_CACHE] 🔄 Triggering background refresh...`);
+        console.log(`[PROD_CACHE] Triggering background refresh...`);
         this.queueBackgroundRefresh({
           key: cacheKey,
           startDate,
@@ -142,11 +142,11 @@ export class ProductionCacheStrategy {
     const canMakeRequest = await googleAdsRateLimiter.canMakeRequest(customerId || undefined);
 
     if (!canMakeRequest.allowed) {
-      console.warn(`[PROD_CACHE] ⚠️  Rate limit active: ${canMakeRequest.reason}`);
+      console.warn(`[PROD_CACHE] Rate limit active: ${canMakeRequest.reason}`);
 
       // CRITICAL: Still serve expired cache rather than failing
       if (cached.data) {
-        console.log(`[PROD_CACHE] 🛡️ FALLBACK: Serving expired cache due to rate limits`);
+        console.log(`[PROD_CACHE] FALLBACK: Serving expired cache due to rate limits`);
         return {
           data: cached.data,
           source: 'cache-stale',
@@ -157,7 +157,7 @@ export class ProductionCacheStrategy {
       }
 
       // Last resort: Return empty data with clear message
-      console.error(`[PROD_CACHE] ❌ No cache available and rate limited - returning empty`);
+      console.error(`[PROD_CACHE] No cache available and rate limited - returning empty`);
       return {
         data: { campaigns: [], ads: [], clicks: [] },
         source: 'cache-stale',
@@ -168,7 +168,7 @@ export class ProductionCacheStrategy {
     }
 
     // STEP 5: Safe to make API call - fetch fresh data
-    console.log(`[PROD_CACHE] 📡 Fetching fresh data from API...`);
+    console.log(`[PROD_CACHE] Fetching fresh data from API...`);
     try {
       const apiResponse = await bulletproofAPI.getData(startDate, endDate, customerId, {
         priority: strategy.priority,
@@ -185,11 +185,11 @@ export class ProductionCacheStrategy {
       };
 
     } catch (error) {
-      console.error(`[PROD_CACHE] ❌ API call failed:`, error);
+      console.error(`[PROD_CACHE] API call failed:`, error);
 
       // FALLBACK: Serve expired cache even on API error
       if (cached.data) {
-        console.log(`[PROD_CACHE] 🛡️ FALLBACK: Serving expired cache due to API error`);
+        console.log(`[PROD_CACHE] FALLBACK: Serving expired cache due to API error`);
         return {
           data: cached.data,
           source: 'cache-stale',
@@ -218,7 +218,7 @@ export class ProductionCacheStrategy {
     this.refreshQueue.push(job);
     this.refreshJobs.set(job.key, job);
 
-    console.log(`[PROD_CACHE] 📋 Queued background refresh: ${job.key} (queue size: ${this.refreshQueue.length})`);
+    console.log(`[PROD_CACHE] Queued background refresh: ${job.key} (queue size: ${this.refreshQueue.length})`);
 
     // Start processing if not already running
     if (!this.isRefreshing) {
@@ -244,14 +244,14 @@ export class ProductionCacheStrategy {
       const job = this.refreshQueue.shift()!;
       job.status = 'running';
 
-      console.log(`[PROD_CACHE] 🔄 Processing refresh job: ${job.key} (priority: ${job.priority})`);
+      console.log(`[PROD_CACHE] Processing refresh job: ${job.key} (priority: ${job.priority})`);
 
       try {
         // Check if we can make request
         const canMakeRequest = await googleAdsRateLimiter.canMakeRequest(job.customerId || undefined);
 
         if (!canMakeRequest.allowed) {
-          console.warn(`[PROD_CACHE] ⏸️  Pausing refresh queue - rate limit active: ${canMakeRequest.reason}`);
+          console.warn(`[PROD_CACHE] Pausing refresh queue - rate limit active: ${canMakeRequest.reason}`);
 
           // Re-queue job for later
           job.status = 'pending';
@@ -275,14 +275,14 @@ export class ProductionCacheStrategy {
         );
 
         job.status = 'completed';
-        console.log(`[PROD_CACHE] ✅ Background refresh completed: ${job.key}`);
+        console.log(`[PROD_CACHE] Background refresh completed: ${job.key}`);
 
         // Small delay between requests to respect rate limits
         await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
 
       } catch (error) {
         job.status = 'failed';
-        console.error(`[PROD_CACHE] ❌ Background refresh failed: ${job.key}`, error);
+        console.error(`[PROD_CACHE] Background refresh failed: ${job.key}`, error);
 
         // Don't retry immediately to avoid wasting quota
       } finally {
@@ -292,14 +292,14 @@ export class ProductionCacheStrategy {
     }
 
     this.isRefreshing = false;
-    console.log(`[PROD_CACHE] 🎉 Refresh queue empty`);
+    console.log(`[PROD_CACHE] Refresh queue empty`);
   }
 
   /**
    * Prefetch common date ranges (call this during off-peak hours)
    */
   async prefetchCommonQueries(accountIds: string[]): Promise<void> {
-    console.log(`[PROD_CACHE] 🚀 Starting prefetch for ${accountIds.length} accounts...`);
+    console.log(`[PROD_CACHE] Starting prefetch for ${accountIds.length} accounts...`);
 
     const today = new Date().toISOString().split('T')[0];
     const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
@@ -315,18 +315,18 @@ export class ProductionCacheStrategy {
       for (const query of commonQueries) {
         try {
           await this.getData(query.startDate, query.endDate, accountId, query.strategy);
-          console.log(`[PROD_CACHE] ✓ Prefetched: ${accountId} (${query.startDate} to ${query.endDate})`);
+          console.log(`[PROD_CACHE] Prefetched: ${accountId} (${query.startDate} to ${query.endDate})`);
 
           // Delay between prefetch to avoid rate limits
           await new Promise(resolve => setTimeout(resolve, 3000));
 
         } catch (error) {
-          console.error(`[PROD_CACHE] ✗ Prefetch failed for ${accountId}:`, error);
+          console.error(`[PROD_CACHE] Prefetch failed for ${accountId}:`, error);
         }
       }
     }
 
-    console.log(`[PROD_CACHE] ✅ Prefetch completed`);
+    console.log(`[PROD_CACHE] Prefetch completed`);
   }
 
   /**
@@ -381,7 +381,7 @@ export class ProductionCacheStrategy {
   clearQueue() {
     this.refreshQueue = [];
     this.refreshJobs.clear();
-    console.log(`[PROD_CACHE] 🧹 Queue cleared`);
+    console.log(`[PROD_CACHE] Queue cleared`);
   }
 }
 

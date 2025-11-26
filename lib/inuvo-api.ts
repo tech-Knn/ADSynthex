@@ -74,27 +74,27 @@ const INUVO_CONFIG: InuvoApiConfig = {
   baseUrl: 'https://partners.inuvo.com/analytics',
   accounts: [
     {
-      id: '7195529443', 
+      id: '7195529443',
       name: 'Inuvo - Account - 02 - GMT',
       timezone: 'GMT' // This account runs in PST but Inuvo API expects GMT
     },
     {
-      id: '7616718892', 
+      id: '7616718892',
       name: 'Inuvo - Account 2 - PST (GMT -8:00)',
       timezone: 'GMT'
     },
     {
-      id: '9833281050', 
+      id: '9833281050',
       name: 'Inuvo - Account 3 - PST (GMT -8:00)',
       timezone: 'GMT'
     },
     {
-      id: '9790364217', 
+      id: '9790364217',
       name: 'Inuvo - Account - 03 - GMT',
       timezone: 'GMT'
     },
     {
-      id: '9835231086', 
+      id: '9835231086',
       name: 'Inuvo - Account - 04 - GMT',
       timezone: 'GMT'
     },
@@ -125,13 +125,13 @@ export async function fetchInuvoRealtimeData(
   accountId?: string
 ): Promise<InuvoResponse> {
   console.log(`[INUVO_API] Fetching realtime data: ${startDate} to ${endDate}`);
-  
+
   if (!INUVO_CONFIG.accessToken) {
     throw new Error('Inuvo access token not configured');
   }
 
   try {
-    const accounts = accountId 
+    const accounts = accountId
       ? INUVO_CONFIG.accounts.filter(acc => acc.id === accountId)
       : INUVO_CONFIG.accounts;
 
@@ -140,7 +140,7 @@ export async function fetchInuvoRealtimeData(
 
     for (const account of accounts) {
       console.log(`[INUVO_API] Fetching data for account: ${account.name} (${account.id})`);
-      
+
       // Fetch realtime data by channel
       const realtimeUrl = `${INUVO_CONFIG.baseUrl}/GetAdsenseOnlineRealtimeByChannel`;
       const params = new URLSearchParams({
@@ -229,13 +229,13 @@ export async function fetchInuvoDailyData(
   accountId?: string
 ): Promise<InuvoResponse> {
   console.log(`[INUVO_API] Fetching daily data: ${startDate} to ${endDate}`);
-  
+
   if (!INUVO_CONFIG.accessToken) {
     throw new Error('Inuvo access token not configured');
   }
 
   try {
-    const accounts = accountId 
+    const accounts = accountId
       ? INUVO_CONFIG.accounts.filter(acc => acc.id === accountId)
       : INUVO_CONFIG.accounts;
 
@@ -264,7 +264,7 @@ export async function fetchInuvoDailyData(
       }
 
       const data = await response.json();
-      
+
       if (Array.isArray(data)) {
         const accountData = data.map((item: any) => ({
           TKID: item.TKID || '',
@@ -324,22 +324,22 @@ function extractTKIDFromURL(url: string): string | null {
     // - &tkid=value  
     // - /tkid/value
     // - tkid-value
-    
+
     if (!url) return null;
-    
+
     // Try URL parameter first
     const urlParams = new URLSearchParams(url.split('?')[1] || '');
     const tkidParam = urlParams.get('tkid') || urlParams.get('TKID');
     if (tkidParam) return tkidParam;
-    
+
     // Try path-based TKID
     const tkidPathMatch = url.match(/\/tkid\/([^\/\?]+)/i);
     if (tkidPathMatch) return tkidPathMatch[1];
-    
+
     // Try dash-separated TKID
     const tkidDashMatch = url.match(/tkid[-_]([^\/\?&]+)/i);
     if (tkidDashMatch) return tkidDashMatch[1];
-    
+
     return null;
   } catch (error) {
     console.error('Error extracting TKID from URL:', error);
@@ -355,10 +355,10 @@ export function mapCostRevenue(
   inuvoData: InuvoRealtimeData[]
 ): CostRevenueMapping[] {
   console.log(`[COST_REVENUE_MAPPING] Mapping ${googleAdsData.length} ads with ${inuvoData.length} revenue records`);
-  
+
   const mappings: CostRevenueMapping[] = [];
   const inuvoMap = new Map<string, InuvoRealtimeData[]>();
-  
+
   // Group Inuvo data by TKID (case-insensitive)
   inuvoData.forEach(item => {
     if (item.TKID) {
@@ -376,7 +376,7 @@ export function mapCostRevenue(
   googleAdsData.forEach(ad => {
     let tkid: string | null = null;
     let cost = ad.metrics?.cost || ad.cost || 0;
-    
+
     // Try multiple sources for TKID
     if (ad.TKID) {
       tkid = ad.TKID.toString().trim();
@@ -391,25 +391,25 @@ export function mapCostRevenue(
     } else if (ad.campaign_id) {
       tkid = ad.campaign_id.toString().trim();
     }
-    
+
     if (tkid) {
       const normalizedTkid = tkid.toLowerCase(); // Normalize to lowercase for comparison
       console.log(`[COST_REVENUE_MAPPING] Processing TKID: ${tkid} (normalized: ${normalizedTkid}), Cost: $${cost}`);
-      
+
       if (inuvoMap.has(normalizedTkid)) {
         const revenueRecords = inuvoMap.get(normalizedTkid)!;
-        
+
         // Aggregate Inuvo metrics
         const totalRevenue = revenueRecords.reduce((sum, record) => sum + record.ESTIMATED_EARNINGS, 0);
         const totalInuvoClicks = revenueRecords.reduce((sum, record) => sum + record.CLICKS, 0);
         const totalImpressions = revenueRecords.reduce((sum, record) => sum + record.IMPRESSIONS, 0);
-        
+
         // Calculate derived metrics
         const profit = totalRevenue - cost;
         const roi = cost > 0 ? ((totalRevenue - cost) / cost) * 100 : 0;
         const inuvoCtr = totalImpressions > 0 ? (totalInuvoClicks / totalImpressions) * 100 : 0;
         const epc = totalInuvoClicks > 0 ? totalRevenue / totalInuvoClicks : 0;
-        
+
         // Extract Google Ads metrics
         const conversions = ad.metrics?.conversions || 0;
         const cpa = ad.metrics?.cpa || (conversions > 0 ? cost / conversions : 0);
@@ -430,13 +430,13 @@ export function mapCostRevenue(
           campaign_name: ad.campaign_name || ad.name || `Campaign ${tkid}`,
           date: ad.date || revenueRecords[0]?.DATE || formatDateForDisplay(new Date())
         });
-        
-        console.log(`[COST_REVENUE_MAPPING] ✅ Mapped TKID ${tkid} (${normalizedTkid}): $${cost} cost → $${totalRevenue.toFixed(2)} revenue`);
+
+        console.log(`[COST_REVENUE_MAPPING] Mapped TKID ${tkid} (${normalizedTkid}): $${cost} cost → $${totalRevenue.toFixed(2)} revenue`);
       } else {
         // Ad has cost but no revenue (no matching TKID in inuvo)
         const conversions = ad.metrics?.conversions || 0;
         const cpa = ad.metrics?.cpa || (conversions > 0 ? cost / conversions : 0);
-        
+
         mappings.push({
           TKID: tkid,
           // Google Ads Metrics
@@ -453,11 +453,11 @@ export function mapCostRevenue(
           campaign_name: ad.campaign_name || ad.name || `Campaign ${tkid}`,
           date: ad.date || formatDateForDisplay(new Date())
         });
-        
-        console.log(`[COST_REVENUE_MAPPING] ⚠️ No revenue for TKID ${tkid}: $${cost} cost only`);
+
+        console.log(`[COST_REVENUE_MAPPING] No revenue for TKID ${tkid}: $${cost} cost only`);
       }
     } else {
-      console.log(`[COST_REVENUE_MAPPING] ❌ No TKID found for ad:`, {
+      console.log(`[COST_REVENUE_MAPPING] No TKID found for ad:`, {
         ad_id: ad.ad_id,
         campaign_id: ad.campaign_id,
         final_urls: ad.final_urls

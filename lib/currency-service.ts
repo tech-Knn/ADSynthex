@@ -125,16 +125,16 @@ class CurrencyService {
         console.log(`[CURRENCY] Trying ${api.name}...`);
         const rate = await api.fetcher();
         await this.cacheRate(rate, api.name, CONFIG.CACHE_TTL_SECONDS);
-        console.log(`[CURRENCY] ✅ ${api.name} succeeded: ${rate}`);
+        console.log(`[CURRENCY] ${api.name} succeeded: ${rate}`);
         return { rate, source: api.name, success: true };
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-        console.warn(`[CURRENCY] ⚠️ ${api.name} failed: ${errorMsg}`);
+        console.warn(`[CURRENCY] ${api.name} failed: ${errorMsg}`);
       }
     }
 
     // All APIs failed, use fallback
-    console.error('[CURRENCY] ❌ All APIs failed, using fallback rate');
+    console.error('[CURRENCY] All APIs failed, using fallback rate');
     await this.cacheRate(CONFIG.FALLBACK_RATE, 'fallback', CONFIG.FALLBACK_CACHE_TTL);
 
     return {

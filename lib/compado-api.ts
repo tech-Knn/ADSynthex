@@ -183,7 +183,7 @@ export async function fetchAllCompadoConversions(
     console.log(`[COMPADO_API] ${allConversions.length} conversions: €${totalRevenueEur.toFixed(2)} → $${totalRevenueUsd.toFixed(2)} (rate: ${exchangeRate})`);
 
     if (placeholderGclids.length > 0 || emptyGclids.length > 0 || shortGclids.length > 0) {
-      console.log(`[COMPADO_API] ⚠️  Data Quality Issues Detected:`);
+      console.log(`[COMPADO_API] Data Quality Issues Detected:`);
       if (placeholderGclids.length > 0) {
         const placeholderRevenue = placeholderGclids.reduce((sum, c) => sum + (c.revenueUsd || 0), 0);
         console.log(`[COMPADO_API]    - ${placeholderGclids.length} conversions with placeholder GCLIDs (€${placeholderGclids.reduce((s, c) => s + c.revenue, 0).toFixed(2)} / $${placeholderRevenue.toFixed(2)})`);
@@ -435,18 +435,18 @@ export function mapCompadoCostRevenue(
   // Analyze conversion timestamps to detect attribution window issues
   if (filteredOutConversions.length > 0) {
     console.log(`[COMPADO_MAPPING] `);
-    console.log(`[COMPADO_MAPPING] ⚠️  ATTRIBUTION ANALYSIS:`);
+    console.log(`[COMPADO_MAPPING] ATTRIBUTION ANALYSIS:`);
     console.log(`[COMPADO_MAPPING]    - ${filteredOutConversions.length} conversions don't have matching GCLIDs in Google Ads`);
     console.log(`[COMPADO_MAPPING]    - This is usually because:`);
     console.log(`[COMPADO_MAPPING]      1. Click happened BEFORE the date range you selected (${googleAdsClicks[0]?.date || 'N/A'})`);
     console.log(`[COMPADO_MAPPING]      2. Different account/campaign (cross-account traffic)`);
     console.log(`[COMPADO_MAPPING]      3. Invalid or missing GCLID in Compado data`);
     console.log(`[COMPADO_MAPPING] `);
-    console.log(`[COMPADO_MAPPING] 💡 SOLUTION: To improve matching for ANY date range:`);
+    console.log(`[COMPADO_MAPPING] SOLUTION: To improve matching for ANY date range:`);
     console.log(`[COMPADO_MAPPING]    - Query a wider date range (e.g., include previous 7-30 days)`);
     console.log(`[COMPADO_MAPPING]    - Or use the date range when the clicks actually occurred`);
     console.log(`[COMPADO_MAPPING] `);
-    console.log(`[COMPADO_MAPPING] ⚠️  Sample of filtered-out conversions (first 5):`);
+    console.log(`[COMPADO_MAPPING] Sample of filtered-out conversions (first 5):`);
     filteredOutConversions.slice(0, 5).forEach((conv, idx) => {
       const convDate = conv.timestamp ? new Date(conv.timestamp).toISOString().split('T')[0] : 'N/A';
       console.log(`[COMPADO_MAPPING]    ${idx + 1}. GCLID: "${conv.gclid}" | Date: ${convDate} | €${conv.revenue.toFixed(2)} → $${(conv.revenueUsd || 0).toFixed(2)} | Ad ID: ${conv.ad_id || 'N/A'}`);
@@ -555,7 +555,7 @@ export function mapCompadoCostRevenue(
     );
 
     if (unmatchedConversions.length > 0) {
-      console.log(`[COMPADO_MAPPING] ⚠️  ${unmatchedConversions.length} unmatched Compado conversions (no matching Google Ads GCLID found):`);
+      console.log(`[COMPADO_MAPPING] ${unmatchedConversions.length} unmatched Compado conversions (no matching Google Ads GCLID found):`);
       unmatchedConversions.slice(0, 3).forEach(conv => {
         console.log(`[COMPADO_MAPPING]    - GCLID: ${conv.gclid} | Revenue: $${(conv.revenueUsd || conv.revenue).toFixed(2)} | Ad ID: ${conv.ad_id}`);
       });
@@ -565,7 +565,7 @@ export function mapCompadoCostRevenue(
     }
   } else {
     // No Google Ads clicks means no data to map
-    console.log(`[COMPADO_MAPPING] ℹ️  No Google Ads clicks found for this account - returning empty mappings`);
+    console.log(`[COMPADO_MAPPING] No Google Ads clicks found for this account - returning empty mappings`);
   }
 
   console.log(`[COMPADO_MAPPING] Total mappings created: ${mappings.length}`);
@@ -634,7 +634,7 @@ export function aggregateMappingsByCampaign(
 
     if (!campaignMap.has(campaignId)) {
 
-      console.log(`[COMPADO_AGGREGATION]   💰 Revenue-only campaign: ${campaignId} (${mapping.campaign_name})`);
+      console.log(`[COMPADO_AGGREGATION]   Revenue-only campaign: ${campaignId} (${mapping.campaign_name})`);
       campaignMap.set(campaignId, {
         campaign_id: campaignId,
         campaign_name: mapping.campaign_name || `Campaign ${campaignId}`,
