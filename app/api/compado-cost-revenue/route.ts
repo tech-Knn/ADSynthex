@@ -454,6 +454,18 @@ export async function POST(request: NextRequest) {
 
       console.log(`[COMPADO_COST_REVENUE] ✓ Metrics maps built: ${campaignMetricsMap.size} campaigns, ${adGroupMetricsMap.size} ad groups`);
 
+      // DIAGNOSTIC: Log actual campaign costs from Google Ads
+      if (campaignMetricsMap.size > 0) {
+        console.log(`[COMPADO_COST_REVENUE] ==================== CAMPAIGN COSTS FROM GOOGLE ADS ====================`);
+        let totalFromMap = 0;
+        campaignMetricsMap.forEach((metrics, campaignId) => {
+          totalFromMap += metrics.total_cost;
+          console.log(`[COMPADO_COST_REVENUE]   Campaign ${campaignId} (${metrics.campaign_name}): $${metrics.total_cost.toFixed(2)} (${metrics.total_clicks} clicks, CPC: $${metrics.cpc.toFixed(4)})`);
+        });
+        console.log(`[COMPADO_COST_REVENUE]   TOTAL COST FROM GOOGLE ADS CAMPAIGNS: $${totalFromMap.toFixed(2)}`);
+        console.log(`[COMPADO_COST_REVENUE] ========================================================================`);
+      }
+
       // DIAGNOSTIC: Log if we have zero-cost campaigns
       if (campaignMetricsMap.size > 0) {
         let zeroCostCampaigns = 0;

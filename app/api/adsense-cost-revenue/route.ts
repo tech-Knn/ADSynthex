@@ -873,7 +873,7 @@ export async function POST(request: NextRequest) {
           clicks: 0,
           impressions: 0,
           conversions: 0,
-          campaignCount: 0
+          campaignCount:0,
         });
       }
 

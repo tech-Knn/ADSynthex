@@ -1,94 +1,147 @@
-# AdSyntheX Dashboard
+# AdSyntheX 
 
-AdSyntheX is a powerful analytics dashboard that combines revenue data from Ads.com with cost data from Google Ads, providing a comprehensive view of your marketing performance.
+> Advertising Analytics Platform - Unified cost-revenue tracking across Google Ads, AdSense, Ads.com, Compado, and Inuvo
 
-## Features
+[![Next.js](https://img.shields.io/badge/Next.js-14-black)](https://nextjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)](https://www.typescriptlang.org/)
+[![Redis](https://img.shields.io/badge/Redis-Caching-red)](https://redis.io/)
+[![MongoDB](https://img.shields.io/badge/MongoDB-Database-green)](https://www.mongodb.com/)
 
-- Combined revenue and cost data in a single dashboard
-- Detailed metrics analysis with conversion rates, CTR, CPA, and more
-- Interactive date range selection
-- URL slug matching for correlating ad performance with revenue
-- Country-specific performance breakdown
-- Responsive design for all devices
+## Overview
 
-## Tech Stack
+AdSyntheX is a production-grade analytics dashboard that combines cost data from Google Ads with revenue data from multiple advertising platforms, providing comprehensive ROI analysis and profitability tracking at the campaign and ad level.
 
-- Next.js 14
-- TypeScript
-- Ant Design (UI components)
-- Google Ads API integration
-- Ads.com API integration
+### Key Features
 
-## Getting Started
+- **Multi-Platform Integration**: Google Ads, AdSense, Ads.com, Compado, Inuvo
+- **Real-Time Cost-Revenue Matching**: GCLID/TKID correlation for accurate profit tracking
+- **Advanced Caching**: Multi-tier Redis/MongoDB caching with GZIP compression
+- **Intelligent Rate Limiting**: Smart quota management to prevent API exhaustion
+- **Account-Based Access Control**: Multi-tenant support with feed-level permissions
+- **Comprehensive Metrics**: ROI, ROAS, CPA, conversion rates, CTR, and more
 
-### Prerequisites
+## Quick Start
 
-- Node.js 18.x or later
-- npm or yarn
-- Google Ads API credentials
-- Ads.com API credentials
+```bash
+# Clone repository
+git clone https://github.com/nagdewaniharen/AdSyntheX.git
+cd AdSyntheX
 
-### Installation
+# Install dependencies
+npm install
 
-1. Clone the repository:
-   ```
-   git clone https://github.com/nagdewaniharen/AdSyntheX.git
-   cd AdSyntheX
-   ```
+# Setup environment variables (see docs/QUICK_START.md)
+cp .env.example .env.local
 
-2. Install dependencies:
-   ```
-   npm install
-   ```
-   or
-   ```
-   yarn install
-   ```
-
-3. Create an `.env.local` file in the root directory with your API credentials:
-   ```
-   # Google Ads API
-   GOOGLE_ADS_CLIENT_ID=your_client_id
-   GOOGLE_ADS_CLIENT_SECRET=your_client_secret
-   GOOGLE_ADS_DEVELOPER_TOKEN=your_developer_token
-   GOOGLE_ADS_REFRESH_TOKEN=your_refresh_token
-   GOOGLE_ADS_MANAGER_ID=your_manager_id
-   
-   # Ads.com API
-   ADSCOM_API_KEY=your_api_key
-   ADSCOM_API_SECRET=your_api_secret
-   ```
-
-### Running the development server
-
-```
+# Run development server
 npm run dev
 ```
-or
+
+Open [http://localhost:3000](http://localhost:3000)
+
+## Documentation
+
+Comprehensive documentation is available in the [`docs/`](./docs) folder:
+
+- **[Quick Start Guide](./docs/QUICK_START.md)** - Installation and setup
+- **[Architecture](./docs/ARCHITECTURE.md)** - System design and patterns
+- **[API Integrations](./docs/)** - Google Ads, AdSense, Compado, Inuvo docs
+- **[Deployment Guide](./docs/PRODUCTION_DEPLOYMENT.md)** - Production deployment
+- **[Local Testing](./docs/LOCAL_TESTING_GUIDE.md)** - Development guide
+- **[Troubleshooting](./docs/COOLDOWN_GUIDE.md)** - Common issues
+
+## Technology Stack
+
+- **Framework**: Next.js 14 (App Router)
+- **Language**: TypeScript 5.3
+- **UI**: Ant Design + TailwindCSS
+- **Caching**: Redis (Upstash) + MongoDB
+- **APIs**: Google Ads API, AdSense API, Ads.com, Compado, Inuvo
+
+## Architecture Highlights
+
+### Multi-Tier Caching Strategy
 ```
-yarn dev
+Memory Cache (1-5 min) → Redis Cache (5-15 min) → MongoDB (warm storage) → Live API
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser to see the result.
+### Performance Optimizations
+- **GZIP compression**: ~70% bandwidth reduction
+- **Stale-While-Revalidate**: Instant responses while refreshing
+- **Background cache warmup**: Predictive query caching
+- **Smart rate limiting**: Distributed quota tracking
 
-### Building for production
+### Security Features
+- Account-based access control
+- Feed-level permissions
+- API key authentication
+- Session management
+
+## Project Structure
 
 ```
+AdSyntheX/
+├── app/                    # Next.js App Router
+│   ├── api/                # API routes
+│   └── dashboard/          # Dashboard pages
+├── components/             # React components
+├── lib/                    # Core libraries
+│   ├── google-ads-api.ts   # Google Ads integration
+│   ├── compado-api.ts      # Compado integration
+│   └── redis-cache-manager.ts  # Caching layer
+├── docs/                   # Documentation
+└── scripts/                # Utility scripts
+```
+
+## Development
+
+```bash
+# Development server
+npm run dev
+
+# TypeScript check
 npm run build
-```
-or
-```
-yarn build
+
+# Clean cache
+npm run clean
+
+# Verify system
+npm run verify
+
+# Check API quota
+npm run check-quota
 ```
 
 ## Deployment
 
-The application can be deployed on platforms like Vercel, Netlify, or Render:
+Supports deployment on:
+- **Vercel** (recommended for Next.js)
+- **Render** (with worker for background jobs)
+- **Any Node.js hosting** (18.x+)
 
-1. Configure environment variables on your hosting platform
-2. Connect your GitHub repository
-3. Deploy from main branch
+See [Production Deployment Guide](./docs/PRODUCTION_DEPLOYMENT.md) for details.
+
+## Environment Variables
+
+Required environment variables:
+- Google Ads API credentials
+- AdSense API credentials  
+- Redis (Upstash) connection
+- MongoDB connection
+- Admin login key
+
+See [`.env.example`](./docs/QUICK_START.md#environment-variables) for full list.
 
 ## License
 
-[MIT](LICENSE) 
+MIT License - See [LICENSE](LICENSE) file for details
+
+## Support
+
+- **Documentation**: Check [`docs/`](./docs) folder
+- **Issues**: Open a GitHub issue
+- **Questions**: Review [troubleshooting guide](./docs/COOLDOWN_GUIDE.md)
+
+---
+
+**Built with ❤️ for advertising analytics**
