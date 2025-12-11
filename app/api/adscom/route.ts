@@ -27,8 +27,7 @@ const transformApiData = (apiResponse: any): AdsComResponse => {
       // Per docs: subid_5 holds article information that needs to be parsed
       const subid5Value = item.subid_5 || '';
       
-      // Try to extract meaningful article information from subid_5
-      // Usually in format "article-ACTUALVALUE" or just the article URL
+     
       let article = subid5Value;
       
       

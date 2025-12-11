@@ -67,8 +67,19 @@ function analyzeApiError(error: any): { shouldRetry: boolean; errorType: string;
     };
   }
   
+  // Deactivated or inaccessible account errors
+  if (errorMessage.includes('not yet enabled') ||
+      errorMessage.includes('has been deactivated') ||
+      errorMessage.includes("can't be accessed")) {
+    return {
+      shouldRetry: false,
+      errorType: 'ACCOUNT_DEACTIVATED',
+      message: 'Account is deactivated or inaccessible. Skipping this account.'
+    };
+  }
+
   // Authentication errors
-  if (errorMessage.includes('401') || errorMessage.includes('UNAUTHENTICATED') || 
+  if (errorMessage.includes('401') || errorMessage.includes('UNAUTHENTICATED') ||
       errorMessage.includes('403') || errorMessage.includes('PERMISSION_DENIED')) {
     return {
       shouldRetry: false,
@@ -120,27 +131,33 @@ async function retryWithBackoff<T>(
       lastError = error;
       
       const errorAnalysis = analyzeApiError(error);
-      
+
+      // For deactivated accounts, fail immediately without retrying
+      if (errorAnalysis.errorType === 'ACCOUNT_DEACTIVATED') {
+        console.warn(`Google Ads API: ${errorAnalysis.message}`);
+        throw error;
+      }
+
       if (attempt < maxRetries && errorAnalysis.shouldRetry) {
         const delay = Math.min(
           baseDelay * Math.pow(RETRY_CONFIG.backoffMultiplier, attempt),
           RETRY_CONFIG.maxBackoffDelay
         );
-        
+
         console.log(`Google Ads API attempt ${attempt + 1} failed: ${errorAnalysis.errorType} - ${errorAnalysis.message}`);
         console.log(`Retrying in ${delay}ms...`);
-        
+
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }
-      
+
       // Log final error with detailed information
       console.error(`Google Ads API failed after ${attempt + 1} attempts:`, {
         errorType: errorAnalysis.errorType,
         message: errorAnalysis.message,
         originalError: error.message
       });
-      
+
       // For quota exceeded, log additional information
       if (errorAnalysis.errorType === 'QUOTA_EXCEEDED') {
         console.error('Quota exceeded details:', {
@@ -744,9 +761,18 @@ export async function fetchGoogleAdsData(
       // This saves 20 seconds for 20 accounts (20 × 1s = 20s)
       // Rate limiter will auto-throttle if quota limits are approached
       
-    } catch (error) {
-      console.error(`Error fetching data for account ${account.id}:`, error);
-      
+    } catch (error: any) {
+      const errorMessage = error?.message || error?.errors?.[0]?.message || String(error);
+
+      // Check if account is deactivated or inaccessible
+      if (errorMessage.includes('not yet enabled') ||
+          errorMessage.includes('has been deactivated') ||
+          errorMessage.includes("can't be accessed")) {
+        console.warn(`[GOOGLE_ADS_API] ⚠️  Account ${account.id} (${account.name}) is deactivated or inaccessible - SKIPPING`);
+      } else {
+        console.error(`[GOOGLE_ADS_API] ❌ Error fetching data for account ${account.id} (${account.name}):`, errorMessage);
+      }
+
       // Continue with other accounts even if one fails
       // This prevents one bad account from breaking the entire fetch
     }
