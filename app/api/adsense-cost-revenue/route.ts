@@ -918,19 +918,11 @@ export async function POST(request: NextRequest) {
       _message: message.trim()
     };
 
-    // CRITICAL: Cache the complete cost+revenue mapping for 15 minutes
-    // This ensures cost and revenue are ALWAYS fetched and stored together
-    try {
-      await redisCacheManager.set(cacheKey, response, {
-        dataType: 'unified',
-        priority: 'high'
-      });
-      console.log(`[ADSENSE_COST_REVENUE] ✅ Cached cost+revenue mapping for 15 minutes`);
-    } catch (err) {
-      console.warn('[ADSENSE_COST_REVENUE] Failed to cache response:', err);
-    }
+    // NOTE: Individual account data is already cached using cacheAccountData() helper
+    // at lines 311 and 343, which provides better granularity and reusability
+    // No need for additional caching here
 
-    // Disable HTTP caching (but Redis cache is used above)
+    // Disable HTTP caching (Redis cache is used at account level)
     return NextResponse.json(response, {
       headers: {
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
