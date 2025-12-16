@@ -63,10 +63,14 @@ const COMPADO_ENABLED_ACCOUNTS = [
 
   // Compado BoldmoveGuide Accounts (new domain)
   { id: '1235076035', name: 'Compado - BoldmoveGuide - UTC01' },
-  { id: '3471023162', name: 'Compado - BoldmoveGuide - UTC-02' },
+  { id: '3471023162', name: 'Compado - BoldmoveGuide - UTC02' },
   { id: '8871395768', name: 'Compado - BoldmoveGuide - UTC03' },
   { id: '3475645746', name: 'Compado - BoldmoveGuide - UTC04' },
-  { id: '8994182684', name: 'Compado - BoldmoveGuide - UTC5' }
+  { id: '8994182684', name: 'Compado - BoldmoveGuide - UTC05' },
+  { id: '9622143895', name: 'Compado - BoldmoveGuide - UTC06' },
+  { id: '7949737807', name: 'Compado - BoldmoveGuide - UTC07' },
+  { id: '8138817445', name: 'Compado - BoldmoveGuide - UTC08' },
+  { id: '4315436458', name: 'Compado - BoldmoveGuide - UTC09' }
 ];
 
 // Special "All Accounts" option for aggregated view

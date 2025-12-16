@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
       });
 
       if (unauthorizedAccess) {
-        console.log(`[COMPADO_COST_REVENUE] ⚠️  Access denied: User ${userAccountId} attempted to access unauthorized accounts`);
+        console.log(`[COMPADO_COST_REVENUE] Access denied: User ${userAccountId} attempted to access unauthorized accounts`);
         return NextResponse.json(
           { error: 'Access denied: You can only view data for your own account' },
           { status: 403 }
@@ -92,11 +92,11 @@ export async function POST(request: NextRequest) {
       body.customerId = accountValue;
       body.accountIds = undefined;
 
-      console.log(`[COMPADO_COST_REVENUE] 🔒 User ${userAccountId} accessing their own account data`);
+      console.log(`[COMPADO_COST_REVENUE] User ${userAccountId} accessing their own account data`);
     }
 
     // Determine if we're processing multiple accounts (needed for cache key generation)
-    console.log(`[COMPADO_COST_REVENUE] ${forceRefresh ? '🔄 Force refresh requested - skipping Redis cache' : '🔍 Checking Redis cache'}...`);
+    console.log(`[COMPADO_COST_REVENUE] ${forceRefresh ? 'Force refresh requested - skipping Redis cache' : 'Checking Redis cache'}...`);
     const isMultiAccount = accountIds && Array.isArray(accountIds) && accountIds.length > 0;
 
     // ==================== REDIS AGGREGATED CACHE: Check for cached aggregated results ====================
@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
       const cachedAggregated = await redisCacheManager.get(aggregatedCacheKey, { dataType: 'compado' });
 
       if (cachedAggregated.data) {
-        console.log(`[COMPADO_COST_REVENUE] ✅ Serving cached aggregated data (${Math.round(cachedAggregated.age / 1000)}s old)`);
+        console.log(`[COMPADO_COST_REVENUE] Serving cached aggregated data (${Math.round(cachedAggregated.age / 1000)}s old)`);
         return NextResponse.json({
           campaign_aggregated: cachedAggregated.data.campaign_aggregated,
           summary: cachedAggregated.data.summary,
@@ -128,10 +128,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log('[COMPADO_COST_REVENUE] ⚠️  No aggregated cache, fetching from API...');
+    console.log('[COMPADO_COST_REVENUE] No aggregated cache, fetching from API...');
 
     // BoldmoveGuide account IDs (recently added accounts that need cache clearing)
-    const boldmoveAccountIds = ['1235076035', '3471023162', '8871395768', '3475645746', '8994182684'];
+    const boldmoveAccountIds = ['1235076035', '3471023162', '8871395768', '3475645746', '8994182684', '9622143895', '7949737807', '8138817445', '4315436458'];
 
     // Build list of accounts to process
     const accountsToProcess = isMultiAccount ? accountIds : (customerId ? [customerId] : []);
@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
 
     // OPTIMIZATION: Warn about large date ranges
     if (daysDiff > 30) {
-      console.warn(`[COMPADO_COST_REVENUE] ⚠️  Large date range detected: ${daysDiff} days. This may take longer to load.`);
+      console.warn(`[COMPADO_COST_REVENUE] Large date range detected: ${daysDiff} days. This may take longer to load.`);
       console.warn(`[COMPADO_COST_REVENUE] TIP: Use smaller date ranges (7-14 days) for faster loading.`);
     }
 
@@ -154,12 +154,12 @@ export async function POST(request: NextRequest) {
     try {
       // BULLETPROOF RATE LIMIT PROTECTION: Check quota status first
       const quotaStatus = await googleAdsRateLimiter.getQuotaStatus();
-      console.log(`[COMPADO_COST_REVENUE] 🛡️ Quota status: ${quotaStatus.dailyUsed}/${quotaStatus.dailyLimit} daily, ${quotaStatus.hourlyUsed}/${quotaStatus.hourlyLimit} hourly`);
+      console.log(`[COMPADO_COST_REVENUE] Quota status: ${quotaStatus.dailyUsed}/${quotaStatus.dailyLimit} daily, ${quotaStatus.hourlyUsed}/${quotaStatus.hourlyLimit} hourly`);
 
       // CRITICAL: If quota is getting close to limit, deny forceRefresh
       let actualForceRefresh = forceRefresh;
       if (quotaStatus.usagePercentage > 90) {
-        console.warn(`[COMPADO_COST_REVENUE] 🚨 Quota usage at ${quotaStatus.usagePercentage}% - BLOCKING forceRefresh to protect quota`);
+        console.warn(`[COMPADO_COST_REVENUE] Quota usage at ${quotaStatus.usagePercentage}% - BLOCKING forceRefresh to protect quota`);
         actualForceRefresh = false;
       }
 
@@ -168,7 +168,7 @@ export async function POST(request: NextRequest) {
 
       // CRITICAL: If in cooldown, IGNORE forceRefresh to prevent errors
       if (actualForceRefresh && !quotaCheck.allowed) {
-        console.warn(`[COMPADO_COST_REVENUE] 🛡️ COOLDOWN ACTIVE - Ignoring forceRefresh to serve cached data`);
+        console.warn(`[COMPADO_COST_REVENUE] COOLDOWN ACTIVE - Ignoring forceRefresh to serve cached data`);
         console.warn(`[COMPADO_COST_REVENUE] Reason: ${quotaCheck.reason}`);
         actualForceRefresh = false; // Override to protect user experience
       }
@@ -177,7 +177,7 @@ export async function POST(request: NextRequest) {
       // This ensures we NEVER hit rate limits even under heavy load
       const shouldUseStaleCache = !actualForceRefresh || quotaStatus.usagePercentage > 80;
       if (shouldUseStaleCache && !actualForceRefresh) {
-        console.log(`[COMPADO_COST_REVENUE] 🎯 Using optimistic caching strategy (quota: ${quotaStatus.usagePercentage}%)`);
+        console.log(`[COMPADO_COST_REVENUE] Using optimistic caching strategy (quota: ${quotaStatus.usagePercentage}%)`);
       }
 
       // AUTO-CLEAR CACHE for BoldmoveGuide accounts (recently added)
@@ -186,14 +186,16 @@ export async function POST(request: NextRequest) {
       const hasBoldmoveAccount = accountsToClear.some(id => boldmoveAccountIds.includes(id.toString()));
 
       if (hasBoldmoveAccount && !actualForceRefresh) {
-        console.log(`[COMPADO_COST_REVENUE] 🔧 BoldmoveGuide account detected - auto-clearing cache to fetch fresh data...`);
+        console.log(`[COMPADO_COST_REVENUE] BoldmoveGuide account detected - auto-clearing cache to fetch fresh data...`);
         actualForceRefresh = true; // Force refresh for BoldmoveGuide accounts
       }
 
       // Clear cache if forceRefresh is requested AND we're not in cooldown
       if (actualForceRefresh) {
+        console.log(`[COMPADO_COST_REVENUE] FORCE REFRESH DETECTED - Clearing ALL Compado caches...`);
+
         for (const accId of accountsToClear) {
-          console.log(`[COMPADO_COST_REVENUE] ⚡ Clearing cache for account ${accId} to ensure fresh data...`);
+          console.log(`[COMPADO_COST_REVENUE] Clearing cache for account ${accId} to ensure fresh data...`);
           try {
             const { redisClient } = await import('@/lib/redis-client');
             // Match the cache key format used by redisCacheManager.generateKey() with feedType
@@ -205,18 +207,32 @@ export async function POST(request: NextRequest) {
             const oldCacheKey = `cache:google-ads:${accId}:${startDate}:${endDate}`;
             await redisClient.del(oldCacheKey);
 
-            // Clear aggregated cache too
+            // Clear individual account aggregated cache
             const aggCacheKey = `compado-agg:${accId}:${startDate}:${endDate}`;
             await redisClient.del(aggCacheKey);
+            console.log(`[COMPADO_COST_REVENUE] ✓ Cleared aggregated cache: ${aggCacheKey}`);
           } catch (cacheError) {
-            console.warn(`[COMPADO_COST_REVENUE] ⚠️  Failed to clear cache:`, cacheError);
+            console.warn(`[COMPADO_COST_REVENUE] Failed to clear cache:`, cacheError);
           }
         }
+
+        // CRITICAL: Also clear the combined aggregated cache key for multi-account requests
+        try {
+          const { redisClient } = await import('@/lib/redis-client');
+          // This matches the aggregatedCacheKey format used when SETTING the cache
+          const combinedAggCacheKey = `compado-agg:${isMultiAccount ? accountIds?.join(',') : (customerId || 'all')}:${startDate}:${endDate}`;
+          await redisClient.del(combinedAggCacheKey);
+          console.log(`[COMPADO_COST_REVENUE] ✓ Cleared combined aggregated cache: ${combinedAggCacheKey}`);
+        } catch (cacheError) {
+          console.warn(`[COMPADO_COST_REVENUE] Failed to clear combined aggregated cache:`, cacheError);
+        }
+      } else {
+        console.log(`[COMPADO_COST_REVENUE] Force refresh NOT requested - using cache if available`);
       }
 
       // PERFORMANCE OPTIMIZATION: Fetch Google Ads and Compado data IN PARALLEL
-      console.log('[COMPADO_COST_REVENUE] 🚀 Fetching Google Ads + Compado data in PARALLEL...');
-      console.log(`[COMPADO_COST_REVENUE] Date range: ${daysDiff} days - ${daysDiff <= 7 ? '⚡ Fast' : daysDiff <= 14 ? '⏱️ Medium' : '🐌 Slow (consider smaller range)'}`);
+      console.log('[COMPADO_COST_REVENUE] Fetching Google Ads + Compado data in PARALLEL...');
+      console.log(`[COMPADO_COST_REVENUE] Date range: ${daysDiff} days - ${daysDiff <= 7 ? 'Fast' : daysDiff <= 14 ? 'Medium' : 'Slow (consider smaller range)'}`);
       const fetchStartTime = Date.now();
 
       let googleAdsDataPromises;
@@ -447,12 +463,24 @@ export async function POST(request: NextRequest) {
 
       // MEMORY OPTIMIZATION: Build metrics maps with progress tracking
       const processingStart = Date.now();
-      console.log(`[COMPADO_COST_REVENUE] 📊 Processing ${totalCampaigns} campaigns, ${totalClicks} clicks...`);
+      console.log(`[COMPADO_COST_REVENUE] Processing ${totalCampaigns} campaigns, ${totalClicks} clicks...`);
 
       const campaignMetricsMap = buildCampaignMetricsMap(googleAdsData?.campaigns || [], customerId || 'multi');
       const adGroupMetricsMap = buildAdGroupMetricsMap(googleAdsData?.ads || []);
 
       console.log(`[COMPADO_COST_REVENUE] ✓ Metrics maps built: ${campaignMetricsMap.size} campaigns, ${adGroupMetricsMap.size} ad groups`);
+
+      // DIAGNOSTIC: Log actual campaign costs from Google Ads
+      if (campaignMetricsMap.size > 0) {
+        console.log(`[COMPADO_COST_REVENUE] ==================== CAMPAIGN COSTS FROM GOOGLE ADS ====================`);
+        let totalFromMap = 0;
+        campaignMetricsMap.forEach((metrics, campaignId) => {
+          totalFromMap += metrics.total_cost;
+          console.log(`[COMPADO_COST_REVENUE]   Campaign ${campaignId} (${metrics.campaign_name}): $${metrics.total_cost.toFixed(2)} (${metrics.total_clicks} clicks, CPC: $${metrics.cpc.toFixed(4)})`);
+        });
+        console.log(`[COMPADO_COST_REVENUE]   TOTAL COST FROM GOOGLE ADS CAMPAIGNS: $${totalFromMap.toFixed(2)}`);
+        console.log(`[COMPADO_COST_REVENUE] ========================================================================`);
+      }
 
       // DIAGNOSTIC: Log if we have zero-cost campaigns
       if (campaignMetricsMap.size > 0) {
@@ -603,7 +631,10 @@ export async function POST(request: NextRequest) {
       const totalRevenueFromCampaigns = campaignAggregated.reduce((sum, c) => sum + c.revenue, 0);
       const totalConversionsFromCampaigns = campaignAggregated.reduce((sum, c) => sum + c.conversions, 0);
 
-      const summary = getCompadoCostRevenueSummary(costRevenueMapping);
+      // CRITICAL FIX: Calculate summary from campaignAggregated, NOT costRevenueMapping
+      // costRevenueMapping contains click-level data (can be 1000s of clicks)
+      // campaignAggregated contains campaign-level data (actual campaigns to display)
+      const summary = getCompadoCostRevenueSummary(campaignAggregated);
 
       console.log(`[COMPADO_COST_REVENUE] ✅ Mapping complete:`, {
         click_level_mappings: costRevenueMapping.length,

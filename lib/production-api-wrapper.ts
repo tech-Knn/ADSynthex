@@ -120,9 +120,9 @@ function determineCacheStrategy(
  * Prefetch common queries (call this in background/cron)
  */
 export async function warmupCache(accountIds: string[]) {
-  console.log(`[PROD_API] 🔥 Warming up cache for ${accountIds.length} accounts...`);
+  console.log(`[PROD_API] Warming up cache for ${accountIds.length} accounts...`);
   await productionCache.prefetchCommonQueries(accountIds);
-  console.log(`[PROD_API] ✅ Cache warmup complete`);
+  console.log(`[PROD_API] Cache warmup complete`);
 }
 
 /**

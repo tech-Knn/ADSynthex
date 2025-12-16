@@ -1,10 +1,13 @@
-/**
- * Redis Cache Manager
- * 3-tier caching: Memory (hot) → Redis (warm) → API (cold)
- * Persistent caching with intelligent TTL management
+/*
+ * OPTIMIZED: Uses GZIP compression to maximize storage efficiency
  */
 
 import { redisClient } from './redis-client';
+import zlib from 'zlib';
+import { promisify } from 'util';
+
+const gzip = promisify(zlib.gzip);
+const gunzip = promisify(zlib.gunzip);
 
 interface CacheEntry {
   data: any;
@@ -12,6 +15,7 @@ interface CacheEntry {
   ttl: number;
   source: 'memory' | 'redis' | 'api';
   dataType?: 'google-ads' | 'adscom' | 'compado' | 'unified';
+  compressed?: boolean; // New flag to indicate compression
 }
 
 interface CacheStats {
@@ -22,6 +26,7 @@ interface CacheStats {
   hitRate: number;
   memoryCacheSize: number;
   redisConnected: boolean;
+  compressionSavings?: string; // New stat
 }
 
 interface CacheOptions {
@@ -37,7 +42,9 @@ export class RedisCacheManager {
     memoryHits: 0,
     redisHits: 0,
     apiCalls: 0,
-    totalRequests: 0
+    totalRequests: 0,
+    bytesSaved: 0,
+    originalBytes: 0
   };
 
   // TTL configuration optimized for RATE LIMIT PROTECTION + reasonable freshness (in seconds)
@@ -101,7 +108,28 @@ export class RedisCacheManager {
       const redisData = await redisClient.get(`cache:${key}`);
 
       if (redisData) {
-        const entry: CacheEntry = JSON.parse(redisData);
+        let entry: CacheEntry;
+
+        // Handle compressed data (starts with "GZIP:")
+        if (redisData.startsWith('GZIP:')) {
+          try {
+            const base64Data = redisData.substring(5); // Remove "GZIP:" prefix
+            const buffer = Buffer.from(base64Data, 'base64');
+            const decompressed = await gunzip(buffer);
+            entry = JSON.parse(decompressed.toString());
+
+            // Track compression stats
+            this.stats.originalBytes += decompressed.length;
+            this.stats.bytesSaved += (decompressed.length - redisData.length);
+          } catch (err) {
+            console.error(`[REDIS_CACHE] Decompression failed for ${key}:`, err);
+            return { data: null, source: null, age: 0, isStale: false };
+          }
+        } else {
+          // Legacy uncompressed data
+          entry = JSON.parse(redisData);
+        }
+
         const age = Date.now() - entry.timestamp;
         const isStale = age > (entry.ttl * 1000);
 
@@ -134,6 +162,7 @@ export class RedisCacheManager {
   /**
    * Store data in cache (memory + Redis)
    * CRITICAL: Skip Redis for large datasets (>8MB) to prevent Upstash limit errors
+   * OPTIMIZED: Compresses data before checking size limits
    */
   async set(key: string, data: any, options: CacheOptions = {}): Promise<void> {
     try {
@@ -155,26 +184,37 @@ export class RedisCacheManager {
         timestamp: Date.now(),
         ttl,
         source: 'api',
-        dataType
+        dataType,
+        compressed: true
       };
 
-      // Check size before storing in Redis (Upstash has 10MB limit)
-      const dataString = JSON.stringify(entry);
-      const dataSizeBytes = Buffer.byteLength(dataString, 'utf8');
-      const dataSizeMB = dataSizeBytes / (1024 * 1024);
+      // Compress data
+      const jsonString = JSON.stringify(entry);
+      const originalSize = Buffer.byteLength(jsonString, 'utf8');
+
+      // Compress using GZIP
+      const compressedBuffer = await gzip(jsonString);
+      const base64Data = compressedBuffer.toString('base64');
+      const compressedString = `GZIP:${base64Data}`;
+
+      const compressedSize = Buffer.byteLength(compressedString, 'utf8');
+      const dataSizeMB = compressedSize / (1024 * 1024);
+
+      // Calculate savings
+      const savingsPercent = Math.round((1 - (compressedSize / originalSize)) * 100);
 
       // CRITICAL: Skip Redis if data > 8MB (Upstash limit is 10MB, leave 2MB buffer)
       if (dataSizeMB > 8) {
-        console.warn(`[REDIS_CACHE] ⚠️  Data size ${dataSizeMB.toFixed(2)}MB exceeds 8MB limit, skipping Redis cache (memory only)`);
+        console.warn(`[REDIS_CACHE] ⚠️  Compressed data size ${dataSizeMB.toFixed(2)}MB exceeds 8MB limit, skipping Redis cache (memory only)`);
         console.warn(`[REDIS_CACHE] Key: ${key}`);
         console.warn(`[REDIS_CACHE] TIP: Use smaller date ranges to enable Redis caching`);
         return; // Skip Redis, keep in memory only
       }
 
       // Store in Redis with TTL
-      await redisClient.setex(`cache:${key}`, ttl, dataString);
+      await redisClient.setex(`cache:${key}`, ttl, compressedString);
 
-      console.log(`[REDIS_CACHE] Stored ${key} (${dataSizeMB.toFixed(2)}MB) with TTL ${ttl}s, type: ${dataType}`);
+      console.log(`[REDIS_CACHE] Stored ${key} (${dataSizeMB.toFixed(2)}MB, -${savingsPercent}%) with TTL ${ttl}s`);
 
     } catch (error) {
       console.error(`[REDIS_CACHE] Error setting cache:`, error);
@@ -326,6 +366,10 @@ export class RedisCacheManager {
       ? ((this.stats.memoryHits + this.stats.redisHits) / this.stats.totalRequests) * 100
       : 0;
 
+    const compressionSavings = this.stats.originalBytes > 0
+      ? `${Math.round((this.stats.bytesSaved / this.stats.originalBytes) * 100)}%`
+      : '0%';
+
     return {
       memoryHits: this.stats.memoryHits,
       redisHits: this.stats.redisHits,
@@ -333,7 +377,8 @@ export class RedisCacheManager {
       totalRequests: this.stats.totalRequests,
       hitRate: Math.round(hitRate * 100) / 100,
       memoryCacheSize: this.memoryCache.size,
-      redisConnected: redisClient.isRedisConnected()
+      redisConnected: redisClient.isRedisConnected(),
+      compressionSavings
     };
   }
 

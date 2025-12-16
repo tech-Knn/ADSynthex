@@ -40,7 +40,7 @@ export default function LogoutPage() {
   return (
     <AntdProvider>
       <div style={{
-        display: 'flex',
+        display: 'flrx',
         flexDirection: 'column',
         justifyContent: 'center',
         alignItems: 'center',

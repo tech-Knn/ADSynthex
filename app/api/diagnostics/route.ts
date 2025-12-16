@@ -41,28 +41,15 @@ export async function GET() {
       memory: {
         ...memoryMB,
         heapPercentage,
-        limitMB: memoryLimit,
+        memoryLimit,
         usedPercentage,
-        status: isMemoryCritical ? 'CRITICAL' : isMemoryWarning ? 'WARNING' : 'OK',
-        warning: isMemoryCritical
-          ? '🔴 CRITICAL: Memory usage above 80%! OOM crash imminent!'
-          : isMemoryWarning
-          ? '⚠️  WARNING: Memory usage above 60%'
-          : '✅ Memory usage normal'
+        isMemoryCritical,
+        isMemoryWarning,
       },
-      redis: {
-        ...redisHealth,
-        status: redisHealth.connected ? '✅ Connected' : '❌ Using fallback'
-      },
-      cache: {
-        ...cacheStats,
-        hitRate: `${cacheStats.hitRate}%`,
-        status: cacheStats.redisConnected ? '✅ Redis caching active' : '⚠️  In-memory only'
-      },
-      quota: systemHealth.quota,
-      health: systemHealth.systemHealth,
-      uptime: process.uptime(),
-      recommendations: []
+      systemHealth,
+      cache: cacheStats,
+      redis: redisHealth,
+      recommendations: [],
     };
 
     // Add recommendations

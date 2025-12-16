@@ -48,7 +48,7 @@ const RETRY_CONFIG = {
 // Helper function to check API quotas and provide detailed error information
 function analyzeApiError(error: any): { shouldRetry: boolean; errorType: string; message: string } {
   const errorMessage = error.message || error.toString();
-  
+
   // Rate limit errors
   if (errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
     return {
@@ -57,7 +57,7 @@ function analyzeApiError(error: any): { shouldRetry: boolean; errorType: string;
       message: 'API rate limit exceeded. This is normal for high-volume requests.'
     };
   }
-  
+
   // Quota exceeded errors
   if (errorMessage.includes('quota') || errorMessage.includes('QUOTA_EXCEEDED')) {
     return {
@@ -66,48 +66,37 @@ function analyzeApiError(error: any): { shouldRetry: boolean; errorType: string;
       message: 'Daily API quota exceeded. Please try again tomorrow or contact support.'
     };
   }
-  
-  // Deactivated or inaccessible account errors
-  if (errorMessage.includes('not yet enabled') ||
-      errorMessage.includes('has been deactivated') ||
-      errorMessage.includes("can't be accessed")) {
-    return {
-      shouldRetry: false,
-      errorType: 'ACCOUNT_DEACTIVATED',
-      message: 'Account is deactivated or inaccessible. Skipping this account.'
-    };
-  }
 
   // Authentication errors
   if (errorMessage.includes('401') || errorMessage.includes('UNAUTHENTICATED') ||
-      errorMessage.includes('403') || errorMessage.includes('PERMISSION_DENIED')) {
+    errorMessage.includes('403') || errorMessage.includes('PERMISSION_DENIED')) {
     return {
       shouldRetry: false,
       errorType: 'AUTHENTICATION',
       message: 'Authentication failed. Please check your API credentials.'
     };
   }
-  
+
   // Server errors
-  if (errorMessage.includes('500') || errorMessage.includes('502') || 
-      errorMessage.includes('503') || errorMessage.includes('504')) {
+  if (errorMessage.includes('500') || errorMessage.includes('502') ||
+    errorMessage.includes('503') || errorMessage.includes('504')) {
     return {
       shouldRetry: true,
       errorType: 'SERVER_ERROR',
       message: 'Google Ads API server error. This is temporary.'
     };
   }
-  
+
   // Network errors
-  if (errorMessage.includes('network') || errorMessage.includes('timeout') || 
-      errorMessage.includes('ECONNRESET') || errorMessage.includes('ENOTFOUND')) {
+  if (errorMessage.includes('network') || errorMessage.includes('timeout') ||
+    errorMessage.includes('ECONNRESET') || errorMessage.includes('ENOTFOUND')) {
     return {
       shouldRetry: true,
       errorType: 'NETWORK_ERROR',
       message: 'Network connectivity issue. Retrying...'
     };
   }
-  
+
   // Default case
   return {
     shouldRetry: false,
@@ -123,20 +112,14 @@ async function retryWithBackoff<T>(
   baseDelay: number = 1000
 ): Promise<T> {
   let lastError: Error;
-  
+
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await operation();
     } catch (error: any) {
       lastError = error;
-      
-      const errorAnalysis = analyzeApiError(error);
 
-      // For deactivated accounts, fail immediately without retrying
-      if (errorAnalysis.errorType === 'ACCOUNT_DEACTIVATED') {
-        console.warn(`Google Ads API: ${errorAnalysis.message}`);
-        throw error;
-      }
+      const errorAnalysis = analyzeApiError(error);
 
       if (attempt < maxRetries && errorAnalysis.shouldRetry) {
         const delay = Math.min(
@@ -164,12 +147,12 @@ async function retryWithBackoff<T>(
           resetTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
         });
       }
-      
+
       // For other errors or max retries reached, throw the error
       throw error;
     }
   }
-  
+
   throw lastError!;
 }
 
@@ -181,14 +164,14 @@ export function initializeGoogleAdsClient() {
       client_secret: process.env.GOOGLE_ADS_CLIENT_SECRET || '',
       developer_token: process.env.GOOGLE_ADS_DEVELOPER_TOKEN || ''
     });
-    
+
     // Create an auth client with refresh token
     const customer = client.Customer({
       customer_id: process.env.GOOGLE_ADS_MANAGER_ID || '',
       refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN || '',
       login_customer_id: process.env.GOOGLE_ADS_MANAGER_ID || ''
     });
-    
+
     return { client, customer };
   } catch (error) {
     console.error('Error initializing Google Ads API client:', error);
@@ -331,26 +314,26 @@ function processCampaignData(response: any[], account: any): GoogleAdsCampaign[]
       const cost = costMicros / 1000000; // Convert micros to standard currency
       const conversions = Number(item.metrics?.conversions || 0);
       const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
-      
+
       // Extract additional cost metrics
       const averageCostMicros = Number(item.metrics?.average_cost || 0);
       const averageCost = averageCostMicros / 1000000;
-      
+
       const averageCpcMicros = Number(item.metrics?.average_cpc || 0);
       const averageCpc = averageCpcMicros / 1000000;
-      
+
       const averageCpeMicros = Number(item.metrics?.average_cpe || 0);
       const averageCpe = averageCpeMicros / 1000000;
-      
+
       const averageTargetCpaMicros = Number(item.metrics?.average_target_cpa_micros || 0);
       const averageTargetCpa = averageTargetCpaMicros / 1000000;
-      
+
       // Extract campaign data
       const campaignId = item.campaign ? item.campaign.id : 'unknown';
       const campaignName = item.campaign ? item.campaign.name : 'Unknown Campaign';
       const campaignStatus = item.campaign && item.campaign.status ? item.campaign.status : 'unknown';
       const finalUrlSuffix = item.campaign && item.campaign.final_url_suffix ? item.campaign.final_url_suffix : '';
-      
+
       return {
         customer_id: account.id,
         customer_name: account.name,
@@ -388,37 +371,37 @@ function processAdData(response: any[], account: any): GoogleAdsAd[] {
       const campaignId = item.campaign ? item.campaign.id : 'unknown';
       const campaignName = item.campaign ? item.campaign.name : 'Unknown Campaign';
       const campaignStatus = item.campaign && item.campaign.status ? item.campaign.status : 'unknown';
-      
+
       const adGroupId = item.ad_group ? item.ad_group.id : 'unknown';
       const adGroupName = item.ad_group ? item.ad_group.name : 'Unknown Ad Group';
       const adGroupStatus = item.ad_group && item.ad_group.status ? item.ad_group.status : 'unknown';
-      
+
       const adId = item.ad_group_ad && item.ad_group_ad.ad ? item.ad_group_ad.ad.id : 'unknown';
-      const adName = item.ad_group_ad && item.ad_group_ad.ad && item.ad_group_ad.ad.name 
-        ? item.ad_group_ad.ad.name 
+      const adName = item.ad_group_ad && item.ad_group_ad.ad && item.ad_group_ad.ad.name
+        ? item.ad_group_ad.ad.name
         : 'Unknown Ad';
       const adStatus = item.ad_group_ad && item.ad_group_ad.status ? item.ad_group_ad.status : 'unknown';
-      
-      const finalUrls = (item.ad_group_ad && item.ad_group_ad.ad && item.ad_group_ad.ad.final_urls) 
-        ? item.ad_group_ad.ad.final_urls 
+
+      const finalUrls = (item.ad_group_ad && item.ad_group_ad.ad && item.ad_group_ad.ad.final_urls)
+        ? item.ad_group_ad.ad.final_urls
         : [];
-      
+
       // Safely access metrics with defaults
       const metrics = item.metrics || {};
-      
+
       // Extract key metrics
       const impressions = Number(metrics.impressions || 0);
       const clicks = Number(metrics.clicks || 0);
       const costMicros = Number(metrics.cost_micros || 0);
       const cost = costMicros / 1000000; // Convert micros to actual currency
       const conversions = Number(metrics.conversions || 0);
-      
+
       // Calculate derived metrics
       const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
       const cpc = clicks > 0 ? cost / clicks : 0;
       const conversionRate = clicks > 0 ? (conversions / clicks) * 100 : 0;
       const cpa = conversions > 0 ? cost / conversions : 0;
-      
+
       return {
         customer_id: account.id,
         customer_name: account.name,
@@ -600,14 +583,14 @@ export async function fetchGoogleAdsData(
       }
 
       console.log(`[GOOGLE_ADS_API] Processing account ${i + 1}/${accountsToProcess.length}: ${account.id} (${account.name})`);
-      
+
       // Create account-specific customer
       const accountCustomer = client.Customer({
         customer_id: account.id,
         refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN || '',
         login_customer_id: process.env.GOOGLE_ADS_MANAGER_ID || ''
       });
-      
+
       // Helper function to make API calls with rate limiting protection
       const makeApiCall = async (query: string, operationName: string) => {
         // CRITICAL: Check rate limiter before EACH API call
@@ -652,7 +635,7 @@ export async function fetchGoogleAdsData(
           }
         }, RETRY_CONFIG.maxRetries, 1000);
       };
-      
+
       const activeCampaignQuery = buildActiveCampaignQuery(startDate, endDate);
       const activeCampaignResponse = await makeApiCall(activeCampaignQuery, 'Active Campaigns');
       console.log(`[GOOGLE_ADS_API] Account ${account.id} returned ${activeCampaignResponse?.length || 0} campaigns`);
@@ -742,7 +725,7 @@ export async function fetchGoogleAdsData(
             const clicks = processClickData(clickViewResponse, account);
             if (clicks.length > 0) {
               data.clicks!.push(...clicks);
-              console.log(`[GOOGLE_ADS_API] ✓ Fetched ${clicks.length} clicks for ${account.name} (${feedType})`);
+              console.log(`[GOOGLE_ADS_API] Fetched ${clicks.length} clicks for ${account.name} (${feedType})`);
             }
           } else {
             console.log(`[GOOGLE_ADS_API] No clicks found for ${account.name}`);
@@ -755,26 +738,9 @@ export async function fetchGoogleAdsData(
         console.log(`[GOOGLE_ADS_API] Skipping click_view data (not needed for ${feedType || 'this'} feed)`);
       }
 
-      // OPTIMIZATION: Removed hardcoded 1000ms delay between accounts
-      // The rate limiter at line 596 already enforces 500ms minimum (2 QPS)
-      // and has quota monitoring, cooldown, and circuit breaker protection.
-      // This saves 20 seconds for 20 accounts (20 × 1s = 20s)
-      // Rate limiter will auto-throttle if quota limits are approached
-      
-    } catch (error: any) {
-      const errorMessage = error?.message || error?.errors?.[0]?.message || String(error);
+    } catch (error) {
+      console.error(`Error fetching data for account ${account.id}:`, error);
 
-      // Check if account is deactivated or inaccessible
-      if (errorMessage.includes('not yet enabled') ||
-          errorMessage.includes('has been deactivated') ||
-          errorMessage.includes("can't be accessed")) {
-        console.warn(`[GOOGLE_ADS_API] ⚠️  Account ${account.id} (${account.name}) is deactivated or inaccessible - SKIPPING`);
-      } else {
-        console.error(`[GOOGLE_ADS_API] ❌ Error fetching data for account ${account.id} (${account.name}):`, errorMessage);
-      }
-
-      // Continue with other accounts even if one fails
-      // This prevents one bad account from breaking the entire fetch
     }
   }
 
@@ -955,7 +921,7 @@ function getBaseMockData(): GoogleAdsData {
       }
     }
   ];
-  
+
   // Base ads
   const baseAds = [
     {
@@ -1129,17 +1095,17 @@ function getBaseMockData(): GoogleAdsData {
       }
     }
   ];
-  
+
   // Generate additional data to reach target count of 553
   const targetAdCount = 553;
   const additionalAdsNeeded = targetAdCount - baseAds.length;
-  
+
   // Generate additional ads
   const additionalAds = generateAdditionalAds(additionalAdsNeeded, baseCampaigns);
-  
+
   // Combine base ads with additional ads
   const allAds = [...baseAds, ...additionalAds];
-  
+
   return {
     campaigns: baseCampaigns,
     ads: allAds
@@ -1152,69 +1118,69 @@ export function getMockGoogleAdsData(startDate?: string, endDate?: string, custo
 
   // Get base mock data
   const baseData = getBaseMockData();
-  
+
   // Filter by customer ID if provided
   let filteredAds = baseData.ads;
   if (customerId) {
     filteredAds = baseData.ads.filter((ad: GoogleAdsAd) => ad.customer_id === customerId);
     console.log(`Filtered ads by customer ID ${customerId}: ${filteredAds.length} of ${baseData.ads.length} ads remain`);
   }
-  
+
   // Filter out any Taboola data from mock data
   if (filteredAds && filteredAds.length > 0) {
     const originalCount = filteredAds.length;
-    
+
     // Filter out any ads with 'taboola' in final_urls (case-insensitive)
     filteredAds = filteredAds.filter((ad: GoogleAdsAd) => {
       if (!ad.final_urls || !Array.isArray(ad.final_urls)) return true;
-      
+
       // Check if any URL contains "taboola"
-      const hasTaboolaUrl = ad.final_urls.some(url => 
+      const hasTaboolaUrl = ad.final_urls.some(url =>
         url.toLowerCase().includes('taboola')
       );
-      
+
       // Check if campaign or ad name contains "taboola"
-      const hasTaboolaName = 
+      const hasTaboolaName =
         (ad.campaign_name && ad.campaign_name.toLowerCase().includes('taboola')) ||
         (ad.ad_name && ad.ad_name.toLowerCase().includes('taboola'));
-      
+
       return !hasTaboolaUrl && !hasTaboolaName;
     });
-    
+
     if (originalCount !== filteredAds.length) {
       console.log(`Filtered out Taboola ads from mock data: removed ${originalCount - filteredAds.length} ads`);
     }
   }
-  
+
   // Adjust data based on date range
   if (startDate && endDate) {
     const start = new Date(startDate);
     const end = new Date(endDate);
-    
+
     // Calculate days between dates
     const daysDiff = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-    
+
     // For single day requests, provide a day-specific variation
     if (daysDiff === 1) {
       console.log(`Generating single-day mock Google Ads data for: ${startDate}`);
       const singleDayData = generateSingleDayMockData(startDate, filteredAds.length);
-      
+
       // Apply customer ID filter to single day data if needed
       if (customerId) {
         singleDayData.ads = singleDayData.ads.filter((ad: GoogleAdsAd) => ad.customer_id === customerId);
       }
-      
+
       return singleDayData;
     }
-    
+
     // For multi-day ranges, adjust the data proportionally
     if (daysDiff > 1) {
       console.log(`Adjusting mock Google Ads data for ${daysDiff}-day range`);
-      
+
       // Scale up metrics based on daysDiff
       filteredAds = filteredAds.map((ad: GoogleAdsAd, index: number) => {
         const scaleFactor = 0.8 + (deterministicRandom(startDate, index) * 0.4); // Scale factor between 0.8-1.2
-        
+
         return {
           ...ad,
           metrics: {
@@ -1229,10 +1195,10 @@ export function getMockGoogleAdsData(startDate?: string, endDate?: string, custo
       });
     }
   }
-  
+
   // Calculate total cost
   const totalCost = filteredAds.reduce((sum: number, ad: GoogleAdsAd) => sum + ad.metrics.cost, 0);
-  
+
   return {
     campaigns: baseData.campaigns,
     ads: filteredAds,
@@ -1243,7 +1209,7 @@ export function getMockGoogleAdsData(startDate?: string, endDate?: string, custo
 // Helper function to generate additional ads
 function generateAdditionalAds(count: number, campaigns: GoogleAdsCampaign[]): GoogleAdsAd[] {
   const ads: GoogleAdsAd[] = [];
-  
+
   // Templates for ad creation
   const urlPrefixes = [
     'https://www.freshcuesdaily.com/',
@@ -1254,7 +1220,7 @@ function generateAdditionalAds(count: number, campaigns: GoogleAdsCampaign[]): G
     'https://nextgentechnology.info/',
     'https://digitaltransformationhub.com/'
   ];
-  
+
   // Topics for generating URLs
   const topics = [
     'industrial-automation',
@@ -1283,7 +1249,7 @@ function generateAdditionalAds(count: number, campaigns: GoogleAdsCampaign[]): G
     'green-technology',
     'logistics-automation'
   ];
-  
+
   // Subtopics for url variation
   const subtopics = [
     'market-trends',
@@ -1302,22 +1268,22 @@ function generateAdditionalAds(count: number, campaigns: GoogleAdsCampaign[]): G
     'practical-applications',
     'success-stories'
   ];
-  
+
   // Generate the additional ads
   for (let i = 0; i < count; i++) {
     // Select a random campaign as template
     const campaignTemplate = campaigns[Math.floor(Math.random() * campaigns.length)];
-    
+
     // Generate variation from template
     const variationFactor = 0.5 + Math.random(); // 0.5 to 1.5
-    
+
     // Generate URL
     const urlPrefix = urlPrefixes[Math.floor(Math.random() * urlPrefixes.length)];
     const topic = topics[Math.floor(Math.random() * topics.length)];
     const subtopic = subtopics[Math.floor(Math.random() * subtopics.length)];
     const urlSuffix = `${topic}-${subtopic}-${i + 8}`;
     const finalUrl = `${urlPrefix}${urlSuffix}`;
-    
+
     // Calculate metrics based on template with variations
     const impressions = Math.round(campaignTemplate.metrics.impressions * variationFactor);
     const clicks = Math.round(campaignTemplate.metrics.clicks * variationFactor);
@@ -1328,7 +1294,7 @@ function generateAdditionalAds(count: number, campaigns: GoogleAdsCampaign[]): G
     const cpc = parseFloat((clicks > 0 ? cost / clicks : 0).toFixed(4));
     const conversionRate = parseFloat((clicks > 0 ? (conversions / clicks) * 100 : 0).toFixed(2));
     const cpa = parseFloat((conversions > 0 ? cost / conversions : 0).toFixed(2));
-    
+
     // Create the ad
     ads.push({
       customer_id: campaignTemplate.customer_id,
@@ -1356,7 +1322,7 @@ function generateAdditionalAds(count: number, campaigns: GoogleAdsCampaign[]): G
       }
     });
   }
-  
+
   return ads;
 }
 
@@ -1367,7 +1333,7 @@ function deterministicRandom(date: string, seed: number): number {
     a = ((a << 5) - a) + b.charCodeAt(0);
     return a & a;
   }, 0);
-  
+
   // Convert to 0-1 range
   return Math.abs(hash % 1000) / 1000;
 }
@@ -1378,20 +1344,20 @@ function generateSingleDayMockData(dateString: string, targetAdCount: number = 5
   const date = new Date(dateString);
   const day = date.getDate();
   const month = date.getMonth() + 1;
-  const dateFactor = (day * 0.1) + (month * 0.05); 
-  
+  const dateFactor = (day * 0.1) + (month * 0.05);
+
   // Create a variation of the standard mock data
   const isToday = dateString === new Date().toISOString().split('T')[0];
   const isYesterday = dateString === new Date(Date.now() - 86400000).toISOString().split('T')[0];
-  
+
   // Base factor for the day
   const factor = 0.4 + dateFactor;
-  
+
   // Today will have slightly higher numbers than yesterday
   const adjustedFactor = isToday ? factor * 1.2 : (isYesterday ? factor * 0.9 : factor);
-  
+
   console.log(`Mock data for ${dateString} using factor: ${adjustedFactor.toFixed(2)} (deterministic)`);
-  
+
   // Base campaigns and ads
   const baseCampaigns = [
     {
@@ -1439,7 +1405,7 @@ function generateSingleDayMockData(dateString: string, targetAdCount: number = 5
       }
     }
   ];
-  
+
   const baseAds = [
     {
       customer_id: '3146253756',
@@ -1492,11 +1458,11 @@ function generateSingleDayMockData(dateString: string, targetAdCount: number = 5
       }
     }
   ];
-  
+
   // Generate additional ads to reach target count
   const additionalAdsNeeded = targetAdCount - baseAds.length;
   console.log(`Generating ${additionalAdsNeeded} additional ads for single day ${dateString}`);
-  
+
   // Templates for ad creation
   const urlPrefixes = [
     'https://www.freshcuesdaily.com/',
@@ -1505,7 +1471,7 @@ function generateSingleDayMockData(dateString: string, targetAdCount: number = 5
     'https://futuretechtoday.com/',
     'https://emergingtrendsreport.org/'
   ];
-  
+
   // Topics for generating URLs
   const topics = [
     'industrial-automation',
@@ -1521,21 +1487,21 @@ function generateSingleDayMockData(dateString: string, targetAdCount: number = 5
     'robotics-innovations',
     'sustainable-manufacturing'
   ];
-  
+
   // Generate additional ads
   const additionalAds = [];
   for (let i = 0; i < additionalAdsNeeded; i++) {
     // Select a deterministic base ad as template
     const template = baseAds[Math.floor(deterministicRandom(dateString, i * 100) * baseAds.length)];
-    
+
     // Generate variation from template - now deterministic
     const variationFactor = 0.3 + deterministicRandom(dateString, i) * 0.7; // 0.3 to 1.0
-    
+
     // Generate URL - now deterministic
     const urlPrefix = urlPrefixes[Math.floor(deterministicRandom(dateString, i * 200) * urlPrefixes.length)];
     const topic = topics[Math.floor(deterministicRandom(dateString, i * 300) * topics.length)];
     const finalUrl = `${urlPrefix}${topic}-article-${i + 3}`;
-    
+
     // Calculate metrics
     const impressions = Math.round(template.metrics.impressions * variationFactor);
     const clicks = Math.round(template.metrics.clicks * variationFactor);
@@ -1546,7 +1512,7 @@ function generateSingleDayMockData(dateString: string, targetAdCount: number = 5
     const cpc = parseFloat((clicks > 0 ? cost / clicks : 0).toFixed(4));
     const conversionRate = parseFloat((clicks > 0 ? (conversions / clicks) * 100 : 0).toFixed(2));
     const cpa = parseFloat((conversions > 0 ? cost / conversions : 0).toFixed(2));
-    
+
     // Create new ad
     additionalAds.push({
       customer_id: template.customer_id,
@@ -1574,7 +1540,7 @@ function generateSingleDayMockData(dateString: string, targetAdCount: number = 5
       }
     });
   }
-  
+
   return {
     campaigns: baseCampaigns,
     ads: [...baseAds, ...additionalAds]

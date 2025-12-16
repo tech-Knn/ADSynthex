@@ -128,7 +128,7 @@ export default function AdSensePage() {
       console.log('[AFS] Filtered AFS accounts:', adsenseAccounts.length);
 
       const sortedAccounts = adsenseAccounts.sort((a: any, b: any) => {
-        
+
         const getSequenceNumber = (name: string): number => {
           const istMatch = name.match(/IST\s*-\s*(\d+)/i);
           if (istMatch) return parseInt(istMatch[1]);
@@ -219,7 +219,7 @@ export default function AdSensePage() {
       }
 
       if (forceLive) {
-        console.log('[AFS] 🔥 FORCE REFRESH - Bypassing cache!');
+        console.log('[AFS] FORCE REFRESH - Bypassing cache!');
       }
       console.log('[AFS] Fetching data with params:', requestBody);
 
@@ -361,7 +361,7 @@ export default function AdSensePage() {
                   )}
                   {googleAdsAccounts.map(account => (
                     <Option key={account.id} value={account.id}>
-                      {account.name} 
+                      {account.name}
                     </Option>
                   ))}
                 </Select>
@@ -443,108 +443,109 @@ export default function AdSensePage() {
             const totalPages = getTotalPages();
 
             return (
-            <Row gutter={[16, 16]}>
-              <Col span={24}>
-                <div style={{ background: '#fff', padding: '20px', borderRadius: '8px' }}>
-                  <Title level={4}>
-                    {/* Summary - {getAccountName()} - termuxtools.com */}
-                  </Title>
-                  <Row gutter={[16, 16]}>
-                    <Col xs={12} md={6}>
-                      <div>
-                        <Text type="secondary">Total Cost</Text>
-                        <div style={{ fontSize: 24, fontWeight: 'bold' }}>
-                          ${filteredSummary.totalCost?.toFixed(2) || '0.00'}
+              <Row gutter={[16, 16]}>
+                <Col span={24}>
+                  <div style={{ background: '#fff', padding: '20px', borderRadius: '8px' }}>
+                    <Title level={4}>
+                      {/* Summary - {getAccountName()} - termuxtools.com */}
+                    </Title>
+                    <Row gutter={[16, 16]}>
+                      <Col xs={12} md={6}>
+                        <div>
+                          <Text type="secondary">Total Cost</Text>
+                          <div style={{ fontSize: 24, fontWeight: 'bold' }}>
+                            ${filteredSummary.totalCost?.toFixed(2) || '0.00'}
+                          </div>
                         </div>
-                      </div>
-                    </Col>
-                    <Col xs={12} md={6}>
-                      <div>
-                        <Text type="secondary">Total Revenue</Text>
-                        <div style={{ fontSize: 24, fontWeight: 'bold', color: '#52c41a' }}>
-                          ${filteredSummary.totalRevenue?.toFixed(2) || '0.00'}
+                      </Col>
+                      <Col xs={12} md={6}>
+                        <div>
+                          <Text type="secondary">Total Revenue</Text>
+                          <div style={{ fontSize: 24, fontWeight: 'bold', color: '#52c41a' }}>
+                            ${filteredSummary.totalRevenue?.toFixed(2) || '0.00'}
+                          </div>
                         </div>
-                      </div>
-                    </Col>
-                    <Col xs={12} md={6}>
-                      <div>
-                        <Text type="secondary">Total Profit</Text>
-                        <div style={{ fontSize: 24, fontWeight: 'bold', color: filteredSummary.totalProfit >= 0 ? '#52c41a' : '#f5222d' }}>
-                          ${filteredSummary.totalProfit?.toFixed(2) || '0.00'}
+                      </Col>
+                      <Col xs={12} md={6}>
+                        <div>
+                          <Text type="secondary">Total Profit</Text>
+                          <div style={{ fontSize: 24, fontWeight: 'bold', color: filteredSummary.totalProfit >= 0 ? '#52c41a' : '#f5222d' }}>
+                            ${filteredSummary.totalProfit?.toFixed(2) || '0.00'}
+                          </div>
                         </div>
-                      </div>
-                    </Col>
-                    <Col xs={12} md={6}>
-                      <div>
-                        <Text type="secondary">ROI</Text>
-                        <div style={{ fontSize: 24, fontWeight: 'bold' }}>
-                          {((filteredSummary.totalCost > 0 ? (filteredSummary.totalProfit / filteredSummary.totalCost) * 100 : 0) || 0).toFixed(2)}%
+                      </Col>
+                      <Col xs={12} md={6}>
+                        <div>
+                          <Text type="secondary">ROI</Text>
+                          <div style={{ fontSize: 24, fontWeight: 'bold' }}>
+                            {((filteredSummary.totalCost > 0 ? (filteredSummary.totalProfit / filteredSummary.totalCost) * 100 : 0) || 0).toFixed(2)}%
+                          </div>
                         </div>
-                      </div>
-                    </Col>
-                  </Row>
-                </div>
-              </Col>
+                      </Col>
+                    </Row>
+                  </div>
+                </Col>
 
-              <Col span={24}>
-                <div style={{ background: '#fff', padding: '20px', borderRadius: '8px' }}>
-                  <Title level={4}>
-                    {/* Article Performance - {getAccountName()} - termuxtools.com */}
-                  </Title>
+                <Col span={24}>
+                  <div style={{ background: '#fff', padding: '20px', borderRadius: '8px' }}>
+                    <Title level={4}>
+                      {/* Article Performance - {getAccountName()} - termuxtools.com */}
+                    </Title>
 
-                  {/* Metric Filters */}
-                  <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-                    <Col xs={24} md={8}>
-                      <Text strong>Search Campaign or Style ID</Text>
-                      <Input
-                        placeholder="Search by Campaign Name or Style ID"
-                        value={searchStyleId}
-                        onChange={(e) => setSearchStyleId(e.target.value)}
-                        prefix={<SearchOutlined />}
-                        allowClear
-                        style={{ marginTop: 8 }}
+                    {/* Metric Filters */}
+                    <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+                      <Col xs={24} md={8}>
+                        <Text strong>Search Campaign or Style ID</Text>
+                        <Input
+                          placeholder="Search by Campaign Name or Style ID"
+                          value={searchStyleId}
+                          onChange={(e) => setSearchStyleId(e.target.value)}
+                          prefix={<SearchOutlined />}
+                          allowClear
+                          style={{ marginTop: 8 }}
+                        />
+                      </Col>
+                      <Col xs={24} md={8}>
+                        <Text strong>Sort By</Text>
+                        <Select
+                          style={{ width: '100%', marginTop: 8 }}
+                          value={sortBy}
+                          onChange={setSortBy}
+                        >
+                          <Option value="revenue">Revenue</Option>
+                          <Option value="cost">Cost</Option>
+                          <Option value="profit">Profit</Option>
+                          <Option value="roi">ROI</Option>
+                          <Option value="clicks">Revenue Clicks</Option>
+                          <Option value="rpc">RPC</Option>
+                          <Option value="cpa">CPA</Option>
+                          <Option value="conversions">Conversions</Option>
+                        </Select>
+                      </Col>
+                      <Col xs={24} md={8}>
+                        <Text strong>Sort Order</Text>
+                        <Select
+                          style={{ width: '100%', marginTop: 8 }}
+                          value={sortOrder}
+                          onChange={setSortOrder}
+                        >
+                          <Option value="desc">Highest First</Option>
+                          <Option value="asc">Lowest First</Option>
+                        </Select>
+                      </Col>
+                    </Row>
+
+                    {filteredCampaigns.length === 0 ? (
+                      <Alert
+                        message="No Data"
+                        description="No data found for termuxtools.com"
+                        type="info"
+                        showIcon
                       />
-                    </Col>
-                    <Col xs={24} md={8}>
-                      <Text strong>Sort By</Text>
-                      <Select
-                        style={{ width: '100%', marginTop: 8 }}
-                        value={sortBy}
-                        onChange={setSortBy}
-                      >
-                        <Option value="revenue">Revenue</Option>
-                        <Option value="cost">Cost</Option>
-                        <Option value="profit">Profit</Option>
-                        <Option value="roi">ROI</Option>
-                        <Option value="clicks">Revenue Clicks</Option>
-                        <Option value="rpc">RPC</Option>
-                        <Option value="cpa">CPA</Option>
-                        <Option value="conversions">Conversions</Option>
-                      </Select>
-                    </Col>
-                    <Col xs={24} md={8}>
-                      <Text strong>Sort Order</Text>
-                      <Select
-                        style={{ width: '100%', marginTop: 8 }}
-                        value={sortOrder}
-                        onChange={setSortOrder}
-                      >
-                        <Option value="desc">Highest First</Option>
-                        <Option value="asc">Lowest First</Option>
-                      </Select>
-                    </Col>
-                  </Row>
-
-                  {filteredCampaigns.length === 0 ? (
-                    <Alert
-                      message="No Data"
-                      description="No data found for termuxtools.com"
-                      type="info"
-                      showIcon
-                    />
-                  ) : (
-                    <div style={{ overflowX: 'auto' }}>
-                      <style dangerouslySetInnerHTML={{__html: `
+                    ) : (
+                      <div style={{ overflowX: 'auto' }}>
+                        <style dangerouslySetInnerHTML={{
+                          __html: `
                         .afs-performance-table {
                           width: 100%;
                           border-collapse: collapse;
@@ -598,7 +599,7 @@ export default function AdSensePage() {
                           font-weight: 600;
                         }
                       `}} />
-                      <table className="afs-performance-table">
+                        <table className="afs-performance-table">
                           <thead>
                             <tr>
                               <th style={{ textAlign: 'left', width: '20%', background: 'linear-gradient(135deg, #f1f5f9, #e2e8f0)', color: '#1e293b', padding: '12px', borderRadius: '8px', fontWeight: '600' }}>Campaign Name</th>
@@ -658,46 +659,46 @@ export default function AdSensePage() {
                         </table>
 
                         {/* Pagination Controls */}
-                      <div style={{ marginTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <Text type="secondary">
-                            Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, filteredCampaigns.length)} of {filteredCampaigns.length} entries
-                          </Text>
-                        </div>
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                          <Text type="secondary">Rows per page:</Text>
-                          <Select
-                            value={pageSize}
-                            onChange={(value) => setPageSize(value)}
-                            style={{ width: 80 }}
-                          >
-                            <Option value={10}>10</Option>
-                            <Option value={20}>20</Option>
-                            <Option value={50}>50</Option>
-                            <Option value={100}>100</Option>
-                          </Select>
-                          <Button
-                            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                            disabled={currentPage === 1}
-                          >
-                            Previous
-                          </Button>
-                          <Text>
-                            Page {currentPage} of {totalPages}
-                          </Text>
-                          <Button
-                            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                            disabled={currentPage === totalPages}
-                          >
-                            Next
-                          </Button>
+                        <div style={{ marginTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <Text type="secondary">
+                              Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, filteredCampaigns.length)} of {filteredCampaigns.length} entries
+                            </Text>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <Text type="secondary">Rows per page:</Text>
+                            <Select
+                              value={pageSize}
+                              onChange={(value) => setPageSize(value)}
+                              style={{ width: 80 }}
+                            >
+                              <Option value={10}>10</Option>
+                              <Option value={20}>20</Option>
+                              <Option value={50}>50</Option>
+                              <Option value={100}>100</Option>
+                            </Select>
+                            <Button
+                              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                              disabled={currentPage === 1}
+                            >
+                              Previous
+                            </Button>
+                            <Text>
+                              Page {currentPage} of {totalPages}
+                            </Text>
+                            <Button
+                              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                              disabled={currentPage === totalPages}
+                            >
+                              Next
+                            </Button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
-                </div>
-              </Col>
-            </Row>
+                    )}
+                  </div>
+                </Col>
+              </Row>
             );
           })()}
         </div>
