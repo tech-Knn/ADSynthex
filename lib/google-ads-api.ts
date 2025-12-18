@@ -66,10 +66,10 @@ function analyzeApiError(error: any): { shouldRetry: boolean; errorType: string;
       message: 'Daily API quota exceeded. Please try again tomorrow or contact support.'
     };
   }
-
+  
   // Authentication errors
-  if (errorMessage.includes('401') || errorMessage.includes('UNAUTHENTICATED') ||
-    errorMessage.includes('403') || errorMessage.includes('PERMISSION_DENIED')) {
+  if (errorMessage.includes('401') || errorMessage.includes('UNAUTHENTICATED') || 
+      errorMessage.includes('403') || errorMessage.includes('PERMISSION_DENIED')) {
     return {
       shouldRetry: false,
       errorType: 'AUTHENTICATION',
@@ -120,7 +120,7 @@ async function retryWithBackoff<T>(
       lastError = error;
 
       const errorAnalysis = analyzeApiError(error);
-
+      
       if (attempt < maxRetries && errorAnalysis.shouldRetry) {
         const delay = Math.min(
           baseDelay * Math.pow(RETRY_CONFIG.backoffMultiplier, attempt),
@@ -738,9 +738,17 @@ export async function fetchGoogleAdsData(
         console.log(`[GOOGLE_ADS_API] Skipping click_view data (not needed for ${feedType || 'this'} feed)`);
       }
 
+      // OPTIMIZATION: Removed hardcoded 1000ms delay between accounts
+      // The rate limiter at line 596 already enforces 500ms minimum (2 QPS)
+      // and has quota monitoring, cooldown, and circuit breaker protection.
+      // This saves 20 seconds for 20 accounts (20 × 1s = 20s)
+      // Rate limiter will auto-throttle if quota limits are approached
+      
     } catch (error) {
       console.error(`Error fetching data for account ${account.id}:`, error);
-
+      
+      // Continue with other accounts even if one fails
+      // This prevents one bad account from breaking the entire fetch
     }
   }
 
