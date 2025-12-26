@@ -153,30 +153,37 @@ export async function POST(request: NextRequest) {
     if (isMultiAccount) {
       console.log('[ADSENSE_COST_REVENUE] Fetching multiple accounts:', accountIds.length, 'accounts');
 
-      // STEP 1: Check cache for each account
-      const cacheChecks = await Promise.all(
-        accountIds.map(async (accId: string) => ({
-          accountId: accId,
-          cached: await checkAccountCache(accId)
-        }))
-      );
+      // STEP 1: Check cache for each account (SKIP if forceLive=true)
+      let cachedAccounts: any[] = [];
+      let uncachedAccountIds: string[] = accountIds;
 
-      const cachedAccounts = cacheChecks.filter(c => c.cached !== null);
-      const uncachedAccountIds = cacheChecks.filter(c => c.cached === null).map(c => c.accountId);
+      if (!forceLive) {
+        const cacheChecks = await Promise.all(
+          accountIds.map(async (accId: string) => ({
+            accountId: accId,
+            cached: await checkAccountCache(accId)
+          }))
+        );
 
-      console.log(`[ADSENSE_COST_REVENUE] Cache status: ${cachedAccounts.length} cached, ${uncachedAccountIds.length} need fetching`);
+        cachedAccounts = cacheChecks.filter(c => c.cached !== null);
+        uncachedAccountIds = cacheChecks.filter(c => c.cached === null).map(c => c.accountId);
 
-      // Store cached data
-      cachedAccounts.forEach(c => {
-        cachedAccountData.set(c.accountId, c.cached);
-        console.log(`[ADSENSE_COST_REVENUE] ✅ Using cached data for account ${c.accountId}`);
-      });
+        console.log(`[ADSENSE_COST_REVENUE] Cache status: ${cachedAccounts.length} cached, ${uncachedAccountIds.length} need fetching`);
+
+        // Store cached data
+        cachedAccounts.forEach(c => {
+          cachedAccountData.set(c.accountId, c.cached);
+          console.log(`[ADSENSE_COST_REVENUE] ✅ Using cached data for account ${c.accountId}`);
+        });
+      } else {
+        console.log('[ADSENSE_COST_REVENUE] 🔥 FORCE LIVE: Bypassing account-level cache for ALL accounts');
+      }
 
       if (forceLive) {
         console.log('[ADSENSE_COST_REVENUE] Force Live: bulletproofAPI allowStale=FALSE (fresh data)');
       }
 
-      // STEP 2: Fetch only uncached accounts
+      // STEP 2: Fetch only uncached accounts (OR all accounts if forceLive=true)
       if (uncachedAccountIds.length > 0) {
         console.log(`[ADSENSE_COST_REVENUE] Fetching ${uncachedAccountIds.length} uncached accounts: ${uncachedAccountIds.join(', ')}`);
 
@@ -223,17 +230,17 @@ export async function POST(request: NextRequest) {
     } else if (customerId) {
       console.log('[ADSENSE_COST_REVENUE] Fetching single account:', customerId);
 
-      // STEP 1: Check cache for this account
-      const cachedData = await checkAccountCache(customerId);
+      // STEP 1: Check cache for this account (SKIP if forceLive=true)
+      const cachedData = forceLive ? null : await checkAccountCache(customerId);
 
-      if (cachedData) {
+      if (cachedData && !forceLive) {
         console.log('[ADSENSE_COST_REVENUE] ✅ Using cached data for account', customerId);
         cachedAccountData.set(customerId, cachedData);
         googleAdsDataPromises = Promise.resolve([]); // No need to fetch
       } else {
-        // STEP 2: Fetch if not cached
+        // STEP 2: Fetch if not cached OR if forceLive=true
         if (forceLive) {
-          console.log('[ADSENSE_COST_REVENUE] Force Live: bulletproofAPI allowStale=FALSE (fresh data)');
+          console.log('[ADSENSE_COST_REVENUE] 🔥 FORCE LIVE: Bypassing account-level cache, fetching fresh data');
         } else {
           console.log('[ADSENSE_COST_REVENUE] Cache MISS, fetching from bulletproofAPI');
         }
@@ -262,6 +269,12 @@ export async function POST(request: NextRequest) {
     // Handle Google Ads data
     let googleAdsData: any;
     let message = '';
+
+    // DEBUG: Log what we're expecting
+    console.log(`[ADSENSE_COST_REVENUE] ===== GOOGLE ADS DATA PROCESSING =====`);
+    console.log(`[ADSENSE_COST_REVENUE] Expected customerId: ${customerId}`);
+    console.log(`[ADSENSE_COST_REVENUE] Is multi-account: ${isMultiAccount}`);
+    console.log(`[ADSENSE_COST_REVENUE] Account IDs array: ${accountIds}`);
 
     if (googleAdsResult.status === 'rejected') {
       console.error('[ADSENSE_COST_REVENUE] Google Ads API failed:', googleAdsResult.reason);
@@ -344,6 +357,21 @@ export async function POST(request: NextRequest) {
           }
         }
       }
+    }
+
+    // DEBUG: Log what customer IDs are actually in the Google Ads data
+    console.log(`[ADSENSE_COST_REVENUE] ===== ACTUAL DATA VERIFICATION =====`);
+    const uniqueCustomerIds = new Set<string>();
+    if (googleAdsData?.campaigns) {
+      googleAdsData.campaigns.forEach((c: any) => uniqueCustomerIds.add(c.customer_id || c.account_id || 'unknown'));
+    }
+    if (googleAdsData?.ads) {
+      googleAdsData.ads.forEach((a: any) => uniqueCustomerIds.add(a.customer_id || a.account_id || 'unknown'));
+    }
+    console.log(`[ADSENSE_COST_REVENUE] Unique customer IDs in Google Ads data: ${Array.from(uniqueCustomerIds).join(', ')}`);
+    console.log(`[ADSENSE_COST_REVENUE] Expected customer ID: ${customerId || 'all'}`);
+    if (customerId && uniqueCustomerIds.size > 1) {
+      console.error(`[ADSENSE_COST_REVENUE] ⚠️ WARNING: Expected single account but got ${uniqueCustomerIds.size} accounts!`);
     }
 
     // Handle AdSense data
@@ -440,7 +468,8 @@ export async function POST(request: NextRequest) {
         // Get campaign name from campaigns data
         const campaign = (googleAdsData.campaigns || []).find((c: any) => String(c.campaign_id) === campaignId);
         let campaignName = campaign?.campaign_name || campaign?.name || `Campaign ${campaignId}`;
-        const accountId = ad.account_id || campaign?.account_id || 'unknown';
+        // CRITICAL FIX: Check both account_id and customer_id (Google Ads API uses customer_id)
+        const accountId = ad.account_id || ad.customer_id || campaign?.account_id || campaign?.customer_id || customerId || 'unknown';
         const campaignStatus = campaign?.campaign_status || campaign?.status || adCampaignStatus || 'UNKNOWN';
 
         // CLEAN campaign name: Remove style_id patterns like "Ch64Xstyle1", "style123", etc.
@@ -468,6 +497,17 @@ export async function POST(request: NextRequest) {
 
     console.log(`[ADSENSE_COST_REVENUE] Ad processing: ${totalAds} total ads, ${adsWithUrls} with URLs`);
     console.log(`[ADSENSE_COST_REVENUE] Extracted style_ids from ${campaignToStyleMap.size} campaigns (ALL statuses included)`);
+
+    // DEBUG: Show which accounts the campaigns belong to
+    const campaignAccountIds = new Set<string>();
+    for (const [, data] of campaignToStyleMap.entries()) {
+      campaignAccountIds.add(data.accountId);
+    }
+    console.log(`[ADSENSE_COST_REVENUE] Campaign accounts: ${Array.from(campaignAccountIds).join(', ')}`);
+    console.log(`[ADSENSE_COST_REVENUE] Expected account: ${customerId || 'all'}`);
+    if (customerId && campaignAccountIds.size > 1) {
+      console.error(`[ADSENSE_COST_REVENUE] ⚠️ WARNING: Expected campaigns from 1 account, found ${campaignAccountIds.size} accounts!`);
+    }
 
     // Debug: Show campaign status distribution
     const statusDistribution = new Map<string, number>();
@@ -511,6 +551,16 @@ export async function POST(request: NextRequest) {
     console.log(`[ADSENSE_COST_REVENUE] Built style_id+domain to campaign name mapping for ${styleDomainToCampaignName.size} combinations`);
     console.log(`[ADSENSE_COST_REVENUE] Current account uses ${currentAccountStyleIds.size} unique style_ids: ${Array.from(currentAccountStyleIds).slice(0, 5).join(', ')}${currentAccountStyleIds.size > 5 ? '...' : ''}`);
 
+    // DEBUG: Show which accounts are in the style map
+    const styleMapAccountIds = new Set<string>();
+    for (const [, data] of styleDomainToCampaignName.entries()) {
+      styleMapAccountIds.add(data.accountId);
+    }
+    console.log(`[ADSENSE_COST_REVENUE] Style map covers ${styleMapAccountIds.size} account(s): ${Array.from(styleMapAccountIds).join(', ')}`);
+    if (customerId && styleMapAccountIds.size > 1) {
+      console.error(`[ADSENSE_COST_REVENUE] ⚠️ WARNING: Style map should only have 1 account, found ${styleMapAccountIds.size}!`);
+    }
+
     // ⚠️ WARNING: Check for potential style_id sharing across accounts
     // If viewing single account, this is expected. If viewing "All", this helps debug revenue duplication
     const accountContext = isMultiAccount ? `${accountIds.length} accounts combined` : `single account ${customerId}`;
@@ -521,6 +571,10 @@ export async function POST(request: NextRequest) {
     // Reason: A campaign might be PAUSED today but had costs yesterday - we need to count that historical cost
     const costByStyleDomain = new Map<string, { cost: number; clicks: number; impressions: number; conversions: number; cpa: number; campaignStatus: string }>();
 
+    // DEBUG: Track which dates are in the campaign data
+    const campaignDates = new Set<string>();
+    const campaignRowsByDate = new Map<string, number>();
+
     let totalCampaigns = 0;
     let campaignsWithCost = 0;
     let campaignsWithoutStyleId = 0;
@@ -529,6 +583,11 @@ export async function POST(request: NextRequest) {
       totalCampaigns++;
       const campaignId = String(campaign.campaign_id);
       const urlData = campaignToStyleMap.get(campaignId);
+
+      // DEBUG: Track dates in the campaign data
+      const segmentDate = campaign.segments?.date || campaign.date || 'no_date';
+      campaignDates.add(segmentDate);
+      campaignRowsByDate.set(segmentDate, (campaignRowsByDate.get(segmentDate) || 0) + 1);
 
       // Skip campaigns without style_id mapping (no ads with URLs)
       if (!urlData || urlData.styleIds.size === 0) {
@@ -568,6 +627,13 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`[ADSENSE_COST_REVENUE] Campaign cost processing: ${campaignsWithCost} campaigns with cost / ${totalCampaigns} total (${campaignsWithoutStyleId} without style_id)`);
+
+    // DEBUG: Show date distribution
+    console.log(`[ADSENSE_COST_REVENUE] 📅 Campaign data covers ${campaignDates.size} unique dates: ${Array.from(campaignDates).sort().join(', ')}`);
+    console.log(`[ADSENSE_COST_REVENUE] 📅 Rows per date:`, Object.fromEntries(
+      Array.from(campaignRowsByDate.entries()).sort((a, b) => a[0].localeCompare(b[0]))
+    ));
+    console.log(`[ADSENSE_COST_REVENUE] 📅 Expected date range: ${startDate} to ${endDate}`);
 
     // Calculate total conversions from Google Ads
     const totalGoogleAdsConversions = Array.from(costByStyleDomain.values()).reduce((sum, data) => sum + data.conversions, 0);

@@ -242,6 +242,10 @@ export interface GoogleAdsCampaign {
   campaign_name: string;
   campaign_status: string;
   final_url_suffix: string;
+  date?: string; // Optional date field for direct access
+  segments?: {   // Optional segments for date-segmented data
+    date?: string;
+  };
   metrics: {
     impressions: number;
     clicks: number;
@@ -334,6 +338,9 @@ function processCampaignData(response: any[], account: any): GoogleAdsCampaign[]
       const campaignStatus = item.campaign && item.campaign.status ? item.campaign.status : 'unknown';
       const finalUrlSuffix = item.campaign && item.campaign.final_url_suffix ? item.campaign.final_url_suffix : '';
 
+      // CRITICAL: Extract date from segments for daily segmentation
+      const date = item.segments?.date || null;
+
       return {
         customer_id: account.id,
         customer_name: account.name,
@@ -341,6 +348,8 @@ function processCampaignData(response: any[], account: any): GoogleAdsCampaign[]
         campaign_name: campaignName,
         campaign_status: campaignStatus,
         final_url_suffix: finalUrlSuffix,
+        date: date,
+        segments: date ? { date } : undefined,
         metrics: {
           impressions,
           clicks,
@@ -653,17 +662,22 @@ export async function fetchGoogleAdsData(
           const allCampaigns = processCampaignData(allCampaignsResponse, account);
 
           // Merge campaign lists, prioritizing active campaigns
+          // CRITICAL: Use campaign_id + date as key to preserve daily segmentation
           const campaignMap = new Map();
 
-          // First add all campaigns
+          // First add all campaigns (use campaign_id + date as key)
           for (const campaign of allCampaigns) {
-            campaignMap.set(campaign.campaign_id, campaign);
+            const date = campaign.segments?.date || campaign.date || 'no_date';
+            const key = `${campaign.campaign_id}_${date}`;
+            campaignMap.set(key, campaign);
           }
 
-          // Then override with active campaigns
+          // Then override with active campaigns (use campaign_id + date as key)
           for (const campaign of data.campaigns) {
             if (campaign.customer_id === account.id) {
-              campaignMap.set(campaign.campaign_id, campaign);
+              const date = campaign.segments?.date || campaign.date || 'no_date';
+              const key = `${campaign.campaign_id}_${date}`;
+              campaignMap.set(key, campaign);
             }
           }
 
