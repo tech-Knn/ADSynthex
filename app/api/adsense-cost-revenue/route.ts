@@ -399,17 +399,57 @@ export async function POST(request: NextRequest) {
       } else {
         // Single account
         if (cachedAccountData.has(customerId)) {
-          // Use cached data
+          // Use cached data - CRITICAL: Tag with account_id to prevent mixing
           const cached = cachedAccountData.get(customerId);
           googleAdsData = cached?.googleAdsData || { campaigns: [], ads: [] };
+
+          // Tag all campaigns and ads with account_id
+          if (googleAdsData.campaigns) {
+            googleAdsData.campaigns.forEach((c: any) => {
+              c.account_id = customerId;
+              // Validate customer_id matches if present
+              if (c.customer_id && c.customer_id !== customerId) {
+                console.warn(`[ADSENSE_COST_REVENUE] ⚠️  Cached campaign customer_id mismatch: expected ${customerId}, got ${c.customer_id}`);
+              }
+            });
+          }
+          if (googleAdsData.ads) {
+            googleAdsData.ads.forEach((a: any) => {
+              a.account_id = customerId;
+              // Validate customer_id matches if present
+              if (a.customer_id && a.customer_id !== customerId) {
+                console.warn(`[ADSENSE_COST_REVENUE] ⚠️  Cached ad customer_id mismatch: expected ${customerId}, got ${a.customer_id}`);
+              }
+            });
+          }
+
           message += `Google Ads: ${googleAdsData?.campaigns?.length || 0} campaigns, ${googleAdsData?.ads?.length || 0} ads (cached). `;
-          console.log(`[ADSENSE_COST_REVENUE] Single account: Using cached data with ${googleAdsData?.campaigns?.length || 0} campaigns, ${googleAdsData?.ads?.length || 0} ads`);
+          console.log(`[ADSENSE_COST_REVENUE] Single account ${customerId}: Using cached data with ${googleAdsData?.campaigns?.length || 0} campaigns, ${googleAdsData?.ads?.length || 0} ads (tagged)`);
         } else {
           // Use freshly fetched data
           const singleResult = googleAdsResult.value as any;
           googleAdsData = singleResult.data;
+
+          // Tag all campaigns and ads with account_id
+          if (googleAdsData?.campaigns) {
+            googleAdsData.campaigns.forEach((c: any) => {
+              c.account_id = customerId;
+              if (c.customer_id && c.customer_id !== customerId) {
+                console.warn(`[ADSENSE_COST_REVENUE] ⚠️  Fresh campaign customer_id mismatch: expected ${customerId}, got ${c.customer_id}`);
+              }
+            });
+          }
+          if (googleAdsData?.ads) {
+            googleAdsData.ads.forEach((a: any) => {
+              a.account_id = customerId;
+              if (a.customer_id && a.customer_id !== customerId) {
+                console.warn(`[ADSENSE_COST_REVENUE] ⚠️  Fresh ad customer_id mismatch: expected ${customerId}, got ${a.customer_id}`);
+              }
+            });
+          }
+
           message += `Google Ads: ${googleAdsData?.campaigns?.length || 0} campaigns, ${googleAdsData?.ads?.length || 0} ads (fresh). `;
-          console.log(`[ADSENSE_COST_REVENUE] Single account: Fetched ${googleAdsData?.campaigns?.length || 0} campaigns, ${googleAdsData?.ads?.length || 0} ads`);
+          console.log(`[ADSENSE_COST_REVENUE] Single account ${customerId}: Fetched ${googleAdsData?.campaigns?.length || 0} campaigns, ${googleAdsData?.ads?.length || 0} ads (tagged)`);
 
           // CRITICAL: Cache this account's data
           if (googleAdsData?.campaigns || googleAdsData?.ads) {
@@ -1071,7 +1111,6 @@ export async function POST(request: NextRequest) {
 
     // VALIDATION: Verify requested accounts match returned data
     const returnedAccountIds = new Set(account_level_aggregated.map(a => a.account_id));
-    const expectedAccountIds = new Set(requestedAccountIds);
     const missingAccounts = requestedAccountIds.filter(id => !returnedAccountIds.has(id));
     if (missingAccounts.length > 0) {
       console.warn(`[ADSENSE_COST_REVENUE] ⚠️  WARNING: ${missingAccounts.length} requested accounts have no data: ${missingAccounts.join(', ')}`);
@@ -1079,31 +1118,78 @@ export async function POST(request: NextRequest) {
 
     console.log(`[ADSENSE_COST_REVENUE] ✅ VALIDATION COMPLETE: ${account_level_aggregated.length} accounts, ${campaign_aggregated.length} campaigns`);
 
+    // CRITICAL: Final data isolation filter - Remove any entries not belonging to requested accounts
+    const requestedAccountSet = new Set(requestedAccountIds);
+    const originalCampaignCount = campaign_aggregated.length;
+    const originalAccountCount = account_level_aggregated.length;
+
+    // Filter campaign_aggregated to only include requested accounts
+    const filteredCampaignAggregated = campaign_aggregated.filter((entry: any) => {
+      const belongsToRequested = requestedAccountSet.has(entry.account_id);
+      if (!belongsToRequested && entry.account_id !== 'unknown') {
+        console.warn(`[ADSENSE_COST_REVENUE] ⚠️  FILTERED OUT: Campaign ${entry.campaign_name} belongs to ${entry.account_id}, not in requested accounts`);
+      }
+      return belongsToRequested;
+    });
+
+    // Filter account_level_aggregated to only include requested accounts
+    const filteredAccountLevelAggregated = account_level_aggregated.filter((account: any) => {
+      const belongsToRequested = requestedAccountSet.has(account.account_id);
+      if (!belongsToRequested && account.account_id !== 'unknown') {
+        console.warn(`[ADSENSE_COST_REVENUE] ⚠️  FILTERED OUT: Account ${account.account_id} not in requested accounts`);
+      }
+      return belongsToRequested;
+    });
+
+    const filteredCampaignCount = filteredCampaignAggregated.length;
+    const filteredAccountCount = filteredAccountLevelAggregated.length;
+
+    if (originalCampaignCount !== filteredCampaignCount) {
+      console.error(`[ADSENSE_COST_REVENUE] ❌ DATA MIXING DETECTED: Filtered out ${originalCampaignCount - filteredCampaignCount} campaigns from other accounts!`);
+    }
+    if (originalAccountCount !== filteredAccountCount) {
+      console.error(`[ADSENSE_COST_REVENUE] ❌ DATA MIXING DETECTED: Filtered out ${originalAccountCount - filteredAccountCount} accounts from other accounts!`);
+    }
+
+    console.log(`[ADSENSE_COST_REVENUE] 🔒 DATA ISOLATION: Campaigns ${filteredCampaignCount}/${originalCampaignCount}, Accounts ${filteredAccountCount}/${originalAccountCount}`);
+
+    // Recalculate summary with filtered data
+    const filteredTotalCost = filteredCampaignAggregated.reduce((sum: number, c: any) => sum + c.cost, 0);
+    const filteredTotalRevenue = filteredCampaignAggregated.reduce((sum: number, c: any) => sum + c.revenue, 0);
+    const filteredTotalProfit = filteredTotalRevenue - filteredTotalCost;
+    const filteredTotalConversions = filteredCampaignAggregated.reduce((sum: number, c: any) => sum + c.conversions, 0);
+
     const response = {
       success: true,
       account: adsenseAccountId,
       dateRange: { startDate, endDate },
       google_ads_data: { campaigns: googleAdsData.campaigns || [], total: (googleAdsData.campaigns || []).length },
       adsense_data: { revenues: adsenseData, total: adsenseData.length },
-      campaign_aggregated,
-      account_level_aggregated,
+      campaign_aggregated: filteredCampaignAggregated,
+      account_level_aggregated: filteredAccountLevelAggregated,
       summary: {
-        totalCost,
-        totalRevenue,
-        totalProfit,
+        totalCost: filteredTotalCost,
+        totalRevenue: filteredTotalRevenue,
+        totalProfit: filteredTotalProfit,
         totalClicks,
         totalImpressions,
-        totalConversions,
-        overallROI: totalCost > 0 ? (totalProfit / totalCost) * 100 : 0,
-        overallROAS: totalCost > 0 ? totalRevenue / totalCost : 0,
-        profitableCampaigns: campaign_aggregated.filter(c => c.profit > 0).length,
-        totalCampaigns: campaign_aggregated.length,
-        profitabilityRate: campaign_aggregated.length > 0 ? (campaign_aggregated.filter(c => c.profit > 0).length / campaign_aggregated.length) * 100 : 0,
+        totalConversions: filteredTotalConversions,
+        overallROI: filteredTotalCost > 0 ? (filteredTotalProfit / filteredTotalCost) * 100 : 0,
+        overallROAS: filteredTotalCost > 0 ? filteredTotalRevenue / filteredTotalCost : 0,
+        profitableCampaigns: filteredCampaignAggregated.filter((c: any) => c.profit > 0).length,
+        totalCampaigns: filteredCampaignAggregated.length,
+        profitabilityRate: filteredCampaignAggregated.length > 0 ? (filteredCampaignAggregated.filter((c: any) => c.profit > 0).length / filteredCampaignAggregated.length) * 100 : 0,
         uniqueStyleIds: uniqueStyleIds.size,
         uniqueDomains: uniqueDomains.size,
         uniqueCountries: uniqueCountries.size,
-        totalAccounts: account_level_aggregated.length,
-        profitableAccounts: account_level_aggregated.filter(a => a.profit > 0).length
+        totalAccounts: filteredAccountLevelAggregated.length,
+        profitableAccounts: filteredAccountLevelAggregated.filter((a: any) => a.profit > 0).length,
+        dataIsolation: {
+          requestedAccounts: requestedAccountIds.length,
+          returnedAccounts: filteredAccountCount,
+          filteredOutCampaigns: originalCampaignCount - filteredCampaignCount,
+          filteredOutAccounts: originalAccountCount - filteredAccountCount
+        }
       },
       _source: 'adsense_cost_revenue_mapped',
       _timestamp: new Date().toISOString(),
