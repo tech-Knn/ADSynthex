@@ -8,6 +8,7 @@ import {
 import { cookies } from 'next/headers';
 import { bulletproofAPI } from '@/lib/bulletproof-google-ads-api';
 import { redisCacheManager } from '@/lib/redis-cache-manager';
+import { ACCOUNT_FEED_ACCESS, hasAccessToFeed } from '@/lib/account-access-control';
 
 interface RevenueByStyleId {
   style_id: string;
@@ -62,28 +63,68 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing adsenseAccountId' }, { status: 400 });
     }
 
-    // Optional auth check for user accounts
+    // ENHANCED: Proper auth check with ACCOUNT_FEED_ACCESS validation
     const cookieStore = cookies();
     const authType = cookieStore.get('auth_type')?.value;
     const userAccountId = cookieStore.get('account_id')?.value;
 
-    if (authType === 'user' && userAccountId) {
+    // Validate all requested accounts have AFS access
+    const requestedAccountIds: string[] = [];
+    if (customerId) {
+      requestedAccountIds.push(customerId);
+    }
+    if (accountIds && accountIds.length > 0) {
+      requestedAccountIds.push(...accountIds);
+    }
 
+    // Check each requested account has 'adsense' feed access
+    for (const accId of requestedAccountIds) {
+      const normalizedAccId = accId.startsWith('CID_') ? accId : `CID_${accId}`;
+
+      // Verify account exists in ACCOUNT_FEED_ACCESS
+      if (!ACCOUNT_FEED_ACCESS[normalizedAccId]) {
+        console.error(`[ADSENSE_REVENUE] ❌ Access denied: Account ${normalizedAccId} not found in ACCOUNT_FEED_ACCESS`);
+        return NextResponse.json({
+          error: 'Invalid account ID',
+          message: `Account ${accId} is not configured`
+        }, { status: 403 });
+      }
+
+      // Verify account has 'adsense' feed permission
+      if (!hasAccessToFeed(normalizedAccId, 'adsense')) {
+        console.error(`[ADSENSE_REVENUE] ❌ Access denied: Account ${normalizedAccId} does not have adsense feed access`);
+        return NextResponse.json({
+          error: 'Access denied',
+          message: `Account ${accId} does not have AFS access`
+        }, { status: 403 });
+      }
+    }
+
+    // For regular users, enforce they can only access their own account
+    if (authType === 'user' && userAccountId) {
       console.log('[ADSENSE_REVENUE] User access:', userAccountId);
 
       const normalizedUserAccountId = userAccountId.startsWith('CID_') ? userAccountId : `CID_${userAccountId}`;
       const accountValue = normalizedUserAccountId.replace('CID_', '');
 
+      // Check single account access
       if (customerId && customerId !== accountValue) {
-        return NextResponse.json({ error: 'Access denied' }, { status: 403 });
+        console.error(`[ADSENSE_REVENUE] ❌ User ${userAccountId} attempted to access account ${customerId}`);
+        return NextResponse.json({ error: 'Access denied to this account' }, { status: 403 });
       }
 
+      // Check multi-account access
       if (accountIds && accountIds.length > 0) {
         const hasUnauthorized = accountIds.some((id: string) => id !== accountValue);
         if (hasUnauthorized) {
-          return NextResponse.json({ error: 'Access denied' }, { status: 403 });
+          console.error(`[ADSENSE_REVENUE] ❌ User ${userAccountId} attempted to access unauthorized accounts: ${accountIds.join(', ')}`);
+          return NextResponse.json({ error: 'Access denied to requested accounts' }, { status: 403 });
         }
       }
+
+      console.log(`[ADSENSE_REVENUE] ✅ User ${userAccountId} authorized for requested accounts`);
+    } else if (authType === 'admin') {
+      console.log(`[ADSENSE_REVENUE] ✅ Admin access granted for ${requestedAccountIds.length} account(s)`);
     }
 
     // ==================== ACCOUNT-LEVEL CACHING ====================
@@ -308,17 +349,36 @@ export async function POST(request: NextRequest) {
           const accData = accountResult.data;
           const accountId = uncachedAccountIds[index];
 
+          if (!accountId) {
+            console.error(`[ADSENSE_COST_REVENUE] ❌ CRITICAL: Missing account ID for index ${index}`);
+            return;
+          }
+
           if (accData?.campaigns || accData?.ads) {
-            // Account succeeded - add to combined data
+            // Account succeeded - add to combined data with proper account_id tagging
             successCount++;
             if (accData?.campaigns) {
-              accData.campaigns.forEach((c: any) => c.account_id = accountId);
+              accData.campaigns.forEach((c: any) => {
+                c.account_id = accountId;
+                // VALIDATION: Ensure customer_id matches
+                if (c.customer_id && c.customer_id !== accountId) {
+                  console.warn(`[ADSENSE_COST_REVENUE] ⚠️  Campaign customer_id mismatch: expected ${accountId}, got ${c.customer_id}`);
+                }
+              });
               googleAdsData.campaigns.push(...accData.campaigns);
             }
             if (accData?.ads) {
-              accData.ads.forEach((a: any) => a.account_id = accountId);
+              accData.ads.forEach((a: any) => {
+                a.account_id = accountId;
+                // VALIDATION: Ensure customer_id matches
+                if (a.customer_id && a.customer_id !== accountId) {
+                  console.warn(`[ADSENSE_COST_REVENUE] ⚠️  Ad customer_id mismatch: expected ${accountId}, got ${a.customer_id}`);
+                }
+              });
               googleAdsData.ads.push(...accData.ads);
             }
+
+            console.log(`[ADSENSE_COST_REVENUE] ✅ Account ${accountId}: ${accData.campaigns?.length || 0} campaigns, ${accData.ads?.length || 0} ads tagged`);
 
             // CRITICAL: Cache this account's data separately
             cacheAccountData(accountId, { googleAdsData: accData });
@@ -468,8 +528,16 @@ export async function POST(request: NextRequest) {
         // Get campaign name from campaigns data
         const campaign = (googleAdsData.campaigns || []).find((c: any) => String(c.campaign_id) === campaignId);
         let campaignName = campaign?.campaign_name || campaign?.name || `Campaign ${campaignId}`;
-        // CRITICAL FIX: Check both account_id and customer_id (Google Ads API uses customer_id)
-        const accountId = ad.account_id || ad.customer_id || campaign?.account_id || campaign?.customer_id || customerId || 'unknown';
+
+        // CRITICAL: Extract account_id with proper fallback chain
+        // Priority: ad.account_id (we set this) > campaign.account_id (we set this) > customer_id (from API) > customerId (request param)
+        const accountId = ad.account_id || campaign?.account_id || ad.customer_id || campaign?.customer_id || customerId || 'unknown';
+
+        // VALIDATION: Warn if account_id is unknown
+        if (accountId === 'unknown') {
+          console.warn(`[ADSENSE_COST_REVENUE] ⚠️  WARNING: Campaign ${campaignId} has unknown account_id! This will cause revenue misattribution.`);
+        }
+
         const campaignStatus = campaign?.campaign_status || campaign?.status || adCampaignStatus || 'UNKNOWN';
 
         // CLEAN campaign name: Remove style_id patterns like "Ch64Xstyle1", "style123", etc.
@@ -991,6 +1059,25 @@ export async function POST(request: NextRequest) {
     console.log(`  Total Cost: $${totalCost.toFixed(2)}, Total Revenue: $${totalRevenue.toFixed(2)}, Total Profit: $${totalProfit.toFixed(2)}`);
     console.log(`  Total Conversions: ${totalConversions} (actual number from Google Ads)`);
     console.log(`  Overall CPA: $${totalConversions > 0 ? (totalCost / totalConversions).toFixed(2) : '0.00'} (cost / conversions)`);
+
+    // FINAL VALIDATION: Check for entries with unknown account_id
+    const entriesWithUnknownAccount = campaign_aggregated.filter(c => c.account_id === 'unknown');
+    if (entriesWithUnknownAccount.length > 0) {
+      console.error(`[ADSENSE_COST_REVENUE] ❌ VALIDATION ERROR: ${entriesWithUnknownAccount.length} entries have unknown account_id`);
+      entriesWithUnknownAccount.slice(0, 5).forEach((entry, idx) => {
+        console.error(`  ${idx + 1}. Campaign: ${entry.campaign_name}, Style: ${entry.style_id}, Cost: $${entry.cost.toFixed(2)}, Revenue: $${entry.revenue.toFixed(2)}`);
+      });
+    }
+
+    // VALIDATION: Verify requested accounts match returned data
+    const returnedAccountIds = new Set(account_level_aggregated.map(a => a.account_id));
+    const expectedAccountIds = new Set(requestedAccountIds);
+    const missingAccounts = requestedAccountIds.filter(id => !returnedAccountIds.has(id));
+    if (missingAccounts.length > 0) {
+      console.warn(`[ADSENSE_COST_REVENUE] ⚠️  WARNING: ${missingAccounts.length} requested accounts have no data: ${missingAccounts.join(', ')}`);
+    }
+
+    console.log(`[ADSENSE_COST_REVENUE] ✅ VALIDATION COMPLETE: ${account_level_aggregated.length} accounts, ${campaign_aggregated.length} campaigns`);
 
     const response = {
       success: true,
