@@ -196,8 +196,14 @@ export function getFeedTypeFromRoute(pathname: string): FeedType | null {
  * Example: https://site.com/page?cid=ch88087 -> channel ID is "ch88087"
  */
 export const ACCOUNT_CHANNEL_ACCESS: Record<string, string[]> = {
-  // Predicto - EST - 01: channels ch88087, ch88098
-  'CID_2382992113': ['ch88087', 'ch88098'],
+  // Predicto - EST - 01: All channels (30+ channels)
+  'CID_2382992113': [
+    'ch88087', 'ch88092', 'ch88095', 'ch88096', 'ch88097', 'ch88098', 'ch88099',
+    'ch88100', 'ch88101', 'ch88102', 'ch88103', 'ch88104', 'ch88108', 'ch88109',
+    'ch88110', 'ch88111', 'ch46405', 'ch46406', 'ch46407', 'ch46409', 'ch46410',
+    'ch46411', 'ch46418', 'ch4642', 'ch46420', 'ch46421', 'ch46423', 'ch46428',
+    'ch46433', 'ch4644', 'ch46441'
+  ],
 
   // Predicto - EST - 02: channels ch88099, ch88100
   'CID_1640518611': ['ch88099', 'ch88100'],

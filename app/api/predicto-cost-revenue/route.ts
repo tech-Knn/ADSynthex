@@ -10,11 +10,6 @@ import { bulletproofAPI } from '@/lib/bulletproof-google-ads-api';
 import { redisCacheManager } from '@/lib/redis-cache-manager';
 import { googleAdsRateLimiter } from '@/lib/redis-rate-limiter';
 import { cookies } from 'next/headers';
-import {
-  getAllowedChannels,
-  filterChannelsByAccess,
-  canAccessAllChannels,
-} from '@/lib/account-access-control';
 
 interface PredictoCostRevenueResponse {
   google_ads_data: any;
@@ -109,28 +104,12 @@ export async function POST(request: NextRequest) {
           `[PREDICTO_COST_REVENUE] Serving cached aggregated data (${Math.round(cachedAggregated.age / 1000)}s old)`
         );
 
-        // Apply channel filtering to cached data for non-admin users
+        // For cached data, we can't dynamically detect channels (no Google Ads data yet)
+        // So for single account views, we show all data and rely on customer_id filtering below
         let filteredData = cachedAggregated.data.campaign_aggregated;
 
-        if (!isAdmin && userAccountId) {
-          const normalizedAccountId = userAccountId.startsWith('CID_')
-            ? userAccountId
-            : `CID_${userAccountId}`;
+        console.log(`[PREDICTO_COST_REVENUE] Using cached data - channel filtering will be applied by customer_id`);
 
-          const allowedChannels = getAllowedChannels(normalizedAccountId);
-
-          if (allowedChannels.length > 0) {
-            console.log(
-              `[PREDICTO_COST_REVENUE] Filtering cached data for account ${normalizedAccountId} to channels: ${allowedChannels.join(', ')}`
-            );
-
-            filteredData = filterChannelsByAccess(normalizedAccountId, filteredData);
-
-            console.log(
-              `[PREDICTO_COST_REVENUE] Cached data filtered: ${filteredData.length} campaigns after channel filtering`
-            );
-          }
-        }
 
         // CRITICAL: For individual account views, filter out orphaned channels from cache
         // This ensures users only see their own account's revenue
@@ -159,7 +138,7 @@ export async function POST(request: NextRequest) {
           cost_revenue_mapping: [],
           _source: 'redis-aggregated-cache',
           _timestamp: new Date().toISOString(),
-          _message: `Cached aggregated data (${Math.round(cachedAggregated.age / 1000)}s old)${!isAdmin && userAccountId ? ' - filtered by channel access' : ''}${!isMultiAccount ? ' - single account view' : ''}`,
+          _message: `Cached aggregated data (${Math.round(cachedAggregated.age / 1000)}s old)${!isMultiAccount ? ' - single account view' : ''}`,
           _dataFreshness: {
             source: 'redis',
             ageMinutes: Math.round(cachedAggregated.age / 60000),
@@ -405,25 +384,31 @@ export async function POST(request: NextRequest) {
       const campaignsWithUrls = allCampaigns.filter(c => c.final_urls && c.final_urls.length > 0);
       console.log(`[PREDICTO_COST_REVENUE] 📊 Campaigns with Final URLs: ${campaignsWithUrls.length}/${allCampaigns.length}`);
 
+      // DYNAMIC CHANNEL DETECTION: Extract channel IDs from this account's campaigns
+      const { extractChannelIdsFromUrl } = await import('@/lib/predicto-channel-mapper');
+      const accountChannelIds = new Set<string>();
+
       if (campaignsWithUrls.length > 0) {
         // Sample first URL to show format
         const sampleUrl = campaignsWithUrls[0].final_urls[0];
         console.log(`[PREDICTO_COST_REVENUE] 📎 Sample Final URL: ${sampleUrl}`);
 
-        // Extract and log channel IDs for debugging
-        const { extractChannelIdsFromUrl } = await import('@/lib/predicto-channel-mapper');
-        const allChannelIds = new Set<string>();
-        campaignsWithUrls.forEach(campaign => {
-          campaign.final_urls.forEach((url: string) => {
-            const channelIds = extractChannelIdsFromUrl(url);
-            channelIds.forEach(id => allChannelIds.add(id));
-          });
+        // Extract channel IDs from all campaigns
+        allCampaigns.forEach(campaign => {
+          if (campaign.final_urls && campaign.final_urls.length > 0) {
+            campaign.final_urls.forEach((url: string) => {
+              const channelIds = extractChannelIdsFromUrl(url);
+              channelIds.forEach(id => accountChannelIds.add(id));
+            });
+          }
         });
-        console.log(`[PREDICTO_COST_REVENUE] 🔖 Extracted ${allChannelIds.size} unique channel IDs from campaigns: ${Array.from(allChannelIds).join(', ')}`);
+
+        console.log(`[PREDICTO_COST_REVENUE] 🎯 DYNAMIC DETECTION: Found ${accountChannelIds.size} channel IDs from account's campaigns: ${Array.from(accountChannelIds).join(', ')}`);
       } else {
         console.warn(`[PREDICTO_COST_REVENUE] ⚠️  WARNING: No campaigns have Final URLs! Channel mapping will not work.`);
         console.warn(`[PREDICTO_COST_REVENUE] ⚠️  Make sure your Google Ads campaigns have Final URLs with cid parameter (e.g., ?cid=ch88087)`);
       }
+
 
       // Fetch Predicto revenue data
       const mappingStartTime = Date.now();
@@ -474,31 +459,36 @@ export async function POST(request: NextRequest) {
       const revenueOnly = combined.filter(c => !c.has_cost_data && c.has_revenue_data).length;
       console.log(`[PREDICTO_COST_REVENUE] 📊 Matching: ${withCostAndRevenue} with both, ${costOnly} cost-only, ${revenueOnly} revenue-only`);
 
-      // Filter by channel access for non-admin users
-      if (!isAdmin && userAccountId) {
-        const normalizedAccountId = userAccountId.startsWith('CID_')
-          ? userAccountId
-          : `CID_${userAccountId}`;
+      // DYNAMIC CHANNEL FILTERING: Filter by channels found in account's campaigns
+      // For single account views, only show revenue from channels that belong to this account
+      if (!isMultiAccount && accountChannelIds.size > 0) {
+        console.log(
+          `[PREDICTO_COST_REVENUE] 🎯 Single account: Filtering revenue to ${accountChannelIds.size} channels found in campaigns`
+        );
 
-        const allowedChannels = getAllowedChannels(normalizedAccountId);
+        const beforeFilter = combined.length;
+        const channelIdsArray = Array.from(accountChannelIds);
 
-        if (allowedChannels.length > 0) {
-          console.log(
-            `[PREDICTO_COST_REVENUE] Filtering data for account ${normalizedAccountId} to channels: ${allowedChannels.join(', ')}`
-          );
+        // Filter to only include items where channel_ids overlap with account's channels
+        combined = combined.filter(item => {
+          // If item has channel_ids array, check for overlap
+          if (item.channel_ids && Array.isArray(item.channel_ids)) {
+            return item.channel_ids.some(channelId => accountChannelIds.has(channelId));
+          }
+          // If no channel_ids but has cost data, keep it (it's from this account's campaigns)
+          if (item.has_cost_data) {
+            return true;
+          }
+          return false;
+        });
 
-          combined = filterChannelsByAccess(normalizedAccountId, combined);
-
-          console.log(
-            `[PREDICTO_COST_REVENUE] After channel filtering: ${combined.length} campaigns remaining`
-          );
-        } else {
-          console.log(
-            `[PREDICTO_COST_REVENUE] Account ${normalizedAccountId} has no channel restrictions defined`
-          );
-        }
+        console.log(
+          `[PREDICTO_COST_REVENUE] 🎯 Dynamic filtering: ${beforeFilter} → ${combined.length} items (showing only account's channels)`
+        );
+      } else if (isMultiAccount) {
+        console.log('[PREDICTO_COST_REVENUE] Multi-account view - showing all channels');
       } else {
-        console.log('[PREDICTO_COST_REVENUE] Admin user - showing all channels');
+        console.log('[PREDICTO_COST_REVENUE] No channels detected - showing all data');
       }
 
       // CRITICAL: For individual account views, filter out orphaned channels
