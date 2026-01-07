@@ -78,6 +78,8 @@ export default function LoginPage() {
             router.push('/inuvo-dashboard');
           } else if (firstFeed === 'adsense') {
             router.push('/adsense');
+          } else if (firstFeed === 'predicto') {
+            router.push('/predicto');
           } else {
             // Fallback
             router.push('/dashboard');

@@ -3,7 +3,7 @@
  * Defines all document schemas for collections
  */
 
-export type FeedType = 'afs' | 'compado' | 'adscom' | 'inuvo';
+export type FeedType = 'afs' | 'compado' | 'adscom' | 'inuvo' | 'predicto';
 
 // ==================== COST DOCUMENTS ====================
 
@@ -36,6 +36,7 @@ export interface CostDocument {
   gclid?: string; // Compado only
   article?: string; // Ads.com only
   tkid?: string; // Inuvo only
+  // Note: campaign_id is already part of main fields, used for Predicto matching
 
   // Metadata
   feed_type: FeedType;
@@ -295,6 +296,10 @@ export const COLLECTION_NAMES = {
   inuvo: {
     cost: 'inuvo_cost',
     revenue: 'inuvo_revenue',
+  },
+  predicto: {
+    cost: 'predicto_cost',
+    revenue: 'predicto_revenue',
   },
   shared: {
     syncStatus: 'sync_status',

@@ -6,7 +6,7 @@
  * Regular users only have access to specific feeds based on their account type.
  */
 
-export type FeedType = 'adscom' | 'compado' | 'inuvo' | 'adsense';
+export type FeedType = 'adscom' | 'compado' | 'inuvo' | 'adsense' | 'predicto';
 
 export interface AccountAccessConfig {
   accountId: string;
@@ -22,6 +22,7 @@ export interface AccountAccessConfig {
  * - 'compado': Compado cost-revenue mapping
  * - 'inuvo': Inuvo cost vs revenue dashboard
  * - 'adsense': AdSense for Search (AFS) revenue mapping
+ * - 'predicto': Predicto cost-revenue mapping (campaign_id based)
  */
 export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   // AdSense for Search (AFS) Accounts - Only access AdSense feed
@@ -76,6 +77,16 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_8138817445': ['compado'], // Compado - BoldmoveGuide - UTC08
   'CID_4315436458': ['compado'], // Compado - BoldmoveGuide - UTC09
 
+  // Predicto Accounts - Only access Predicto feed
+  'CID_2382992113': ['predicto'], // Predicto - EST - 01
+  'CID_1640518611': ['predicto'], // Predicto - EST - 02
+  'CID_8091270364': ['predicto'], // Predicto - EST - 03
+  'CID_8846129452': ['predicto'], // Predicto - EST - 04
+  'CID_6474140466': ['predicto'], // Predicto - EST - 05
+  'CID_4920639194': ['predicto'], // Predicto - EST - 06
+  'CID_7282297343': ['predicto'], // Predicto - EST - 07
+  'CID_1298005744': ['predicto'], // Predicto - EST - 08
+
   // Ads.com Accounts - Only access Ads.com feed
   'CID_8677814915': ['adscom'], // IST
   'CID_9071440966': ['adscom'], // UTC02
@@ -127,6 +138,7 @@ export const FEED_ROUTES: Record<FeedType, string[]> = {
   compado: ['/compado', '/api/compado', '/api/compado-cost-revenue'],
   inuvo: ['/inuvo-dashboard', '/api/inuvo'],
   adsense: ['/adsense', '/adsense-test', '/api/adsense', '/api/adsense-cost-revenue', '/api/adsense-test-revenue'],
+  predicto: ['/predicto', '/api/predicto', '/api/predicto-cost-revenue'],
 };
 
 /**
@@ -174,4 +186,220 @@ export function getFeedTypeFromRoute(pathname: string): FeedType | null {
     }
   }
   return null;
+}
+
+/**
+ * Channel Access Control for Predicto
+ * Maps account IDs to their allowed channel IDs (custom_channel_id from Predicto)
+ *
+ * Channel IDs are extracted from Google Ads Final URLs (cid parameter)
+ * Example: https://site.com/page?cid=ch88087 -> channel ID is "ch88087"
+ */
+export const ACCOUNT_CHANNEL_ACCESS: Record<string, string[]> = {
+  // Predicto - EST - 01: channels ch88087, ch88098
+  'CID_2382992113': ['ch88087', 'ch88098'],
+
+  // Predicto - EST - 02: channels ch88099, ch88100
+  'CID_1640518611': ['ch88099', 'ch88100'],
+
+  // Predicto - EST - 03: channels ch88101, ch88102
+  'CID_8091270364': ['ch88101', 'ch88102'],
+
+  // Predicto - EST - 04: channels ch88103, ch88104
+  'CID_8846129452': ['ch88103', 'ch88104'],
+
+  // Predicto - EST - 05: channels ch88105, ch88106
+  'CID_6474140466': ['ch88105', 'ch88106'],
+
+  // Predicto - EST - 06: channels ch88107, ch88108
+  'CID_4920639194': ['ch88107', 'ch88108'],
+
+  // Predicto - EST - 07: channels ch88109, ch88110
+  'CID_7282297343': ['ch88109', 'ch88110'],
+
+  // Predicto - EST - 08: channels ch88111, ch88112
+  'CID_1298005744': ['ch88111', 'ch88112'],
+
+  // Add more account-channel mappings as needed
+};
+
+/**
+ * Check if an account has access to a specific channel
+ */
+export function hasAccessToChannel(accountId: string | null, channelId: string): boolean {
+  if (!accountId) return false;
+
+  // Normalize account ID
+  const normalizedAccountId = accountId.startsWith('CID_') ? accountId : `CID_${accountId}`;
+
+  const allowedChannels = ACCOUNT_CHANNEL_ACCESS[normalizedAccountId];
+  if (!allowedChannels) {
+    // If no specific channel access is defined, deny access
+    return false;
+  }
+
+  return allowedChannels.includes(channelId);
+}
+
+/**
+ * Get all channels an account has access to
+ */
+export function getAllowedChannels(accountId: string | null): string[] {
+  if (!accountId) return [];
+
+  // Normalize account ID
+  const normalizedAccountId = accountId.startsWith('CID_') ? accountId : `CID_${accountId}`;
+
+  return ACCOUNT_CHANNEL_ACCESS[normalizedAccountId] || [];
+}
+
+/**
+ * Filter channel data based on account access
+ * Returns only the channels that the account has access to
+ */
+export function filterChannelsByAccess<T extends { campaign_id?: string; channel_ids?: string[] }>(
+  accountId: string | null,
+  data: T[]
+): T[] {
+  if (!accountId) return [];
+
+  const allowedChannels = getAllowedChannels(accountId);
+
+  // If no channel restrictions, return all data
+  if (allowedChannels.length === 0) {
+    return data;
+  }
+
+  // Filter data to only include allowed channels
+  return data.filter(item => {
+    // Check if item has channel_ids array
+    if (item.channel_ids && Array.isArray(item.channel_ids)) {
+      return item.channel_ids.some(channelId => allowedChannels.includes(channelId));
+    }
+
+    // Check if item has campaign_id (which might be a channel_id)
+    if (item.campaign_id) {
+      return allowedChannels.includes(item.campaign_id);
+    }
+
+    return false;
+  });
+}
+
+/**
+ * Check if account should see all channels (admin override)
+ * Admin accounts or accounts without specific channel restrictions see everything
+ */
+export function canAccessAllChannels(accountId: string | null, isAdmin: boolean): boolean {
+  if (!accountId) return false;
+  if (isAdmin) return true;
+
+  // Normalize account ID
+  const normalizedAccountId = accountId.startsWith('CID_') ? accountId : `CID_${accountId}`;
+
+  // If no channel access defined, assume they can see all (backward compatibility)
+  return !ACCOUNT_CHANNEL_ACCESS[normalizedAccountId];
+}
+
+/**
+ * Get channel access summary for an account
+ * Returns information about the account's channel access configuration
+ */
+export function getChannelAccessSummary(accountId: string | null): {
+  hasChannelRestrictions: boolean;
+  allowedChannels: string[];
+  channelCount: number;
+} {
+  if (!accountId) {
+    return {
+      hasChannelRestrictions: false,
+      allowedChannels: [],
+      channelCount: 0,
+    };
+  }
+
+  const normalizedAccountId = accountId.startsWith('CID_') ? accountId : `CID_${accountId}`;
+  const allowedChannels = ACCOUNT_CHANNEL_ACCESS[normalizedAccountId] || [];
+
+  return {
+    hasChannelRestrictions: allowedChannels.length > 0,
+    allowedChannels,
+    channelCount: allowedChannels.length,
+  };
+}
+
+/**
+ * Validate and filter Predicto revenue data by channel access
+ * Only returns revenue records for channels the account has access to
+ */
+export function filterPredictoRevenueByChannelAccess(
+  accountId: string | null,
+  revenueData: Array<{ custom_channel_id?: string; [key: string]: any }>
+): Array<{ custom_channel_id?: string; [key: string]: any }> {
+  if (!accountId) return [];
+
+  const allowedChannels = getAllowedChannels(accountId);
+
+  // If no channel restrictions, return all data
+  if (allowedChannels.length === 0) {
+    return revenueData;
+  }
+
+  // Filter to only allowed channels
+  return revenueData.filter(record => {
+    if (!record.custom_channel_id) return false;
+    return allowedChannels.includes(record.custom_channel_id);
+  });
+}
+
+/**
+ * Get all accounts that have access to a specific channel
+ * Useful for finding which accounts should see data for a given channel
+ */
+export function getAccountsWithChannelAccess(channelId: string): string[] {
+  const accountsWithAccess: string[] = [];
+
+  for (const [accountId, channels] of Object.entries(ACCOUNT_CHANNEL_ACCESS)) {
+    if (channels.includes(channelId)) {
+      accountsWithAccess.push(accountId);
+    }
+  }
+
+  return accountsWithAccess;
+}
+
+/**
+ * Validate if multiple channels are all accessible by an account
+ * Returns true only if ALL channels are accessible
+ */
+export function hasAccessToAllChannels(accountId: string | null, channelIds: string[]): boolean {
+  if (!accountId || channelIds.length === 0) return false;
+
+  const allowedChannels = getAllowedChannels(accountId);
+
+  // If no restrictions, has access to all
+  if (allowedChannels.length === 0) return true;
+
+  // Check if all requested channels are in allowed list
+  return channelIds.every(channelId => allowedChannels.includes(channelId));
+}
+
+/**
+ * Get channel access intersection between multiple accounts
+ * Returns channels that ALL specified accounts have access to
+ */
+export function getSharedChannelAccess(accountIds: string[]): string[] {
+  if (accountIds.length === 0) return [];
+
+  const normalizedIds = accountIds.map(id => (id.startsWith('CID_') ? id : `CID_${id}`));
+
+  // Get channels for first account
+  const firstAccountChannels = getAllowedChannels(normalizedIds[0]);
+
+  if (firstAccountChannels.length === 0) return [];
+
+  // Find intersection with other accounts
+  return firstAccountChannels.filter(channel =>
+    normalizedIds.every(accountId => hasAccessToChannel(accountId, channel))
+  );
 }

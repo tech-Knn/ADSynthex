@@ -30,6 +30,46 @@ const CUSTOMER_ACCOUNTS = [
     value: null
   },
   {
+    id: 'CID_2382992113',
+    name: 'Predicto - EST - 01',
+    value: '2382992113'
+  },
+  {
+    id: 'CID_1640518611',
+    name: 'Predicto - EST - 02',
+    value: '1640518611'
+  },
+  {
+    id: 'CID_8091270364',
+    name: 'Predicto - EST - 03',
+    value: '8091270364'
+  },
+  {
+    id: 'CID_8846129452',
+    name: 'Predicto - EST - 04',
+    value: '8846129452'
+  },
+  {
+    id: 'CID_6474140466',
+    name: 'Predicto - EST - 05',
+    value: '6474140466'
+  },
+  {
+    id: 'CID_4920639194',
+    name: 'Predicto - EST - 06',
+    value: '4920639194'
+  },
+  {
+    id: 'CID_7282297343',
+    name: 'Predicto - EST - 07',
+    value: '7282297343'
+  },
+  {
+    id: 'CID_1298005744',
+    name: 'Predicto - EST - 08',
+    value: '1298005744'
+  },
+  {
     id: 'CID_5416418019',
     name: 'Compado - UTC - 01',
     value: '5416418019'
@@ -330,6 +370,7 @@ const getFeedTypeFromPathname = (pathname: string): FeedType | null => {
   if (pathname === '/compado') return 'compado';
   if (pathname === '/inuvo-dashboard') return 'inuvo';
   if (pathname === '/adsense') return 'adsense';
+  if (pathname === '/predicto') return 'predicto';
   return null;
 };
 
@@ -393,7 +434,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     if (pathname === '/inuvo-dashboard') return '2';
     if (pathname === '/compado') return '4';
     if (pathname === '/adsense') return '7';
-    if (pathname === '/predicto-dashboard') return '5';
+    if (pathname === '/predicto') return '5';
     return '1'; // Default to dashboard
   };
   
@@ -425,7 +466,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         console.log(`[DashboardLayout] User ${accountId} has access to feeds:`, feeds);
       } else if (authType === 'admin') {
         // Admin has access to all feeds
-        setAllowedFeeds(['adscom', 'compado', 'inuvo', 'adsense']);
+        setAllowedFeeds(['adscom', 'compado', 'inuvo', 'adsense', 'predicto']);
       }
 
       // If not admin and we have an account ID, select it by default
@@ -592,11 +633,12 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 icon: <FileSearchOutlined />,
                 label: <Link href="/adsense">AFS</Link>,
               }] : []),
-              // {
-              //   key: '5',
-              //   icon: <GoogleOutlined />,
-              //   label: <Link href="/predicto-dashboard">Predicto GDN</Link>,
-              // },
+              // Predicto - Only show if user has 'predicto' access
+              ...(allowedFeeds.includes('predicto') ? [{
+                key: '5',
+                icon: <GoogleOutlined />,
+                label: <Link href="/predicto">Predicto</Link>,
+              }] : []),
               // {
               //   key: '6',
               //   icon: <RocketOutlined />,

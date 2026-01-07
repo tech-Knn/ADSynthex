@@ -14,7 +14,7 @@ interface CacheEntry {
   timestamp: number;
   ttl: number;
   source: 'memory' | 'redis' | 'api';
-  dataType?: 'google-ads' | 'adscom' | 'compado' | 'unified';
+  dataType?: 'google-ads' | 'adscom' | 'compado' | 'unified' | 'predicto';
   compressed?: boolean; // New flag to indicate compression
 }
 
@@ -31,7 +31,7 @@ interface CacheStats {
 
 interface CacheOptions {
   ttl?: number;
-  dataType?: 'google-ads' | 'adscom' | 'compado' | 'unified';
+  dataType?: 'google-ads' | 'adscom' | 'compado' | 'unified' | 'predicto';
   priority?: 'high' | 'medium' | 'low';
   forceRefresh?: boolean;
 }
@@ -65,6 +65,11 @@ export class RedisCacheManager {
       current: 7200,     // 2 hours (was 1h) - Conversions are relatively stable
       recent: 21600,     // 6 hours (was 2h)
       historical: 86400  // 24 hours (was 4h)
+    },
+    'predicto': {
+      current: 1800,     // 30 min for current data - Predicto revenue updates frequently
+      recent: 7200,      // 2 hours for recent data
+      historical: 21600  // 6 hours for historical data
     },
     'unified': {
       current: 1800,     // 30 min for cost+revenue combined view (was 10min)
@@ -164,7 +169,7 @@ export class RedisCacheManager {
    * CRITICAL: Skip Redis for large datasets (>8MB) to prevent Upstash limit errors
    * OPTIMIZED: Compresses data before checking size limits
    */
-  async set(key: string, data: any, options: CacheOptions = {}): Promise<void> {
+  async set(key: string, data: any, p0: number, p1: { dataType: string; }, options: CacheOptions = {}): Promise<void> {
     try {
       const {
         ttl: customTTL,
@@ -439,7 +444,7 @@ export class RedisCacheManager {
     };
   }
 
-  private setInMemory(key: string, data: any, ttl: number, dataType?: 'google-ads' | 'adscom' | 'compado' | 'unified'): void {
+  private setInMemory(key: string, data: any, ttl: number, dataType?: 'google-ads' | 'adscom' | 'compado' | 'unified' | 'predicto'): void {
     const entry: CacheEntry = {
       data,
       timestamp: Date.now(),
@@ -487,7 +492,7 @@ export class RedisCacheManager {
     }
   }
 
-  private determineTTL(key: string, dataType?: 'google-ads' | 'adscom' | 'compado' | 'unified'): number {
+  private determineTTL(key: string, dataType?: 'google-ads' | 'adscom' | 'compado' | 'unified' | 'predicto'): number {
     const config = this.ttlConfig[dataType as keyof typeof this.ttlConfig] || this.ttlConfig['google-ads'];
 
     // Extract dates from key to determine if data is current, recent, or historical
