@@ -22,16 +22,18 @@ interface PredictoApiResponse {
 
 export class PredictoApiClient {
   private baseUrl: string;
-  private authToken: string;
   private maxDataRangeDays = 90;
 
   constructor() {
     this.baseUrl = process.env.PREDICTO_API_URL || 'https://dashboard-server.predicto.ai';
-    this.authToken = process.env.PREDICTO_AUTH_TOKEN || '';
+  }
 
-    if (!this.authToken) {
+  private getAuthToken(): string {
+    const authToken = process.env.PREDICTO_AUTH_TOKEN;
+    if (!authToken) {
       throw new Error('PREDICTO_AUTH_TOKEN environment variable is not set');
     }
+    return authToken;
   }
 
   async fetchRevenueData(params: PredictoApiParams): Promise<PredictoRevenueData[]> {
@@ -61,8 +63,8 @@ export class PredictoApiClient {
       {
         method: 'GET',
         headers: {
-          Authorization: `Bearer ${this.authToken}`,
-          
+          Authorization: `Bearer ${this.getAuthToken()}`,
+
           'Content-Type': 'application/json',
         },
       }

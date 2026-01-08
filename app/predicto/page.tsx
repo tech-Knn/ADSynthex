@@ -373,51 +373,6 @@ export default function PredictoPage() {
                 </Col>
               </Row>
 
-              {/* Secondary Metrics */}
-              <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                <Col xs={24} sm={8} lg={6}>
-                  <Card>
-                    <Statistic
-                      title="Total Campaigns"
-                      value={data.summary.total_campaigns}
-                      valueStyle={{ fontSize: '20px' }}
-                    />
-                  </Card>
-                </Col>
-                <Col xs={24} sm={8} lg={6}>
-                  <Card>
-                    <Statistic
-                      title="Matched Campaigns"
-                      value={data.summary.campaigns_matched}
-                      suffix={`/ ${data.summary.total_campaigns}`}
-                      valueStyle={{ fontSize: '20px', color: '#1890ff' }}
-                    />
-                  </Card>
-                </Col>
-                <Col xs={24} sm={8} lg={6}>
-                  <Card>
-                    <Statistic
-                      title="Match Rate"
-                      value={data.summary.match_rate}
-                      precision={1}
-                      suffix="%"
-                      valueStyle={{ fontSize: '20px', color: '#722ed1' }}
-                    />
-                  </Card>
-                </Col>
-                <Col xs={24} sm={8} lg={6}>
-                  <Card>
-                    <Statistic
-                      title="Average ROAS"
-                      value={data.summary.average_roas}
-                      precision={2}
-                      suffix="x"
-                      valueStyle={{ fontSize: '20px', color: '#13c2c2' }}
-                    />
-                  </Card>
-                </Col>
-              </Row>
-
               {/* Cost & Revenue Table */}
               <Card title={<Title level={4}>Campaign Cost & Revenue Analysis</Title>}>
                 <Table
