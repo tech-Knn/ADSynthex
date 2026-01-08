@@ -25,11 +25,24 @@ const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 const { Option } = Select;
 
+interface AccountSummary {
+  customer_id: string;
+  account_name: string;
+  total_campaigns: number;
+  campaigns_matched: number;
+  total_cost: number;
+  total_revenue: number;
+  total_profit: number;
+  roi: number;
+  roas: number;
+}
+
 interface PredictoCostRevenueResponse {
   google_ads_data: any;
   predicto_data: any;
   cost_revenue_mapping: any[];
   campaign_aggregated: any[];
+  account_summaries?: AccountSummary[];
   summary: any;
   _source: string;
   _timestamp: string;
@@ -372,6 +385,109 @@ export default function PredictoPage() {
                   </Card>
                 </Col>
               </Row>
+
+              {/* Account-Level Summaries (for multi-account view) */}
+              {data.account_summaries && data.account_summaries.length > 0 && (
+                <Card
+                  title={<Title level={4}>Account-Level Performance</Title>}
+                  style={{ marginBottom: 24 }}
+                >
+                  <Table
+                    columns={[
+                      {
+                        title: 'Account',
+                        dataIndex: 'account_name',
+                        key: 'account_name',
+                        fixed: 'left',
+                        width: 200,
+                        render: (name: string) => <Text strong>{name}</Text>,
+                      },
+                      {
+                        title: 'Campaigns',
+                        dataIndex: 'total_campaigns',
+                        key: 'total_campaigns',
+                        width: 100,
+                        render: (count: number) => <Text>{count}</Text>,
+                      },
+                      {
+                        title: 'Matched',
+                        dataIndex: 'campaigns_matched',
+                        key: 'campaigns_matched',
+                        width: 100,
+                        render: (matched: number, record: AccountSummary) => (
+                          <Text>{matched}/{record.total_campaigns}</Text>
+                        ),
+                      },
+                      {
+                        title: 'Cost',
+                        dataIndex: 'total_cost',
+                        key: 'total_cost',
+                        width: 120,
+                        render: (cost: number) => (
+                          <Text strong style={{ color: '#ff4d4f' }}>
+                            ${cost.toFixed(2)}
+                          </Text>
+                        ),
+                        sorter: (a: AccountSummary, b: AccountSummary) => a.total_cost - b.total_cost,
+                        defaultSortOrder: 'descend',
+                      },
+                      {
+                        title: 'Revenue',
+                        dataIndex: 'total_revenue',
+                        key: 'total_revenue',
+                        width: 120,
+                        render: (revenue: number) => (
+                          <Text strong style={{ color: '#52c41a' }}>
+                            ${revenue.toFixed(2)}
+                          </Text>
+                        ),
+                        sorter: (a: AccountSummary, b: AccountSummary) => a.total_revenue - b.total_revenue,
+                      },
+                      {
+                        title: 'Profit',
+                        dataIndex: 'total_profit',
+                        key: 'total_profit',
+                        width: 120,
+                        render: (profit: number) => (
+                          <Text strong style={{ color: profit >= 0 ? '#52c41a' : '#ff4d4f' }}>
+                            ${profit.toFixed(2)}
+                          </Text>
+                        ),
+                        sorter: (a: AccountSummary, b: AccountSummary) => a.total_profit - b.total_profit,
+                      },
+                      {
+                        title: 'ROI',
+                        dataIndex: 'roi',
+                        key: 'roi',
+                        width: 100,
+                        render: (roi: number) => (
+                          <Text strong style={{ color: roi >= 0 ? '#52c41a' : '#ff4d4f' }}>
+                            {roi.toFixed(1)}%
+                          </Text>
+                        ),
+                        sorter: (a: AccountSummary, b: AccountSummary) => a.roi - b.roi,
+                      },
+                      {
+                        title: 'ROAS',
+                        dataIndex: 'roas',
+                        key: 'roas',
+                        width: 100,
+                        render: (roas: number) => (
+                          <Text strong style={{ color: roas >= 1 ? '#52c41a' : '#ff4d4f' }}>
+                            {roas.toFixed(2)}x
+                          </Text>
+                        ),
+                        sorter: (a: AccountSummary, b: AccountSummary) => a.roas - b.roas,
+                      },
+                    ]}
+                    dataSource={data.account_summaries}
+                    rowKey="customer_id"
+                    pagination={false}
+                    size="middle"
+                    scroll={{ x: 900 }}
+                  />
+                </Card>
+              )}
 
               {/* Cost & Revenue Table */}
               <Card title={<Title level={4}>Campaign Cost & Revenue Analysis</Title>}>
