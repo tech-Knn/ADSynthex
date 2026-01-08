@@ -115,11 +115,18 @@ export async function POST(request: NextRequest) {
         // This ensures users only see their own account's revenue
         if (!isMultiAccount) {
           const beforeFilter = filteredData.length;
-          filteredData = filteredData.filter((item: any) => item.customer_id && item.customer_id !== 'unknown');
+          // Smart filter: Always keep items with cost data, only filter out revenue-only items without customer_id
+          filteredData = filteredData.filter((item: any) => {
+            // Always keep if has cost data (it's from this account's campaigns)
+            if (item.has_cost_data) return true;
+
+            // For revenue-only items, only keep if it has valid customer_id
+            return item.customer_id && item.customer_id !== 'unknown';
+          });
           const afterFilter = filteredData.length;
 
           console.log(`[PREDICTO_COST_REVENUE] Single account cache: Filtered out ${beforeFilter - afterFilter} orphaned channels`);
-          console.log(`[PREDICTO_COST_REVENUE] Showing only ${afterFilter} items belonging to this account`);
+          console.log(`[PREDICTO_COST_REVENUE] Showing ${afterFilter} items: ${filteredData.filter((i: any) => i.has_cost_data).length} with cost, ${filteredData.filter((i: any) => i.has_revenue_data).length} with revenue`);
         }
 
         // Recalculate summary and account summaries for filtered data
@@ -467,7 +474,6 @@ export async function POST(request: NextRequest) {
         );
 
         const beforeFilter = combined.length;
-        const channelIdsArray = Array.from(accountChannelIds);
 
         // Filter to only include items where channel_ids overlap with account's channels
         combined = combined.filter(item => {
@@ -496,11 +502,22 @@ export async function POST(request: NextRequest) {
       // This ensures users only see their own account's revenue
       if (!isMultiAccount) {
         const beforeFilter = combined.length;
-        combined = combined.filter(item => item.customer_id && item.customer_id !== 'unknown');
+        // Smart filter: Keep items that:
+        // 1. Have cost data (from this account's campaigns) - always keep
+        // 2. Have revenue data AND valid customer_id (matched revenue)
+        // Remove: Pure revenue-only items without customer_id (orphaned channels from other accounts)
+        combined = combined.filter(item => {
+          // Always keep if has cost data (it's from this account's campaigns)
+          if (item.has_cost_data) return true;
+
+          // For revenue-only items, only keep if it has valid customer_id
+          // This filters out orphaned channels from other accounts
+          return item.customer_id && item.customer_id !== 'unknown';
+        });
         const afterFilter = combined.length;
 
         console.log(`[PREDICTO_COST_REVENUE] Single account view: Filtered out ${beforeFilter - afterFilter} orphaned channels (revenue from other accounts)`);
-        console.log(`[PREDICTO_COST_REVENUE] Showing only ${afterFilter} items belonging to this account`);
+        console.log(`[PREDICTO_COST_REVENUE] Showing ${afterFilter} items: ${combined.filter(i => i.has_cost_data).length} with cost, ${combined.filter(i => i.has_revenue_data).length} with revenue`);
       } else {
         console.log(`[PREDICTO_COST_REVENUE] Multi-account view: Showing all ${combined.length} items including orphaned channels`);
       }
