@@ -87,12 +87,18 @@ export async function POST(request: NextRequest) {
 
     const isMultiAccount = accountIds && Array.isArray(accountIds) && accountIds.length > 0;
 
+    // CRITICAL FIX: Re-assign customerId and accountIds after access control modifications
+    // The destructured variables from line 36 don't automatically update when body is modified
+    const finalCustomerId = body.customerId || customerId;
+    const finalAccountIds = body.accountIds || accountIds;
+
     console.log(
       `[PREDICTO_COST_REVENUE] ${forceRefresh ? 'Force refresh requested - skipping Redis cache' : 'Checking Redis cache'}...`
     );
+    console.log(`[PREDICTO_COST_REVENUE] Final params: customerId=${finalCustomerId}, accountIds=${finalAccountIds ? finalAccountIds.join(',') : 'none'}`);
 
     // ==================== REDIS AGGREGATED CACHE ====================
-    const aggregatedCacheKey = `predicto-agg:${isMultiAccount ? accountIds?.join(',') : customerId || 'all'}:${startDate}:${endDate}`;
+    const aggregatedCacheKey = `predicto-agg:${isMultiAccount ? finalAccountIds?.join(',') : finalCustomerId || 'all'}:${startDate}:${endDate}`;
 
     if (!forceRefresh) {
       const cachedAggregated = await redisCacheManager.get(aggregatedCacheKey, {
@@ -158,7 +164,7 @@ export async function POST(request: NextRequest) {
 
     console.log('[PREDICTO_COST_REVENUE] No aggregated cache, fetching from API...');
 
-    const accountsToProcess = isMultiAccount ? accountIds : customerId ? [customerId] : [];
+    const accountsToProcess = isMultiAccount ? finalAccountIds : finalCustomerId ? [finalCustomerId] : [];
 
     const startDateObj = new Date(startDate);
     const endDateObj = new Date(endDate);
@@ -167,7 +173,7 @@ export async function POST(request: NextRequest) {
     );
 
     console.log(
-      `[PREDICTO_COST_REVENUE] Mapping request: ${startDate} to ${endDate} (${daysDiff} days), Accounts: ${isMultiAccount ? accountIds.join(', ') : customerId || 'all'}, forceRefresh: ${forceRefresh}`
+      `[PREDICTO_COST_REVENUE] Mapping request: ${startDate} to ${endDate} (${daysDiff} days), Accounts: ${isMultiAccount ? finalAccountIds.join(', ') : finalCustomerId || 'all'}, forceRefresh: ${forceRefresh}`
     );
 
     if (daysDiff > 30) {
@@ -227,7 +233,7 @@ export async function POST(request: NextRequest) {
         // Clear combined aggregated cache
         try {
           const { redisClient } = await import('@/lib/redis-client');
-          const combinedAggCacheKey = `predicto-agg:${isMultiAccount ? accountIds?.join(',') : customerId || 'all'}:${startDate}:${endDate}`;
+          const combinedAggCacheKey = `predicto-agg:${isMultiAccount ? finalAccountIds?.join(',') : finalCustomerId || 'all'}:${startDate}:${endDate}`;
           await redisClient.del(combinedAggCacheKey);
           console.log(`[PREDICTO_COST_REVENUE] ✓ Cleared combined aggregated cache: ${combinedAggCacheKey}`);
         } catch (cacheError) {
@@ -244,27 +250,27 @@ export async function POST(request: NextRequest) {
       if (isMultiAccount) {
         const BATCH_SIZE = 5;
         console.log(
-          `[PREDICTO_COST_REVENUE] Fetching data for ${accountIds.length} accounts in batches of ${BATCH_SIZE}...`
+          `[PREDICTO_COST_REVENUE] Fetching data for ${finalAccountIds.length} accounts in batches of ${BATCH_SIZE}...`
         );
 
         const allowStaleForMulti = true;
         const maxWaitTime = daysDiff > 14 ? 30000 : daysDiff > 7 ? 20000 : 10000;
 
         const allAccountsData: any[] = [];
-        for (let i = 0; i < accountIds.length; i += BATCH_SIZE) {
-          const batch = accountIds.slice(i, i + BATCH_SIZE);
+        for (let i = 0; i < finalAccountIds.length; i += BATCH_SIZE) {
+          const batch = finalAccountIds.slice(i, i + BATCH_SIZE);
           const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-          const totalBatches = Math.ceil(accountIds.length / BATCH_SIZE);
+          const totalBatches = Math.ceil(finalAccountIds.length / BATCH_SIZE);
 
           console.log(
             `[PREDICTO_COST_REVENUE] 🔄 Processing batch ${batchNum}/${totalBatches} (${batch.length} accounts)...`
           );
 
           const batchResults = await Promise.all(
-            batch.map((accId, index) => {
+            batch.map((accId: string, index: number) => {
               const globalIndex = i + index + 1;
               console.log(
-                `[PREDICTO_COST_REVENUE] Starting fetch ${globalIndex}/${accountIds.length}: Account ${accId}`
+                `[PREDICTO_COST_REVENUE] Starting fetch ${globalIndex}/${finalAccountIds.length}: Account ${accId}`
               );
               return bulletproofAPI.getData(startDate, endDate, accId, {
                 priority: 8,
@@ -288,7 +294,8 @@ export async function POST(request: NextRequest) {
         const allowStaleSingle = !actualForceRefresh || quotaStatus.usagePercentage > 75;
         const maxWaitTime = daysDiff > 14 ? 30000 : daysDiff > 7 ? 20000 : 10000;
 
-        googleAdsDataPromises = bulletproofAPI.getData(startDate, endDate, customerId, {
+        console.log(`[PREDICTO_COST_REVENUE] Fetching single account data: customerId=${finalCustomerId}`);
+        googleAdsDataPromises = bulletproofAPI.getData(startDate, endDate, finalCustomerId, {
           priority: 8,
           allowStale: allowStaleSingle,
           maxWait: maxWaitTime,
