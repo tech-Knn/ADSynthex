@@ -110,12 +110,7 @@ export default function PredictoPage() {
       // Set admin flag
       setIsAdmin(authType === 'admin');
 
-      // Add "All Accounts" option at the beginning
-      const accountsWithAll = [ALL_ACCOUNTS_OPTION, ...PREDICTO_ENABLED_ACCOUNTS];
-      console.log('[PREDICTO] Setting accounts:', accountsWithAll.length, 'accounts');
-      setAccounts(accountsWithAll);
-
-      // For regular users, auto-select their account (without CID_ prefix for API calls)
+      // For regular users, only show their account (without CID_ prefix for API calls)
       if (authType === 'user' && userAccountId) {
         const accountValue = userAccountId.replace('CID_', '');
 
@@ -124,17 +119,23 @@ export default function PredictoPage() {
 
         if (matchingAccount) {
           console.log(`[PREDICTO] User account found: ${matchingAccount.name} (${accountValue})`);
+          // Only show user's own account in dropdown
+          setAccounts([matchingAccount]);
           setSelectedAccount(accountValue);
         } else {
           console.warn(`[PREDICTO] User account ${userAccountId} not found in PREDICTO_ENABLED_ACCOUNTS`);
           setError(`Your account (${userAccountId}) does not have access to Predicto`);
+          setAccounts([]);
         }
       } else if (authType === 'admin') {
-        // Admin: Default to "All Accounts"
+        // Admin: Show "All Accounts" option + all individual accounts
+        const accountsWithAll = [ALL_ACCOUNTS_OPTION, ...PREDICTO_ENABLED_ACCOUNTS];
         console.log('[PREDICTO] Admin logged in, showing all accounts');
+        setAccounts(accountsWithAll);
         setSelectedAccount(ALL_ACCOUNTS_OPTION.id);
       } else {
         console.warn('[PREDICTO] No auth_type cookie found');
+        setAccounts([]);
       }
     } catch (error) {
       console.error('Error fetching accounts:', error);

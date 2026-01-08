@@ -85,20 +85,21 @@ export async function POST(request: NextRequest) {
       console.log(`[PREDICTO_COST_REVENUE] User ${userAccountId} accessing their own account data`);
     }
 
-    const isMultiAccount = accountIds && Array.isArray(accountIds) && accountIds.length > 0;
-
     // CRITICAL FIX: Re-assign customerId and accountIds after access control modifications
     // The destructured variables from line 36 don't automatically update when body is modified
     const finalCustomerId = body.customerId || customerId;
     const finalAccountIds = body.accountIds || accountIds;
 
+    // Calculate isMultiAccount AFTER resolving final values
+    const isMultiAccount = finalAccountIds && Array.isArray(finalAccountIds) && finalAccountIds.length > 0;
+
     console.log(
       `[PREDICTO_COST_REVENUE] ${forceRefresh ? 'Force refresh requested - skipping Redis cache' : 'Checking Redis cache'}...`
     );
-    console.log(`[PREDICTO_COST_REVENUE] Final params: customerId=${finalCustomerId}, accountIds=${finalAccountIds ? finalAccountIds.join(',') : 'none'}`);
+    console.log(`[PREDICTO_COST_REVENUE] Final params: customerId=${finalCustomerId}, accountIds=${Array.isArray(finalAccountIds) ? finalAccountIds.join(',') : 'none'}, isMultiAccount=${isMultiAccount}`);
 
     // ==================== REDIS AGGREGATED CACHE ====================
-    const aggregatedCacheKey = `predicto-agg:${isMultiAccount ? finalAccountIds?.join(',') : finalCustomerId || 'all'}:${startDate}:${endDate}`;
+    const aggregatedCacheKey = `predicto-agg:${isMultiAccount && Array.isArray(finalAccountIds) ? finalAccountIds.join(',') : finalCustomerId || 'all'}:${startDate}:${endDate}`;
 
     if (!forceRefresh) {
       const cachedAggregated = await redisCacheManager.get(aggregatedCacheKey, {
@@ -173,7 +174,7 @@ export async function POST(request: NextRequest) {
     );
 
     console.log(
-      `[PREDICTO_COST_REVENUE] Mapping request: ${startDate} to ${endDate} (${daysDiff} days), Accounts: ${isMultiAccount ? finalAccountIds.join(', ') : finalCustomerId || 'all'}, forceRefresh: ${forceRefresh}`
+      `[PREDICTO_COST_REVENUE] Mapping request: ${startDate} to ${endDate} (${daysDiff} days), Accounts: ${isMultiAccount && Array.isArray(finalAccountIds) ? finalAccountIds.join(', ') : finalCustomerId || 'all'}, forceRefresh: ${forceRefresh}`
     );
 
     if (daysDiff > 30) {
@@ -233,7 +234,7 @@ export async function POST(request: NextRequest) {
         // Clear combined aggregated cache
         try {
           const { redisClient } = await import('@/lib/redis-client');
-          const combinedAggCacheKey = `predicto-agg:${isMultiAccount ? finalAccountIds?.join(',') : finalCustomerId || 'all'}:${startDate}:${endDate}`;
+          const combinedAggCacheKey = `predicto-agg:${isMultiAccount && Array.isArray(finalAccountIds) ? finalAccountIds.join(',') : finalCustomerId || 'all'}:${startDate}:${endDate}`;
           await redisClient.del(combinedAggCacheKey);
           console.log(`[PREDICTO_COST_REVENUE] ✓ Cleared combined aggregated cache: ${combinedAggCacheKey}`);
         } catch (cacheError) {
@@ -247,7 +248,7 @@ export async function POST(request: NextRequest) {
 
       let googleAdsDataPromises;
 
-      if (isMultiAccount) {
+      if (isMultiAccount && Array.isArray(finalAccountIds)) {
         const BATCH_SIZE = 5;
         console.log(
           `[PREDICTO_COST_REVENUE] Fetching data for ${finalAccountIds.length} accounts in batches of ${BATCH_SIZE}...`
