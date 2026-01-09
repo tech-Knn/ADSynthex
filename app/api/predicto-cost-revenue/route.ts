@@ -111,29 +111,56 @@ export async function POST(request: NextRequest) {
           `[PREDICTO_COST_REVENUE] Serving cached aggregated data (${Math.round(cachedAggregated.age / 1000)}s old)`
         );
 
-        // For cached data, we can't dynamically detect channels (no Google Ads data yet)
-        // So for single account views, we show all data and rely on customer_id filtering below
+        // For cached data, use predefined channel mapping
         let filteredData = cachedAggregated.data.campaign_aggregated;
 
-        console.log(`[PREDICTO_COST_REVENUE] Using cached data - channel filtering will be applied by customer_id`);
+        console.log(`[PREDICTO_COST_REVENUE] Using cached data - applying predefined channel filtering`);
 
+        // CRITICAL: For individual account views, filter by predefined channels
+        if (!isMultiAccount && finalCustomerId) {
+          const { getAllowedChannels } = await import('@/lib/account-access-control');
+          const normalizedCustomerId = finalCustomerId.toString().startsWith('CID_')
+            ? finalCustomerId.toString()
+            : `CID_${finalCustomerId}`;
 
-        // CRITICAL: For individual account views, filter out orphaned channels from cache
-        // This ensures users only see their own account's revenue
-        if (!isMultiAccount) {
-          const beforeFilter = filteredData.length;
-          // Smart filter: Always keep items with cost data, only filter out revenue-only items without customer_id
-          filteredData = filteredData.filter((item: any) => {
-            // Always keep if has cost data (it's from this account's campaigns)
-            if (item.has_cost_data) return true;
+          const predefinedChannels = getAllowedChannels(normalizedCustomerId);
 
-            // For revenue-only items, only keep if it has valid customer_id
-            return item.customer_id && item.customer_id !== 'unknown';
-          });
-          const afterFilter = filteredData.length;
+          if (predefinedChannels.length > 0) {
+            // Filter by predefined channels
+            const accountChannelIds = new Set(predefinedChannels);
+            const beforeFilter = filteredData.length;
 
-          console.log(`[PREDICTO_COST_REVENUE] Single account cache: Filtered out ${beforeFilter - afterFilter} orphaned channels`);
-          console.log(`[PREDICTO_COST_REVENUE] Showing ${afterFilter} items: ${filteredData.filter((i: any) => i.has_cost_data).length} with cost, ${filteredData.filter((i: any) => i.has_revenue_data).length} with revenue`);
+            filteredData = filteredData.filter((item: any) => {
+              // Always keep if has cost data (it's from this account's campaigns)
+              if (item.has_cost_data) return true;
+
+              // For revenue-only items, check if channel_ids overlap with allowed channels
+              if (item.channel_ids && Array.isArray(item.channel_ids)) {
+                return item.channel_ids.some((channelId: string) => accountChannelIds.has(channelId));
+              }
+
+              // Fallback: check if item has valid customer_id
+              return item.customer_id && item.customer_id !== 'unknown';
+            });
+
+            const afterFilter = filteredData.length;
+            console.log(`[PREDICTO_COST_REVENUE] 🎯 Cache filtered by predefined channels (${predefinedChannels.join(', ')}): ${beforeFilter} → ${afterFilter} items`);
+          } else {
+            // Fallback to customer_id filtering if no predefined channels
+            const beforeFilter = filteredData.length;
+            filteredData = filteredData.filter((item: any) => {
+              // Always keep if has cost data (it's from this account's campaigns)
+              if (item.has_cost_data) return true;
+
+              // For revenue-only items, only keep if it has valid customer_id
+              return item.customer_id && item.customer_id !== 'unknown';
+            });
+            const afterFilter = filteredData.length;
+
+            console.log(`[PREDICTO_COST_REVENUE] Single account cache: Filtered out ${beforeFilter - afterFilter} orphaned channels`);
+          }
+
+          console.log(`[PREDICTO_COST_REVENUE] Showing ${filteredData.length} items: ${filteredData.filter((i: any) => i.has_cost_data).length} with cost, ${filteredData.filter((i: any) => i.has_revenue_data).length} with revenue`);
         }
 
         // Recalculate summary and account summaries for filtered data
@@ -399,29 +426,64 @@ export async function POST(request: NextRequest) {
       const campaignsWithUrls = allCampaigns.filter(c => c.final_urls && c.final_urls.length > 0);
       console.log(`[PREDICTO_COST_REVENUE] 📊 Campaigns with Final URLs: ${campaignsWithUrls.length}/${allCampaigns.length}`);
 
-      // DYNAMIC CHANNEL DETECTION: Extract channel IDs from this account's campaigns
+      // CHANNEL ACCESS CONTROL: Use predefined channel mapping from account-access-control.ts
+      const { getAllowedChannels } = await import('@/lib/account-access-control');
       const { extractChannelIdsFromUrl } = await import('@/lib/predicto-channel-mapper');
-      const accountChannelIds = new Set<string>();
 
-      if (campaignsWithUrls.length > 0) {
-        // Sample first URL to show format
-        const sampleUrl = campaignsWithUrls[0].final_urls[0];
-        console.log(`[PREDICTO_COST_REVENUE] 📎 Sample Final URL: ${sampleUrl}`);
+      let accountChannelIds = new Set<string>();
 
-        // Extract channel IDs from all campaigns
-        allCampaigns.forEach(campaign => {
-          if (campaign.final_urls && campaign.final_urls.length > 0) {
-            campaign.final_urls.forEach((url: string) => {
-              const channelIds = extractChannelIdsFromUrl(url);
-              channelIds.forEach(id => accountChannelIds.add(id));
+      // For single account views, use predefined channel access mapping
+      if (!isMultiAccount && finalCustomerId) {
+        const normalizedCustomerId = finalCustomerId.toString().startsWith('CID_')
+          ? finalCustomerId.toString()
+          : `CID_${finalCustomerId}`;
+
+        const predefinedChannels = getAllowedChannels(normalizedCustomerId);
+
+        if (predefinedChannels.length > 0) {
+          // Use predefined channel mapping (source of truth)
+          predefinedChannels.forEach(ch => accountChannelIds.add(ch));
+          console.log(`[PREDICTO_COST_REVENUE] 🎯 PREDEFINED CHANNELS: Account ${finalCustomerId} has ${accountChannelIds.size} predefined channels: ${Array.from(accountChannelIds).join(', ')}`);
+        } else {
+          // Fallback to dynamic detection only if no predefined channels exist
+          console.log(`[PREDICTO_COST_REVENUE] ℹ️  No predefined channels for account ${finalCustomerId}, using dynamic detection as fallback`);
+
+          if (campaignsWithUrls.length > 0) {
+            // Sample first URL to show format
+            const sampleUrl = campaignsWithUrls[0].final_urls[0];
+            console.log(`[PREDICTO_COST_REVENUE] 📎 Sample Final URL: ${sampleUrl}`);
+
+            // Extract channel IDs from all campaigns
+            allCampaigns.forEach(campaign => {
+              if (campaign.final_urls && campaign.final_urls.length > 0) {
+                campaign.final_urls.forEach((url: string) => {
+                  const channelIds = extractChannelIdsFromUrl(url);
+                  channelIds.forEach(id => accountChannelIds.add(id));
+                });
+              }
             });
-          }
-        });
 
-        console.log(`[PREDICTO_COST_REVENUE] 🎯 DYNAMIC DETECTION: Found ${accountChannelIds.size} channel IDs from account's campaigns: ${Array.from(accountChannelIds).join(', ')}`);
+            console.log(`[PREDICTO_COST_REVENUE] 🔍 DYNAMIC DETECTION: Found ${accountChannelIds.size} channel IDs from campaigns: ${Array.from(accountChannelIds).join(', ')}`);
+          } else {
+            console.warn(`[PREDICTO_COST_REVENUE] ⚠️  WARNING: No campaigns have Final URLs! Channel mapping will not work.`);
+            console.warn(`[PREDICTO_COST_REVENUE] ⚠️  Make sure your Google Ads campaigns have Final URLs with cid parameter (e.g., ?cid=ch88087)`);
+          }
+        }
       } else {
-        console.warn(`[PREDICTO_COST_REVENUE] ⚠️  WARNING: No campaigns have Final URLs! Channel mapping will not work.`);
-        console.warn(`[PREDICTO_COST_REVENUE] ⚠️  Make sure your Google Ads campaigns have Final URLs with cid parameter (e.g., ?cid=ch88087)`);
+        // For multi-account views, collect all channels from all accounts
+        console.log(`[PREDICTO_COST_REVENUE] Multi-account view: Using dynamic channel detection for all accounts`);
+
+        if (campaignsWithUrls.length > 0) {
+          allCampaigns.forEach(campaign => {
+            if (campaign.final_urls && campaign.final_urls.length > 0) {
+              campaign.final_urls.forEach((url: string) => {
+                const channelIds = extractChannelIdsFromUrl(url);
+                channelIds.forEach(id => accountChannelIds.add(id));
+              });
+            }
+          });
+          console.log(`[PREDICTO_COST_REVENUE] 🔍 DYNAMIC DETECTION (Multi): Found ${accountChannelIds.size} channel IDs`);
+        }
       }
 
 
@@ -446,6 +508,26 @@ export async function POST(request: NextRequest) {
         }
       });
       console.log(`[PREDICTO_COST_REVENUE] 🔖 Predicto has ${predictoChannelIds.size} unique channel IDs: ${Array.from(predictoChannelIds).slice(0, 10).join(', ')}${predictoChannelIds.size > 10 ? '...' : ''}`);
+
+      // DIAGNOSTIC: Check if account's predefined channels exist in Predicto data
+      if (!isMultiAccount && accountChannelIds.size > 0) {
+        const accountChannelsArray = Array.from(accountChannelIds);
+        const matchingChannels = accountChannelsArray.filter(ch => predictoChannelIds.has(ch));
+        const missingChannels = accountChannelsArray.filter(ch => !predictoChannelIds.has(ch));
+
+        console.log(`[PREDICTO_COST_REVENUE] 🔍 CHANNEL DIAGNOSTIC for account ${finalCustomerId}:`);
+        console.log(`[PREDICTO_COST_REVENUE]    - Account expects: ${accountChannelsArray.join(', ')}`);
+        console.log(`[PREDICTO_COST_REVENUE]    - Found in Predicto: ${matchingChannels.length > 0 ? matchingChannels.join(', ') : 'NONE'}`);
+        if (missingChannels.length > 0) {
+          console.warn(`[PREDICTO_COST_REVENUE]    - ⚠️  MISSING in Predicto: ${missingChannels.join(', ')}`);
+        }
+
+        // Calculate total revenue for account's channels
+        const accountRevenue = predictoRevenue
+          .filter(r => r.custom_channel_id && accountChannelIds.has(r.custom_channel_id))
+          .reduce((sum, r) => sum + (r.revenue || 0), 0);
+        console.log(`[PREDICTO_COST_REVENUE]    - Total revenue for account's channels: $${accountRevenue.toFixed(2)}`);
+      }
 
       // Ensure revenue is always a number (not undefined)
       const normalizedPredictoRevenue = predictoRevenue.map(record => ({
@@ -505,29 +587,39 @@ export async function POST(request: NextRequest) {
         console.log('[PREDICTO_COST_REVENUE] No channels detected - showing all data');
       }
 
-      // CRITICAL: For individual account views, filter out orphaned channels
-      // Orphaned channels are revenue-only items without customer_id (from other accounts)
-      // This ensures users only see their own account's revenue
-      if (!isMultiAccount) {
-        const beforeFilter = combined.length;
-        // Smart filter: Keep items that:
-        // 1. Have cost data (from this account's campaigns) - always keep
-        // 2. Have revenue data AND valid customer_id (matched revenue)
-        // Remove: Pure revenue-only items without customer_id (orphaned channels from other accounts)
+      // CRITICAL: For individual account views, validate that filtered items match account's channels
+      // This is a safety check AFTER channel filtering to ensure data integrity
+      if (!isMultiAccount && accountChannelIds.size > 0) {
+        const beforeValidation = combined.length;
+
+        // Validate that all items either:
+        // 1. Have cost data (from this account's campaigns), OR
+        // 2. Have channel_ids that match accountChannelIds (predefined or detected), OR
+        // 3. Have valid customer_id matching this account
         combined = combined.filter(item => {
           // Always keep if has cost data (it's from this account's campaigns)
           if (item.has_cost_data) return true;
 
-          // For revenue-only items, only keep if it has valid customer_id
-          // This filters out orphaned channels from other accounts
+          // For revenue-only items, check if channel_ids are in accountChannelIds
+          if (item.channel_ids && Array.isArray(item.channel_ids)) {
+            const hasMatchingChannel = item.channel_ids.some(channelId => accountChannelIds.has(channelId));
+            if (hasMatchingChannel) return true;
+          }
+
+          // Fallback: check if customer_id matches (for backward compatibility)
           return item.customer_id && item.customer_id !== 'unknown';
         });
-        const afterFilter = combined.length;
 
-        console.log(`[PREDICTO_COST_REVENUE] Single account view: Filtered out ${beforeFilter - afterFilter} orphaned channels (revenue from other accounts)`);
-        console.log(`[PREDICTO_COST_REVENUE] Showing ${afterFilter} items: ${combined.filter(i => i.has_cost_data).length} with cost, ${combined.filter(i => i.has_revenue_data).length} with revenue`);
+        const afterValidation = combined.length;
+
+        if (beforeValidation !== afterValidation) {
+          console.log(`[PREDICTO_COST_REVENUE] ✅ Data validation: ${beforeValidation} → ${afterValidation} items (removed ${beforeValidation - afterValidation} invalid items)`);
+        }
+        console.log(`[PREDICTO_COST_REVENUE] Final dataset: ${afterValidation} items (${combined.filter(i => i.has_cost_data).length} with cost, ${combined.filter(i => i.has_revenue_data).length} with revenue)`);
+      } else if (isMultiAccount) {
+        console.log(`[PREDICTO_COST_REVENUE] Multi-account view: Showing all ${combined.length} items`);
       } else {
-        console.log(`[PREDICTO_COST_REVENUE] Multi-account view: Showing all ${combined.length} items including orphaned channels`);
+        console.log(`[PREDICTO_COST_REVENUE] Single account (no channel restrictions): Showing all ${combined.length} items`);
       }
 
       const summary = calculateSummary(combined);
