@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { bulletproofAPI } from '@/lib/bulletproof-google-ads-api';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Test endpoint to check what Google Ads accounts are available
  * GET /api/google-ads-test-accounts?customerId=2382992113

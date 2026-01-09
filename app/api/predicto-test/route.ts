@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { predictoApiClient } from '@/lib/predicto-api';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Simple test endpoint to verify Predicto API is working
  * GET /api/predicto-test?startDate=2026-01-05&endDate=2026-01-05
