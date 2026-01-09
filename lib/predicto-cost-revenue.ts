@@ -326,6 +326,10 @@ export function mapCostRevenueByChannelId(
       campaignsWithChannels++;
     } else {
       campaignsWithoutChannels++;
+      // Log warning for campaigns with cost but no channel IDs
+      if (campaign.cost > 0) {
+        console.log(`[PREDICTO_CHANNEL_MAPPING] Campaign ${campaign.campaign_id} (${campaign.campaign_name || 'unnamed'}) has $${campaign.cost.toFixed(2)} cost but no channel IDs - check if final_urls contain cid parameter`);
+      }
     }
 
     campaignToChannelsMap.set(campaign.campaign_id, {

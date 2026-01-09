@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { startDate, endDate, customerId, accountIds, forceRefresh = false } = body;
+    const { startDate, endDate, customerId, accountIds, forceRefresh = false, customChannelIds } = body;
 
     // Validate required parameters
     if (!startDate || !endDate) {
@@ -60,8 +60,8 @@ export async function POST(request: NextRequest) {
         accountIds && Array.isArray(accountIds) && accountIds.length > 0
           ? accountIds
           : customerId
-          ? [customerId]
-          : [];
+            ? [customerId]
+            : [];
 
       const unauthorizedAccess = requestedAccounts.some((accId) => {
         const normalizedRequestedId = accId.startsWith('CID_') ? accId : `CID_${accId}`;
@@ -432,8 +432,13 @@ export async function POST(request: NextRequest) {
 
       let accountChannelIds = new Set<string>();
 
-      // For single account views, use predefined channel access mapping
-      if (!isMultiAccount && finalCustomerId) {
+      // PRIORITY 1: Use manually provided channel IDs if given by user
+      if (customChannelIds && Array.isArray(customChannelIds) && customChannelIds.length > 0) {
+        customChannelIds.forEach((ch: string) => accountChannelIds.add(ch));
+        console.log(`[PREDICTO_COST_REVENUE] MANUAL CHANNELS: User specified ${accountChannelIds.size} channel IDs: ${customChannelIds.join(', ')}`);
+      }
+      // PRIORITY 2: For single account views, use predefined channel access mapping
+      else if (!isMultiAccount && finalCustomerId) {
         const normalizedCustomerId = finalCustomerId.toString().startsWith('CID_')
           ? finalCustomerId.toString()
           : `CID_${finalCustomerId}`;
@@ -443,7 +448,7 @@ export async function POST(request: NextRequest) {
         if (predefinedChannels.length > 0) {
           // Use predefined channel mapping (source of truth)
           predefinedChannels.forEach(ch => accountChannelIds.add(ch));
-          console.log(`[PREDICTO_COST_REVENUE] 🎯 PREDEFINED CHANNELS: Account ${finalCustomerId} has ${accountChannelIds.size} predefined channels: ${Array.from(accountChannelIds).join(', ')}`);
+          console.log(`[PREDICTO_COST_REVENUE] PREDEFINED CHANNELS: Account ${finalCustomerId} has ${accountChannelIds.size} predefined channels: ${Array.from(accountChannelIds).join(', ')}`);
         } else {
           // Fallback to dynamic detection only if no predefined channels exist
           console.log(`[PREDICTO_COST_REVENUE] ℹ️  No predefined channels for account ${finalCustomerId}, using dynamic detection as fallback`);
@@ -567,14 +572,15 @@ export async function POST(request: NextRequest) {
 
         // Filter to only include items where channel_ids overlap with account's channels
         combined = combined.filter(item => {
-          // If item has channel_ids array, check for overlap
-          if (item.channel_ids && Array.isArray(item.channel_ids)) {
-            return item.channel_ids.some(channelId => accountChannelIds.has(channelId));
-          }
-          // If no channel_ids but has cost data, keep it (it's from this account's campaigns)
+          // If item has cost data, always keep it (it's from this account's campaigns)
           if (item.has_cost_data) {
             return true;
           }
+          // If item has non-empty channel_ids array, check for overlap with accountChannelIds
+          if (item.channel_ids && Array.isArray(item.channel_ids) && item.channel_ids.length > 0) {
+            return item.channel_ids.some(channelId => accountChannelIds.has(channelId));
+          }
+          // No channel_ids and no cost data - filter it out
           return false;
         });
 
@@ -667,6 +673,7 @@ export async function POST(request: NextRequest) {
           _source: 'fresh-api',
           _timestamp: new Date().toISOString(),
           _message: message,
+          _activeChannels: Array.from(accountChannelIds),
           _dataFreshness: {
             source: 'api',
             ageMinutes: 0,

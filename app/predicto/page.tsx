@@ -6,6 +6,7 @@ import {
   Typography,
   DatePicker,
   Button,
+  Input,
   Row,
   Col,
   Card,
@@ -74,6 +75,7 @@ export default function PredictoPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
+  const [customChannelIds, setCustomChannelIds] = useState<string>('');
   const [isAdmin, setIsAdmin] = useState(false);
   // Default to today's date
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>([
@@ -162,6 +164,9 @@ export default function PredictoPage() {
         startDate,
         endDate,
         forceRefresh,
+        customChannelIds: customChannelIds
+          ? customChannelIds.split(',').map(id => id.trim()).filter(Boolean)
+          : undefined,
         ...(selectedAccount === ALL_ACCOUNTS_OPTION.id
           ? { accountIds: PREDICTO_ENABLED_ACCOUNTS.map((acc) => acc.id) }
           : { customerId: selectedAccount }),
@@ -282,7 +287,23 @@ export default function PredictoPage() {
                 </div>
               </Col>
 
-              <Col xs={24} md={6} lg={10}>
+              <Col xs={24} sm={12} md={8} lg={6}>
+                <div style={{ marginBottom: 16 }}>
+                  <Text strong>Channel IDs (optional):</Text>
+                  <Input
+                    placeholder="e.g. ch88087, ch88098"
+                    value={customChannelIds}
+                    onChange={(e) => setCustomChannelIds(e.target.value)}
+                    style={{ width: '100%', marginTop: 8 }}
+                    disabled={loading}
+                  />
+                  <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginTop: 4 }}>
+                    Enter comma-separated channel IDs to filter revenue
+                  </Text>
+                </div>
+              </Col>
+
+              <Col xs={24} md={6} lg={4}>
                 <div style={{ marginTop: 24 }}>
                   <Space>
                     <Button type="primary" icon={<ReloadOutlined />} onClick={handleRefresh} loading={loading}>
@@ -299,7 +320,19 @@ export default function PredictoPage() {
             {data?._source && (
               <Alert
                 message={`Data Source: ${data._source}`}
-                description={data._message}
+                description={
+                  <>
+                    {data._message}
+                    {(data as any)._activeChannels && (data as any)._activeChannels.length > 0 && (
+                      <div style={{ marginTop: 8 }}>
+                        <Text strong>Active Channels: </Text>
+                        <Text code style={{ fontSize: '11px' }}>
+                          {(data as any)._activeChannels.join(', ')}
+                        </Text>
+                      </div>
+                    )}
+                  </>
+                }
                 type="info"
                 showIcon
                 style={{ marginTop: 16 }}
