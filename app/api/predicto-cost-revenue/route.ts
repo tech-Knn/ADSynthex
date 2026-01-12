@@ -237,36 +237,35 @@ export async function POST(request: NextRequest) {
         actualForceRefresh = false;
       }
 
-      // Clear cache if forceRefresh
+      // Clear cache if forceRefresh (OPTIMIZED: Clear all caches in parallel)
       if (actualForceRefresh) {
-        console.log(`[PREDICTO_COST_REVENUE] FORCE REFRESH DETECTED - Clearing ALL Predicto caches...`);
+        console.log(`[PREDICTO_COST_REVENUE] FORCE REFRESH - Clearing ${accountsToProcess.length} account caches in parallel...`);
+        const cacheStartTime = Date.now();
 
-        for (const accId of accountsToProcess) {
-          console.log(
-            `[PREDICTO_COST_REVENUE] Clearing cache for account ${accId} to ensure fresh data...`
-          );
-          try {
-            const { redisClient } = await import('@/lib/redis-client');
-            const cacheKey = `cache:google-ads:${accId}:${startDate}:${endDate}:predicto`;
-            await redisClient.del(cacheKey);
-            console.log(`[PREDICTO_COST_REVENUE] ✓ Cleared cache key: ${cacheKey}`);
-
-            const aggCacheKey = `predicto-agg:${accId}:${startDate}:${endDate}`;
-            await redisClient.del(aggCacheKey);
-            console.log(`[PREDICTO_COST_REVENUE] ✓ Cleared aggregated cache: ${aggCacheKey}`);
-          } catch (cacheError) {
-            console.warn(`[PREDICTO_COST_REVENUE] Failed to clear cache:`, cacheError);
-          }
-        }
-
-        // Clear combined aggregated cache
         try {
           const { redisClient } = await import('@/lib/redis-client');
+
+          // Build array of all cache keys to clear
+          const cacheKeys: string[] = [];
+
+          for (const accId of accountsToProcess) {
+            cacheKeys.push(`cache:google-ads:${accId}:${startDate}:${endDate}:predicto`);
+            cacheKeys.push(`predicto-agg:${accId}:${startDate}:${endDate}`);
+          }
+
+          // Add combined aggregated cache
           const combinedAggCacheKey = `predicto-agg:${isMultiAccount && Array.isArray(finalAccountIds) ? finalAccountIds.join(',') : finalCustomerId || 'all'}:${startDate}:${endDate}`;
-          await redisClient.del(combinedAggCacheKey);
-          console.log(`[PREDICTO_COST_REVENUE] ✓ Cleared combined aggregated cache: ${combinedAggCacheKey}`);
+          cacheKeys.push(combinedAggCacheKey);
+
+          // Clear all caches in parallel
+          if (cacheKeys.length > 0) {
+            await Promise.all(cacheKeys.map(key => redisClient.del(key)));
+
+            const cacheTime = Date.now() - cacheStartTime;
+            console.log(`[PREDICTO_COST_REVENUE] ✓ Cleared ${cacheKeys.length} cache keys in ${cacheTime}ms`);
+          }
         } catch (cacheError) {
-          console.warn(`[PREDICTO_COST_REVENUE] Failed to clear combined aggregated cache:`, cacheError);
+          console.warn(`[PREDICTO_COST_REVENUE] Failed to clear caches:`, cacheError);
         }
       }
 
@@ -277,46 +276,33 @@ export async function POST(request: NextRequest) {
       let googleAdsDataPromises;
 
       if (isMultiAccount && Array.isArray(finalAccountIds)) {
-        const BATCH_SIZE = 5;
-        console.log(
-          `[PREDICTO_COST_REVENUE] Fetching data for ${finalAccountIds.length} accounts in batches of ${BATCH_SIZE}...`
-        );
-
-        const allowStaleForMulti = true;
+        // CRITICAL: Respect forceRefresh for multi-account views
+        const allowStaleForMulti = !actualForceRefresh;
         const maxWaitTime = daysDiff > 14 ? 30000 : daysDiff > 7 ? 20000 : 10000;
 
-        const allAccountsData: any[] = [];
-        for (let i = 0; i < finalAccountIds.length; i += BATCH_SIZE) {
-          const batch = finalAccountIds.slice(i, i + BATCH_SIZE);
-          const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-          const totalBatches = Math.ceil(finalAccountIds.length / BATCH_SIZE);
+        console.log(
+          `[PREDICTO_COST_REVENUE] Fetching data for ${finalAccountIds.length} accounts (forceRefresh=${actualForceRefresh}, allowStale=${allowStaleForMulti})...`
+        );
 
-          console.log(
-            `[PREDICTO_COST_REVENUE] 🔄 Processing batch ${batchNum}/${totalBatches} (${batch.length} accounts)...`
-          );
+        // Fetch all accounts in parallel (no batching needed - bulletproofAPI handles it)
+        const allAccountsData = await Promise.all(
+          finalAccountIds.map((accId: string, index: number) => {
+            console.log(
+              `[PREDICTO_COST_REVENUE] Starting fetch ${index + 1}/${finalAccountIds.length}: Account ${accId}`
+            );
+            return bulletproofAPI.getData(startDate, endDate, accId, {
+              priority: 8,
+              allowStale: allowStaleForMulti,
+              maxWait: maxWaitTime,
+              feedType: 'predicto',
+            });
+          })
+        );
 
-          const batchResults = await Promise.all(
-            batch.map((accId: string, index: number) => {
-              const globalIndex = i + index + 1;
-              console.log(
-                `[PREDICTO_COST_REVENUE] Starting fetch ${globalIndex}/${finalAccountIds.length}: Account ${accId}`
-              );
-              return bulletproofAPI.getData(startDate, endDate, accId, {
-                priority: 8,
-                allowStale: allowStaleForMulti,
-                maxWait: maxWaitTime,
-                feedType: 'predicto',
-              });
-            })
-          );
-
-          allAccountsData.push(...batchResults);
-
-          const batchTime = Date.now() - fetchStartTime;
-          console.log(
-            `[PREDICTO_COST_REVENUE] ✓ Batch ${batchNum}/${totalBatches} completed in ${(batchTime / 1000).toFixed(1)}s`
-          );
-        }
+        const fetchTime = Date.now() - fetchStartTime;
+        console.log(
+          `[PREDICTO_COST_REVENUE] ✓ All ${finalAccountIds.length} accounts fetched in ${(fetchTime / 1000).toFixed(1)}s`
+        );
 
         googleAdsDataPromises = Promise.resolve(allAccountsData);
       } else {
