@@ -281,17 +281,31 @@ export function mapCostRevenueByChannelId(
     const channelId = record.custom_channel_id;
     if (!channelId || channelId === 'unknown') return;
 
-    if (!channelRevenueMap.has(channelId)) {
-      channelRevenueMap.set(channelId, { revenue: 0, clicks: 0, impressions: 0 });
+    // CRITICAL: Normalize channel ID to lowercase for consistent matching
+    const normalizedChannelId = channelId.toLowerCase();
+
+    if (!channelRevenueMap.has(normalizedChannelId)) {
+      channelRevenueMap.set(normalizedChannelId, { revenue: 0, clicks: 0, impressions: 0 });
     }
 
-    const channel = channelRevenueMap.get(channelId)!;
+    const channel = channelRevenueMap.get(normalizedChannelId)!;
     channel.revenue += record.revenue || 0;
     channel.clicks += record.clicks || 0;
     channel.impressions += record.impressions || 0;
   });
 
   console.log(`[PREDICTO_CHANNEL_MAPPING] Built revenue map with ${channelRevenueMap.size} unique channels`);
+
+  // Debug: Log first 10 channel IDs from Predicto (now normalized to lowercase)
+  const predictoChannelIds = Array.from(channelRevenueMap.keys()).slice(0, 10);
+  console.log(`[PREDICTO_CHANNEL_MAPPING] Sample Predicto channels (normalized): ${predictoChannelIds.join(', ')}`);
+
+  // Calculate total revenue from Predicto for debugging
+  let totalPredictoRevenue = 0;
+  channelRevenueMap.forEach(data => {
+    totalPredictoRevenue += data.revenue;
+  });
+  console.log(`[PREDICTO_CHANNEL_MAPPING] Total revenue in Predicto: $${totalPredictoRevenue.toFixed(2)} across ${channelRevenueMap.size} channels`);
 
   // Step 2: Extract channel IDs from Google Ads campaigns and build campaign-to-channel map
   const campaignToChannelsMap = new Map<string, {
@@ -346,14 +360,37 @@ export function mapCostRevenueByChannelId(
 
   console.log(`[PREDICTO_CHANNEL_MAPPING] Extracted channels: ${campaignsWithChannels} campaigns with channels, ${campaignsWithoutChannels} without`);
 
+  // Debug: Log sample campaign channel IDs from Google Ads (now normalized to lowercase)
+  const sampleCampaignWithChannels = Array.from(campaignToChannelsMap.values()).find(c => c.channel_ids.length > 0);
+  if (sampleCampaignWithChannels) {
+    console.log(`[PREDICTO_CHANNEL_MAPPING] Sample campaign channels (normalized): ${sampleCampaignWithChannels.channel_ids.join(', ')}`);
+  }
+
+  // Log all unique channel IDs extracted from Google Ads
+  const allGoogleAdsChannels = new Set<string>();
+  campaignToChannelsMap.forEach(campaign => {
+    campaign.channel_ids.forEach(id => allGoogleAdsChannels.add(id));
+  });
+  console.log(`[PREDICTO_CHANNEL_MAPPING] Total unique Google Ads channels: ${allGoogleAdsChannels.size}`);
+
   // Step 3: Combine cost and revenue by matching channel IDs
   const mappings: PredictoCostRevenueMapping[] = [];
+
+  // Track matching statistics
+  let campaignsWithMatchedRevenue = 0;
+  let campaignsWithCostButNoRevenue = 0;
+  let totalMatchedChannels = 0;
+  let totalUnmatchedChannels = 0;
 
   // Add campaigns with cost data (and possibly revenue)
   campaignToChannelsMap.forEach(campaignData => {
     let totalRevenue = 0;
     let totalPredictoClicks = 0;
     let totalPredictoImpressions = 0;
+
+    // Track which channels matched for this campaign
+    let matchedChannels = 0;
+    let unmatchedChannels = 0;
 
     // Sum revenue from all associated channels
     campaignData.channel_ids.forEach(channelId => {
@@ -362,8 +399,21 @@ export function mapCostRevenueByChannelId(
         totalRevenue += revenueData.revenue;
         totalPredictoClicks += revenueData.clicks;
         totalPredictoImpressions += revenueData.impressions;
+        matchedChannels++;
+      } else {
+        unmatchedChannels++;
       }
     });
+
+    // Track campaign-level matching
+    if (totalRevenue > 0 && campaignData.cost > 0) {
+      campaignsWithMatchedRevenue++;
+    } else if (campaignData.cost > 0) {
+      campaignsWithCostButNoRevenue++;
+    }
+
+    totalMatchedChannels += matchedChannels;
+    totalUnmatchedChannels += unmatchedChannels;
 
     const cost = campaignData.cost;
     const profit = totalRevenue - cost;
@@ -396,7 +446,72 @@ export function mapCostRevenueByChannelId(
     });
   });
 
-  // Step 4: Add orphaned channels (revenue but no cost)
+  // Step 4: Build channel-to-customer mapping
+  // This maps each channel ID to its account's customer_id
+  const channelToCustomerMap = new Map<string, string>();
+  campaignToChannelsMap.forEach(campaign => {
+    if (campaign.customer_id) {
+      campaign.channel_ids.forEach(channelId => {
+        // Store the customer_id for this channel
+        channelToCustomerMap.set(channelId, campaign.customer_id!);
+      });
+    }
+  });
+
+  console.log(`[PREDICTO_CHANNEL_MAPPING] Built channel-to-customer map with ${channelToCustomerMap.size} channel→customer mappings`);
+
+  // Log matching statistics
+  console.log(`[PREDICTO_CHANNEL_MAPPING] Matching results:`);
+  console.log(`  - Campaigns with BOTH cost & revenue: ${campaignsWithMatchedRevenue}`);
+  console.log(`  - Campaigns with cost but NO revenue: ${campaignsWithCostButNoRevenue}`);
+  console.log(`  - Matched channels: ${totalMatchedChannels}`);
+  console.log(`  - Unmatched channels: ${totalUnmatchedChannels}`);
+
+  if (campaignsWithCostButNoRevenue > 0) {
+    console.warn(`[PREDICTO_CHANNEL_MAPPING] ⚠️  ${campaignsWithCostButNoRevenue} campaigns have cost but NO revenue match!`);
+    console.warn(`[PREDICTO_CHANNEL_MAPPING] This suggests channel IDs in URLs don't match Predicto custom_channel_id`);
+
+    // Show which channels are not matching
+    const unmatchedChannels = new Set<string>();
+    campaignToChannelsMap.forEach(campaign => {
+      campaign.channel_ids.forEach(channelId => {
+        if (!channelRevenueMap.has(channelId)) {
+          unmatchedChannels.add(channelId);
+        }
+      });
+    });
+
+    if (unmatchedChannels.size > 0) {
+      console.warn(`[PREDICTO_CHANNEL_MAPPING] ❌ Unmatched channel IDs (in Google Ads URLs but NOT in Predicto):`);
+      console.warn(`[PREDICTO_CHANNEL_MAPPING]    ${Array.from(unmatchedChannels).slice(0, 20).join(', ')}`);
+      console.warn(`[PREDICTO_CHANNEL_MAPPING]    These channels need to be updated in Google Ads final URLs!`);
+    }
+
+    // Show channels that exist in Predicto but not in campaigns
+    const orphanedPredictoChannels = new Set<string>();
+    let orphanedRevenue = 0;
+    channelRevenueMap.forEach((data, channelId) => {
+      let found = false;
+      campaignToChannelsMap.forEach(campaign => {
+        if (campaign.channel_ids.includes(channelId)) {
+          found = true;
+        }
+      });
+      if (!found) {
+        orphanedPredictoChannels.add(channelId);
+        orphanedRevenue += data.revenue;
+      }
+    });
+
+    if (orphanedPredictoChannels.size > 0) {
+      console.warn(`[PREDICTO_CHANNEL_MAPPING] 💰 Orphaned Predicto channels (revenue available but NOT in any Google Ads campaign URL):`);
+      console.warn(`[PREDICTO_CHANNEL_MAPPING]    ${Array.from(orphanedPredictoChannels).slice(0, 20).join(', ')}`);
+      console.warn(`[PREDICTO_CHANNEL_MAPPING]    Missing revenue: $${orphanedRevenue.toFixed(2)} from ${orphanedPredictoChannels.size} channels`);
+      console.warn(`[PREDICTO_CHANNEL_MAPPING]    Add these channel IDs to your Google Ads campaign URLs to capture this revenue!`);
+    }
+  }
+
+  // Step 5: Add orphaned channels (revenue but no cost)
   const assignedChannels = new Set<string>();
   campaignToChannelsMap.forEach(campaign => {
     campaign.channel_ids.forEach(id => assignedChannels.add(id));
@@ -407,7 +522,12 @@ export function mapCostRevenueByChannelId(
       const rpc = revenueData.clicks > 0 ? revenueData.revenue / revenueData.clicks : 0;
       const ctr = revenueData.impressions > 0 ? (revenueData.clicks / revenueData.impressions) * 100 : 0;
 
+      // CRITICAL FIX: Assign customer_id to orphaned channels
+      // Look up which account this channel belongs to
+      const customerId = channelToCustomerMap.get(channelId);
+
       mappings.push({
+        customer_id: customerId, // Assign customer_id so it won't be filtered out
         campaign_id: channelId,
         campaign_name: `Channel ${channelId}`,
         channel_ids: [channelId],

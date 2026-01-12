@@ -18,9 +18,10 @@ export function extractChannelIdsFromUrl(url: string): string[] {
     if (!cidParam) return [];
 
     // Split by + or , or space to handle multiple channel IDs
+    // CRITICAL: Normalize to lowercase for consistent matching
     const channelIds = cidParam
       .split(/[+,\s]+/)
-      .map(id => id.trim())
+      .map(id => id.trim().toLowerCase()) // Convert to lowercase
       .filter(id => id.length > 0);
 
     return channelIds;
@@ -30,7 +31,7 @@ export function extractChannelIdsFromUrl(url: string): string[] {
     if (cidMatch) {
       return cidMatch[1]
         .split(/[+,\s]+/)
-        .map(id => id.trim())
+        .map(id => id.trim().toLowerCase()) // Convert to lowercase
         .filter(id => id.length > 0);
     }
     return [];
