@@ -6,7 +6,6 @@ import {
   Typography,
   DatePicker,
   Button,
-  Input,
   Row,
   Col,
   Card,
@@ -70,12 +69,12 @@ const ALL_ACCOUNTS_OPTION = { id: 'ALL_ACCOUNTS', name: 'All Accounts (Total)' }
 
 export default function PredictoPage() {
   const [loading, setLoading] = useState(false);
+  const [forceRefreshLoading, setForceRefreshLoading] = useState(false);
   const [data, setData] = useState<PredictoCostRevenueResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
-  const [customChannelIds, setCustomChannelIds] = useState<string>('');
   const [isAdmin, setIsAdmin] = useState(false);
   // Default to today's date
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>([
@@ -154,7 +153,12 @@ export default function PredictoPage() {
     }
 
     try {
-      setLoading(true);
+      // Set appropriate loading state based on button clicked
+      if (forceRefresh) {
+        setForceRefreshLoading(true);
+      } else {
+        setLoading(true);
+      }
       setError(null);
 
       const startDate = dateRange[0].format('YYYY-MM-DD');
@@ -164,9 +168,6 @@ export default function PredictoPage() {
         startDate,
         endDate,
         forceRefresh,
-        customChannelIds: customChannelIds
-          ? customChannelIds.split(',').map(id => id.trim()).filter(Boolean)
-          : undefined,
         ...(selectedAccount === ALL_ACCOUNTS_OPTION.id
           ? { accountIds: PREDICTO_ENABLED_ACCOUNTS.map((acc) => acc.id) }
           : { customerId: selectedAccount }),
@@ -204,7 +205,12 @@ export default function PredictoPage() {
       console.error('[PREDICTO] Exception during fetch:', error);
       setError(error.message || 'Failed to fetch Predicto cost-revenue data');
     } finally {
-      setLoading(false);
+      // Clear appropriate loading state
+      if (forceRefresh) {
+        setForceRefreshLoading(false);
+      } else {
+        setLoading(false);
+      }
     }
   };
 
@@ -260,11 +266,6 @@ export default function PredictoPage() {
                     loading={loadingAccounts}
                     disabled={loadingAccounts || accounts.length === 0}
                   >
-                    {isAdmin && accounts.length > 1 && (
-                      <Option key={ALL_ACCOUNTS_OPTION.id} value={ALL_ACCOUNTS_OPTION.id}>
-                        {ALL_ACCOUNTS_OPTION.name}
-                      </Option>
-                    )}
                     {accounts.map((account) => (
                       <Option key={account.id} value={account.id}>
                         {account.name}
@@ -282,62 +283,35 @@ export default function PredictoPage() {
                     onChange={handleDateChange}
                     format="YYYY-MM-DD"
                     style={{ width: '100%', marginTop: 8 }}
-                    disabled={loading}
+                    disabled={loading || forceRefreshLoading}
                   />
-                </div>
-              </Col>
-
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <div style={{ marginBottom: 16 }}>
-                  <Text strong>Channel IDs (optional):</Text>
-                  <Input
-                    placeholder="e.g. ch88087, ch88098"
-                    value={customChannelIds}
-                    onChange={(e) => setCustomChannelIds(e.target.value)}
-                    style={{ width: '100%', marginTop: 8 }}
-                    disabled={loading}
-                  />
-                  <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginTop: 4 }}>
-                    Enter comma-separated channel IDs to filter revenue
-                  </Text>
                 </div>
               </Col>
 
               <Col xs={24} md={6} lg={4}>
                 <div style={{ marginTop: 24 }}>
                   <Space>
-                    <Button type="primary" icon={<ReloadOutlined />} onClick={handleRefresh} loading={loading}>
+                    <Button
+                      type="primary"
+                      icon={<ReloadOutlined />}
+                      onClick={handleRefresh}
+                      loading={loading}
+                      disabled={forceRefreshLoading}
+                    >
                       Refresh
                     </Button>
-                    <Button onClick={handleForceRefresh} loading={loading} danger>
+                    <Button
+                      onClick={handleForceRefresh}
+                      loading={forceRefreshLoading}
+                      disabled={loading}
+                      danger
+                    >
                       Force Refresh
                     </Button>
                   </Space>
                 </div>
               </Col>
             </Row>
-
-            {data?._source && (
-              <Alert
-                message={`Data Source: ${data._source}`}
-                description={
-                  <>
-                    {data._message}
-                    {(data as any)._activeChannels && (data as any)._activeChannels.length > 0 && (
-                      <div style={{ marginTop: 8 }}>
-                        <Text strong>Active Channels: </Text>
-                        <Text code style={{ fontSize: '11px' }}>
-                          {(data as any)._activeChannels.join(', ')}
-                        </Text>
-                      </div>
-                    )}
-                  </>
-                }
-                type="info"
-                showIcon
-                style={{ marginTop: 16 }}
-              />
-            )}
           </Card>
 
           {error && (
@@ -353,7 +327,7 @@ export default function PredictoPage() {
             />
           )}
 
-          {loading && !data && (
+          {(loading || forceRefreshLoading) && !data && (
             <Card>
               <div style={{ textAlign: 'center', padding: '60px 0' }}>
                 <Spin size="large" />
@@ -364,7 +338,7 @@ export default function PredictoPage() {
             </Card>
           )}
 
-          {!loading && data && data.campaign_aggregated && data.summary && (
+          {!loading && !forceRefreshLoading && data && data.campaign_aggregated && data.summary && (
             <>
               {/* Cost & Revenue Summary Cards */}
               <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
@@ -420,8 +394,8 @@ export default function PredictoPage() {
                 </Col>
               </Row>
 
-              {/* Account-Level Summaries (for multi-account view) */}
-              {data.account_summaries && data.account_summaries.length > 0 && (
+              {/* Account-Level Summaries (only show for multi-account view) */}
+              {selectedAccount === ALL_ACCOUNTS_OPTION.id && data.account_summaries && data.account_summaries.length > 0 && (
                 <Card
                   title={<Title level={4}>Account-Level Performance</Title>}
                   style={{ marginBottom: 24 }}
@@ -688,7 +662,7 @@ export default function PredictoPage() {
                   ]}
                   dataSource={data.campaign_aggregated}
                   rowKey="campaign_id"
-                  loading={loading}
+                  loading={loading || forceRefreshLoading}
                   pagination={{
                     pageSize: 50,
                     showSizeChanger: true,
@@ -702,7 +676,7 @@ export default function PredictoPage() {
             </>
           )}
 
-          {!loading && !data && !error && selectedAccount && (
+          {!loading && !forceRefreshLoading && !data && !error && selectedAccount && (
             <Card>
               <Alert
                 message="No Data"
