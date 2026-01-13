@@ -543,7 +543,6 @@ export default function PredictoPage() {
                           ${cost.toFixed(2)}
                         </Text>
                       ),
-                      sorter: (a: any, b: any) => a.cost - b.cost,
                     },
                     {
                       title: 'Revenue',
@@ -555,7 +554,6 @@ export default function PredictoPage() {
                           ${revenue.toFixed(2)}
                         </Text>
                       ),
-                      sorter: (a: any, b: any) => a.revenue - b.revenue,
                     },
                     {
                       title: 'Profit',
@@ -567,8 +565,6 @@ export default function PredictoPage() {
                           ${profit.toFixed(2)}
                         </Text>
                       ),
-                      sorter: (a: any, b: any) => a.profit - b.profit,
-                      defaultSortOrder: 'descend',
                     },
                     {
                       title: 'ROI',
@@ -580,7 +576,6 @@ export default function PredictoPage() {
                           {roi.toFixed(1)}%
                         </Text>
                       ),
-                      sorter: (a: any, b: any) => a.roi - b.roi,
                     },
                     {
                       title: 'ROAS',
@@ -592,37 +587,26 @@ export default function PredictoPage() {
                           {roas.toFixed(2)}x
                         </Text>
                       ),
-                      sorter: (a: any, b: any) => a.roas - b.roas,
                     },
                     {
                       title: 'Clicks',
-                      dataIndex: 'clicks',
-                      key: 'clicks',
+                      dataIndex: 'predicto_clicks',
+                      key: 'predicto_clicks',
                       width: 90,
                       render: (clicks: number) => (
-                        <Text>{clicks.toLocaleString()}</Text>
+                        <Text>{clicks?.toLocaleString() || 0}</Text>
                       ),
-                      sorter: (a: any, b: any) => a.clicks - b.clicks,
                     },
                     {
-                      title: 'Impressions',
-                      dataIndex: 'impressions',
-                      key: 'impressions',
-                      width: 110,
-                      render: (impressions: number) => (
-                        <Text>{impressions.toLocaleString()}</Text>
+                      title: 'Conversions',
+                      dataIndex: 'conversions',
+                      key: 'conversions',
+                      width: 100,
+                      render: (conversions: number) => (
+                        <Text style={{ color: conversions > 0 ? '#52c41a' : '#8c8c8c' }}>
+                          {conversions?.toLocaleString() || 0}
+                        </Text>
                       ),
-                      sorter: (a: any, b: any) => a.impressions - b.impressions,
-                    },
-                    {
-                      title: 'CTR',
-                      dataIndex: 'ctr',
-                      key: 'ctr',
-                      width: 80,
-                      render: (ctr: number) => (
-                        <Text>{ctr.toFixed(2)}%</Text>
-                      ),
-                      sorter: (a: any, b: any) => a.ctr - b.ctr,
                     },
                     {
                       title: 'RPC',
@@ -630,34 +614,8 @@ export default function PredictoPage() {
                       key: 'rpc',
                       width: 90,
                       render: (rpc: number) => (
-                        <Text>${rpc.toFixed(3)}</Text>
+                        <Text>${rpc?.toFixed(3) || '0.000'}</Text>
                       ),
-                      sorter: (a: any, b: any) => a.rpc - b.rpc,
-                    },
-                    {
-                      title: 'Status',
-                      key: 'status',
-                      width: 120,
-                      render: (_: any, record: any) => {
-                        if (record.has_cost_data && record.has_revenue_data) {
-                          return <Text style={{ color: '#52c41a' }}>✓ Matched</Text>;
-                        } else if (record.has_cost_data) {
-                          return <Text style={{ color: '#faad14' }}>Cost Only</Text>;
-                        } else {
-                          return <Text style={{ color: '#1890ff' }}>Revenue Only</Text>;
-                        }
-                      },
-                      filters: [
-                        { text: 'Matched', value: 'matched' },
-                        { text: 'Cost Only', value: 'cost_only' },
-                        { text: 'Revenue Only', value: 'revenue_only' },
-                      ],
-                      onFilter: (value: any, record: any) => {
-                        if (value === 'matched') return record.has_cost_data && record.has_revenue_data;
-                        if (value === 'cost_only') return record.has_cost_data && !record.has_revenue_data;
-                        if (value === 'revenue_only') return !record.has_cost_data && record.has_revenue_data;
-                        return true;
-                      },
                     },
                   ]}
                   dataSource={data.campaign_aggregated}

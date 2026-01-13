@@ -176,41 +176,28 @@ export default function PredictoCostRevenueMapping({
           </Tag>
         </Tooltip>
       ),
-      sorter: (a, b) => a.roas - b.roas,
     },
     {
       title: 'Clicks',
-      dataIndex: 'clicks',
-      key: 'clicks',
+      dataIndex: 'predicto_clicks',
+      key: 'predicto_clicks',
       width: 90,
       render: (clicks: number) => (
         <Text style={{ fontWeight: 600, color: clicks > 0 ? '#1890ff' : '#8c8c8c' }}>
-          {clicks.toLocaleString()}
+          {clicks ? clicks.toLocaleString() : '0'}
         </Text>
       ),
-      sorter: (a, b) => a.clicks - b.clicks,
     },
     {
-      title: 'Impressions',
-      dataIndex: 'impressions',
-      key: 'impressions',
-      width: 110,
-      render: (impressions: number) => (
-        <Text style={{ color: '#722ed1', fontWeight: 600 }}>
-          {impressions.toLocaleString()}
+      title: 'Conversions',
+      dataIndex: 'conversions',
+      key: 'conversions',
+      width: 100,
+      render: (conversions: number | undefined) => (
+        <Text style={{ fontWeight: 600, color: conversions && conversions > 0 ? '#52c41a' : '#8c8c8c' }}>
+          {conversions ? conversions.toLocaleString() : '0'}
         </Text>
       ),
-      sorter: (a, b) => a.impressions - b.impressions,
-    },
-    {
-      title: 'CTR',
-      dataIndex: 'ctr',
-      key: 'ctr',
-      width: 80,
-      render: (ctr: number) => (
-        <Text style={{ color: '#1890ff', fontWeight: 600 }}>{ctr.toFixed(2)}%</Text>
-      ),
-      sorter: (a, b) => a.ctr - b.ctr,
     },
     {
       title: 'RPC',
@@ -221,24 +208,6 @@ export default function PredictoCostRevenueMapping({
         <Tooltip title="Revenue Per Click">
           <Text style={{ color: '#722ed1', fontWeight: 600 }}>${rpc.toFixed(3)}</Text>
         </Tooltip>
-      ),
-      sorter: (a, b) => a.rpc - b.rpc,
-    },
-    {
-      title: 'Status',
-      key: 'status',
-      width: 110,
-      fixed: 'right',
-      render: (_, record: PredictoCostRevenueMapping) => (
-        <Space direction="vertical" size="small">
-          {record.has_cost_data && record.has_revenue_data ? (
-            <Tag color="success">Matched</Tag>
-          ) : record.has_cost_data ? (
-            <Tag color="warning">Cost Only</Tag>
-          ) : (
-            <Tag color="default">Revenue Only</Tag>
-          )}
-        </Space>
       ),
     },
   ];

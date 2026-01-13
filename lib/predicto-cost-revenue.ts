@@ -346,16 +346,31 @@ export function mapCostRevenueByChannelId(
       }
     }
 
-    campaignToChannelsMap.set(campaign.campaign_id, {
-      customer_id: campaign.customer_id,
-      campaign_id: campaign.campaign_id,
-      campaign_name: campaign.campaign_name,
-      channel_ids: uniqueChannelIds,
-      cost: campaign.cost || 0,
-      clicks: campaign.clicks || 0,
-      impressions: campaign.impressions || 0,
-      conversions: campaign.conversions || 0,
-    });
+    // CRITICAL FIX: Aggregate per-day records instead of overwriting
+    // If campaign already exists, ADD to metrics instead of replacing
+    const existingCampaign = campaignToChannelsMap.get(campaign.campaign_id);
+    if (existingCampaign) {
+      // Campaign already exists - aggregate the metrics
+      existingCampaign.cost += campaign.cost || 0;
+      existingCampaign.clicks += campaign.clicks || 0;
+      existingCampaign.impressions += campaign.impressions || 0;
+      existingCampaign.conversions += campaign.conversions || 0;
+      // Merge channel IDs
+      const mergedChannelIds = [...new Set([...existingCampaign.channel_ids, ...uniqueChannelIds])];
+      existingCampaign.channel_ids = mergedChannelIds;
+    } else {
+      // First time seeing this campaign - add it
+      campaignToChannelsMap.set(campaign.campaign_id, {
+        customer_id: campaign.customer_id,
+        campaign_id: campaign.campaign_id,
+        campaign_name: campaign.campaign_name,
+        channel_ids: uniqueChannelIds,
+        cost: campaign.cost || 0,
+        clicks: campaign.clicks || 0,
+        impressions: campaign.impressions || 0,
+        conversions: campaign.conversions || 0,
+      });
+    }
   });
 
   console.log(`[PREDICTO_CHANNEL_MAPPING] Extracted channels: ${campaignsWithChannels} campaigns with channels, ${campaignsWithoutChannels} without`);

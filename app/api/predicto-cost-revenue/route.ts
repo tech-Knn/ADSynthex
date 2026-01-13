@@ -530,8 +530,8 @@ export async function POST(request: NextRequest) {
       // Map Google Ads cost with Predicto revenue using channel IDs
       console.log(`[PREDICTO_COST_REVENUE] Using channel-based mapping...`);
 
-      // Import the new channel-based mapping function
-      const { mapCostRevenueByChannelId, aggregateByAccount } = await import('@/lib/predicto-cost-revenue');
+      // Import the channel-based mapping and aggregation functions
+      const { mapCostRevenueByChannelId, aggregateByAccount, aggregateMappingsByCampaign } = await import('@/lib/predicto-cost-revenue');
 
       let combined = mapCostRevenueByChannelId(allCampaigns, normalizedPredictoRevenue);
 
@@ -663,10 +663,15 @@ export async function POST(request: NextRequest) {
         console.log(`[PREDICTO_COST_REVENUE] Single account (no channel restrictions): Showing all ${combined.length} items`);
       }
 
-      const summary = calculateSummary(combined);
+      // CRITICAL: Aggregate per-day campaign records by campaign_id
+      // Without this, campaigns show up multiple times (once per day), doubling/tripling clicks!
+      const aggregated = aggregateMappingsByCampaign(combined);
+      console.log(`[PREDICTO_COST_REVENUE] Aggregated ${combined.length} daily records → ${aggregated.length} unique campaigns`);
+
+      const summary = calculateSummary(aggregated);
 
       // Aggregate by account for account-level breakdown
-      const accountSummaries = aggregateByAccount(combined);
+      const accountSummaries = aggregateByAccount(aggregated);
       console.log(`[PREDICTO_COST_REVENUE] Generated account summaries for ${accountSummaries.length} accounts`);
 
       const mappingTime = Date.now() - mappingStartTime;
@@ -674,7 +679,7 @@ export async function POST(request: NextRequest) {
       console.log(
         `[PREDICTO_COST_REVENUE] ✓ Cost-revenue mapping completed in ${(mappingTime / 1000).toFixed(1)}s`
       );
-      console.log(`[PREDICTO_COST_REVENUE] Matched ${combined.length} campaigns`);
+      console.log(`[PREDICTO_COST_REVENUE] Matched ${aggregated.length} campaigns`);
       console.log(
         `[PREDICTO_COST_REVENUE] Summary: $${summary.total_cost.toFixed(2)} cost, $${summary.total_revenue.toFixed(2)} revenue, ${summary.average_roi.toFixed(1)}% ROI`
       );
@@ -683,7 +688,7 @@ export async function POST(request: NextRequest) {
 
       // Cache the aggregated results
       const cacheData = {
-        campaign_aggregated: combined,
+        campaign_aggregated: aggregated,
         summary: summary,
         account_summaries: accountSummaries,
         google_ads_data: { account_count: googleAdsData.length, campaign_count: allCampaigns.length },
@@ -699,7 +704,7 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json(
         {
-          campaign_aggregated: combined,
+          campaign_aggregated: aggregated,
           summary: summary,
           account_summaries: accountSummaries,
           google_ads_data: { account_count: googleAdsData.length, campaign_count: allCampaigns.length },

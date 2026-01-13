@@ -21,56 +21,65 @@ export const CHANNEL_OWNERSHIP: ChannelOwnershipConfig[] = [
     customer_id: '2382992113',
     account_name: 'Predicto - EST - 01',
     channel_ids: [
-      // Add EST-01 channel IDs here
+      'ch88087', 'ch88092', 'ch88095', 'ch88096', 'ch88097', 'ch88098',
+      'ch46405', 'ch46406', 'ch46407', 'ch46409', 'ch46410', 'ch46411',
+      'ch46418', 'ch4642', 'ch46420', 'ch46421', 'ch46423', 'ch46428',
+      'ch46433', 'ch4644', 'ch46441', 'ch88109',
     ],
   },
   {
     customer_id: '1640518611',
     account_name: 'Predicto - EST - 02',
     channel_ids: [
-      // Add EST-02 channel IDs here (excluding ch88099, ch88100)
+      'ch88099',
+      'ch88100',
     ],
   },
   {
     customer_id: '8091270364',
     account_name: 'Predicto - EST - 03',
     channel_ids: [
-      // Add EST-03 channel IDs here (excluding ch88102)
+      'ch88101',
+      'ch88102',
     ],
   },
   {
     customer_id: '8846129452',
     account_name: 'Predicto - EST - 04',
     channel_ids: [
-      // Add EST-04 channel IDs here (excluding ch88104)
+      'ch88103',
+      'ch88104',
     ],
   },
   {
     customer_id: '6474140466',
     account_name: 'Predicto - EST - 05',
     channel_ids: [
-      // Add EST-05 channel IDs here (excluding ch88105)
+      'ch88105',
+      'ch88106',
     ],
   },
   {
     customer_id: '4920639194',
     account_name: 'Predicto - EST - 06',
     channel_ids: [
-      // Add EST-06 channel IDs here
+      'ch88107',
+      'ch88108',
     ],
   },
   {
     customer_id: '7282297343',
     account_name: 'Predicto - EST - 07',
     channel_ids: [
-      // Add EST-07 channel IDs here
+      'ch88110',
     ],
   },
   {
     customer_id: '1298005744',
     account_name: 'Predicto - EST - 08',
     channel_ids: [
-      // Add EST-08 channel IDs here (excluding ch88111)
+      'ch88111',
+      'ch88112',
     ],
   },
 ];
