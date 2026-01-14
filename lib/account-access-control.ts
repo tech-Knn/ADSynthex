@@ -190,41 +190,54 @@ export function getFeedTypeFromRoute(pathname: string): FeedType | null {
 
 /**
  * Channel Access Control for Predicto
- * Maps account IDs to their allowed channel IDs (custom_channel_id from Predicto)
  *
+ * ⚠️ IMPORTANT: THIS IS THE SOURCE OF TRUTH FOR CHANNEL OWNERSHIP
+ * This configuration is used by app/api/predicto-cost-revenue/route.ts
+ *
+ * Maps account IDs to their allowed channel IDs (custom_channel_id from Predicto)
  * Channel IDs are extracted from Google Ads Final URLs (cid parameter)
  * Example: https://site.com/page?cid=ch88087 -> channel ID is "ch88087"
+ *
+ * Channel Ownership Rules:
+ * - Ch88099, Ch88103, Ch88108, Ch88109, Ch88111 belong to Predicto 01
+ * - Ch88100 belongs to Predicto 02
+ * - Ch88101, Ch88102, Ch88105, Ch88106, Ch88107, Ch88112 belong to Predicto 03
+ * - Ch88104 belongs to Predicto 04
+ * - Ch88110 belongs to Predicto 07
+ * - Predicto 05, 06, 08 have no channels assigned
+ *
+ * NOTE: Also update lib/predicto-channel-ownership.ts if you modify this!
  */
 export const ACCOUNT_CHANNEL_ACCESS: Record<string, string[]> = {
-  // Predicto - EST - 01: All channels (30+ channels)
+  // Predicto - EST - 01: Main channels including orphans that belong here
   'CID_2382992113': [
-    'ch88087', 'ch88092', 'ch88095', 'ch88096', 'ch88097', 'ch88098', 'ch88099',
-    'ch88100', 'ch88101', 'ch88102', 'ch88103', 'ch88104', 'ch88108', 'ch88109',
-    'ch88110', 'ch88111', 'ch46405', 'ch46406', 'ch46407', 'ch46409', 'ch46410',
-    'ch46411', 'ch46418', 'ch4642', 'ch46420', 'ch46421', 'ch46423', 'ch46428',
+    'ch88087', 'ch88092', 'ch88095', 'ch88096', 'ch88097', 'ch88098',
+    'ch88099', 'ch88103', 'ch88108', 'ch88109', 'ch88111',
+    'ch46405', 'ch46406', 'ch46407', 'ch46409', 'ch46410', 'ch46411',
+    'ch46418', 'ch4642', 'ch46420', 'ch46421', 'ch46423', 'ch46428',
     'ch46433', 'ch4644', 'ch46441'
   ],
 
-  // Predicto - EST - 02: channels ch88099, ch88100
-  'CID_1640518611': ['ch88099', 'ch88100'],
+  // Predicto - EST - 02: Only ch88100
+  'CID_1640518611': ['ch88100'],
 
-  // Predicto - EST - 03: channels ch88101, ch88102
-  'CID_8091270364': ['ch88101', 'ch88102'],
+  // Predicto - EST - 03: Includes orphans ch88105, ch88106, ch88107, ch88112
+  'CID_8091270364': ['ch88101', 'ch88102', 'ch88105', 'ch88106', 'ch88107', 'ch88112'],
 
-  // Predicto - EST - 04: channels ch88103, ch88104
-  'CID_8846129452': ['ch88103', 'ch88104'],
+  // Predicto - EST - 04: Only ch88104
+  'CID_8846129452': ['ch88104'],
 
-  // Predicto - EST - 05: channels ch88105, ch88106
-  'CID_6474140466': ['ch88105', 'ch88106'],
+  // Predicto - EST - 05: No channels assigned
+  'CID_6474140466': [],
 
-  // Predicto - EST - 06: channels ch88107, ch88108
-  'CID_4920639194': ['ch88107', 'ch88108'],
+  // Predicto - EST - 06: No channels assigned
+  'CID_4920639194': [],
 
-  // Predicto - EST - 07: channels ch88109, ch88110
-  'CID_7282297343': ['ch88109', 'ch88110'],
+  // Predicto - EST - 07: Only ch88110
+  'CID_7282297343': ['ch88110'],
 
-  // Predicto - EST - 08: channels ch88111, ch88112
-  'CID_1298005744': ['ch88111', 'ch88112'],
+  // Predicto - EST - 08: No channels assigned
+  'CID_1298005744': [],
 
   // Add more account-channel mappings as needed
 };

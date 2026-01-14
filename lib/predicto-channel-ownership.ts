@@ -2,7 +2,10 @@
  * Predicto Channel Ownership Configuration
  * Defines which channel IDs belong to which Google Ads account
  *
- * This is the SOURCE OF TRUTH for channel-to-account mapping
+ * ⚠️ IMPORTANT: Keep this in sync with lib/account-access-control.ts
+ * The PRIMARY source of truth is lib/account-access-control.ts ACCOUNT_CHANNEL_ACCESS
+ * which is used by the API routes. This file is used for validation and diagnostics.
+ *
  * Use this to filter out channels that don't belong to an account
  */
 
@@ -22,16 +25,16 @@ export const CHANNEL_OWNERSHIP: ChannelOwnershipConfig[] = [
     account_name: 'Predicto - EST - 01',
     channel_ids: [
       'ch88087', 'ch88092', 'ch88095', 'ch88096', 'ch88097', 'ch88098',
+      'ch88099', 'ch88103', 'ch88108', 'ch88109', 'ch88111',
       'ch46405', 'ch46406', 'ch46407', 'ch46409', 'ch46410', 'ch46411',
       'ch46418', 'ch4642', 'ch46420', 'ch46421', 'ch46423', 'ch46428',
-      'ch46433', 'ch4644', 'ch46441', 'ch88109',
+      'ch46433', 'ch4644', 'ch46441',
     ],
   },
   {
     customer_id: '1640518611',
     account_name: 'Predicto - EST - 02',
     channel_ids: [
-      'ch88099',
       'ch88100',
     ],
   },
@@ -41,31 +44,28 @@ export const CHANNEL_OWNERSHIP: ChannelOwnershipConfig[] = [
     channel_ids: [
       'ch88101',
       'ch88102',
+      'ch88105',
+      'ch88106',
+      'ch88107',
+      'ch88112',
     ],
   },
   {
     customer_id: '8846129452',
     account_name: 'Predicto - EST - 04',
     channel_ids: [
-      'ch88103',
       'ch88104',
     ],
   },
   {
     customer_id: '6474140466',
     account_name: 'Predicto - EST - 05',
-    channel_ids: [
-      'ch88105',
-      'ch88106',
-    ],
+    channel_ids: [],
   },
   {
     customer_id: '4920639194',
     account_name: 'Predicto - EST - 06',
-    channel_ids: [
-      'ch88107',
-      'ch88108',
-    ],
+    channel_ids: [],
   },
   {
     customer_id: '7282297343',
@@ -77,10 +77,7 @@ export const CHANNEL_OWNERSHIP: ChannelOwnershipConfig[] = [
   {
     customer_id: '1298005744',
     account_name: 'Predicto - EST - 08',
-    channel_ids: [
-      'ch88111',
-      'ch88112',
-    ],
+    channel_ids: [],
   },
 ];
 

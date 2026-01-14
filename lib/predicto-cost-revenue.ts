@@ -114,7 +114,7 @@ export function mapPredictoCostRevenue(
     existing.cost += campaign.cost || 0;
     existing.clicks += campaign.clicks || 0;
     existing.impressions += campaign.impressions || 0;
-    existing.conversions += campaign.conversions || 0;
+    existing.conversions += Math.round(campaign.conversions || 0);
   });
 
   const allCampaignIds = new Set<string>([...costMap.keys(), ...revenueMap.keys()]);
@@ -130,7 +130,7 @@ export function mapPredictoCostRevenue(
     const cost = costData?.cost || 0;
     const clicks = costData?.clicks || 0;
     const impressions = costData?.impressions || 0;
-    const conversions = costData?.conversions || 0;
+    const conversions = Math.round(costData?.conversions || 0);
     const revenue = revenueData?.revenue || 0;
 
     const profit = revenue - cost;
@@ -179,7 +179,7 @@ export function aggregateMappingsByCampaign(
       existing.cost += mapping.cost;
       existing.clicks += mapping.clicks;
       existing.impressions += mapping.impressions;
-      existing.conversions = (existing.conversions || 0) + (mapping.conversions || 0);
+      existing.conversions = Math.round((existing.conversions || 0) + (mapping.conversions || 0));
       existing.revenue += mapping.revenue;
       existing.predicto_clicks = (existing.predicto_clicks || 0) + (mapping.predicto_clicks || 0);
       existing.predicto_impressions =
@@ -354,7 +354,7 @@ export function mapCostRevenueByChannelId(
       existingCampaign.cost += campaign.cost || 0;
       existingCampaign.clicks += campaign.clicks || 0;
       existingCampaign.impressions += campaign.impressions || 0;
-      existingCampaign.conversions += campaign.conversions || 0;
+      existingCampaign.conversions += Math.round(campaign.conversions || 0);
       // Merge channel IDs
       const mergedChannelIds = [...new Set([...existingCampaign.channel_ids, ...uniqueChannelIds])];
       existingCampaign.channel_ids = mergedChannelIds;
@@ -368,7 +368,7 @@ export function mapCostRevenueByChannelId(
         cost: campaign.cost || 0,
         clicks: campaign.clicks || 0,
         impressions: campaign.impressions || 0,
-        conversions: campaign.conversions || 0,
+        conversions: Math.round(campaign.conversions || 0),
       });
     }
   });
@@ -434,9 +434,11 @@ export function mapCostRevenueByChannelId(
     const profit = totalRevenue - cost;
     const roi = cost > 0 ? ((totalRevenue - cost) / cost) * 100 : 0;
     const roas = cost > 0 ? totalRevenue / cost : 0;
-    const rpc = campaignData.clicks > 0 ? totalRevenue / campaignData.clicks : 0;
+    // CRITICAL: Use PREDICTO clicks for RPC (Revenue Per Click), not Google Ads clicks
+    const rpc = totalPredictoClicks > 0 ? totalRevenue / totalPredictoClicks : 0;
     const cpa = campaignData.conversions > 0 ? cost / campaignData.conversions : undefined;
-    const ctr = campaignData.impressions > 0 ? (campaignData.clicks / campaignData.impressions) * 100 : 0;
+    // CRITICAL: Use PREDICTO data for CTR (Click Through Rate), not Google Ads data
+    const ctr = totalPredictoImpressions > 0 ? (totalPredictoClicks / totalPredictoImpressions) * 100 : 0;
 
     mappings.push({
       customer_id: campaignData.customer_id,
@@ -444,9 +446,10 @@ export function mapCostRevenueByChannelId(
       campaign_name: campaignData.campaign_name,
       channel_ids: campaignData.channel_ids,
       cost,
-      clicks: campaignData.clicks,
-      impressions: campaignData.impressions,
-      conversions: campaignData.conversions > 0 ? campaignData.conversions : undefined,
+      // CRITICAL: Use PREDICTO clicks/impressions as primary metrics (revenue comes from Predicto, so clicks should too)
+      clicks: totalPredictoClicks,
+      impressions: totalPredictoImpressions,
+      conversions: campaignData.conversions > 0 ? Math.round(campaignData.conversions) : undefined,
       revenue: totalRevenue,
       predicto_clicks: totalPredictoClicks,
       predicto_impressions: totalPredictoImpressions,
