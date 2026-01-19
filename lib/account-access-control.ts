@@ -47,6 +47,7 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_1173588441': ['adsense'], // AFS-IST-18
   'CID_1786688915': ['adsense'], // AFS-IST-19
   'CID_5822945286': ['adsense'], // AFS-IST-20
+  'CID_7507601023': ['adsense'], // AFS-IST-21
   'CID_9249163427': ['adsense'], // TRT-AFS 01
 
   // Compado Accounts - Only access Compado feed

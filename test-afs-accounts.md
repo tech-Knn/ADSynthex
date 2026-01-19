@@ -9,11 +9,12 @@
 | **AFS-IST-08** | 5932592680 | ✅ Configured in `account-access-control.ts:35` |
 | **AFS-IST-12** | 5351234641 | ✅ Configured in `account-access-control.ts:40` |
 | **AFS-IST-13** | 7918808672 | ✅ Configured in `account-access-control.ts:41` |
+| **AFS-IST-21** | 7507601023 | ✅ Configured in `account-access-control.ts:50` |
 
-## All AFS Accounts (21 total)
+## All AFS Accounts (23 total)
 
 ```typescript
-// From lib/account-access-control.ts:28-48
+// From lib/account-access-control.ts:28-51
 'CID_7072817229': ['adsense'],  // AFS-IST-01
 'CID_1353234754': ['adsense'],  // AFS-IST-02
 'CID_6610446272': ['adsense'],  // AFS-IST-03
@@ -28,12 +29,14 @@
 'CID_9841818774': ['adsense'],  // AFS-IST-11
 'CID_5351234641': ['adsense'],  // AFS-IST-12 ✅
 'CID_7918808672': ['adsense'],  // AFS-IST-13 ✅
-'CID_3090502595': ['adsense'],  // AFS-IST-14
-'CID_9227278944': ['adsense'],  // AFS-IST-15
-'CID_7833025125': ['adsense'],  // AFS-IST-16
-'CID_1622548445': ['adsense'],  // AFS-IST-17
-'CID_9622143895': ['adsense'],  // AFS-IST-18
-'CID_7949737807': ['adsense'],  // AFS-IST-19
+'CID_5136436733': ['adsense'],  // AFS-IST-14
+'CID_4985953086': ['adsense'],  // AFS-IST-15
+'CID_1086706941': ['adsense'],  // AFS-IST-16
+'CID_7142427325': ['adsense'],  // AFS-IST-17
+'CID_1173588441': ['adsense'],  // AFS-IST-18
+'CID_1786688915': ['adsense'],  // AFS-IST-19
+'CID_5822945286': ['adsense'],  // AFS-IST-20
+'CID_7507601023': ['adsense'], // AFS-IST-21 ✅
 'CID_9249163427': ['adsense'],  // TRT-AFS 01
 ```
 

@@ -31,6 +31,7 @@ interface AdSenseAccount {
 
 export default function AdSensePage() {
   const [loading, setLoading] = useState(false);
+  const [loadingForce, setLoadingForce] = useState(false);
   const [data, setData] = useState<AdSenseCostRevenueResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [googleAdsAccounts, setGoogleAdsAccounts] = useState<any[]>([]);
@@ -78,7 +79,7 @@ export default function AdSensePage() {
 
   // Auto-fetch data when accounts are loaded
   useEffect(() => {
-    if (!loadingAccounts && selectedGoogleAdsAccount && selectedAdsenseAccount && !data && !loading) {
+    if (!loadingAccounts && selectedGoogleAdsAccount && selectedAdsenseAccount && !data && !loading && !loadingForce) {
       console.log('[AFS] Auto-fetching data on page load');
       fetchData();
     }
@@ -113,19 +114,27 @@ export default function AdSensePage() {
       }
 
       const allAccounts = result.accounts?.managed || result.accounts?.all || [];
+      console.log('[AFS] Total accounts from API:', allAccounts.length);
 
       const adsenseAccounts = allAccounts.filter((acc: any) => {
         // Filter out Oarex Funding LLC
         if (acc.name && acc.name.includes('Oarex Funding LLC')) {
+          console.log('[AFS] Filtering out Oarex Funding LLC:', acc.id, acc.name);
           return false;
         }
 
         const accountKey = `CID_${acc.id}`;
         const feeds = ACCOUNT_FEED_ACCESS[accountKey];
-        return feeds && feeds.includes('adsense');
+        const hasAdsenseAccess = feeds && feeds.includes('adsense');
+
+        if (!hasAdsenseAccess) {
+          console.log('[AFS] No adsense access for:', acc.id, acc.name);
+        }
+
+        return hasAdsenseAccess;
       });
 
-      console.log('[AFS] Filtered AFS accounts:', adsenseAccounts.length);
+      console.log('[AFS] ✅ Filtered AFS accounts:', adsenseAccounts.length, '(configured: 23 total)');
 
       const sortedAccounts = adsenseAccounts.sort((a: any, b: any) => {
 
@@ -193,7 +202,11 @@ export default function AdSensePage() {
       return;
     }
 
-    setLoading(true);
+    if (forceLive) {
+      setLoadingForce(true);
+    } else {
+      setLoading(true);
+    }
     setError(null);
 
     try {
@@ -245,6 +258,7 @@ export default function AdSensePage() {
       setError(err.message || 'Failed to fetch AFS data');
     } finally {
       setLoading(false);
+      setLoadingForce(false);
     }
   };
 
@@ -357,7 +371,7 @@ export default function AdSensePage() {
                   loading={loadingAccounts}
                 >
                   {isAdmin && googleAdsAccounts.length > 1 && (
-                    <Option value="all">All Accounts ({googleAdsAccounts.length})</Option>
+                    <Option value="all">All Accounts</Option>
                   )}
                   {googleAdsAccounts.map(account => (
                     <Option key={account.id} value={account.id}>
@@ -407,20 +421,21 @@ export default function AdSensePage() {
                 icon={<ReloadOutlined />}
                 onClick={() => fetchData(false)}
                 loading={loading}
-                disabled={!selectedGoogleAdsAccount || !selectedAdsenseAccount}
-                style={{ marginRight: 8 }}
+                disabled={!selectedGoogleAdsAccount || !selectedAdsenseAccount || loadingForce}
+                style={{ marginRight: 16 }}
               >
                 Fetch Data
               </Button>
               <Button
                 type="default"
+                size="small"
                 icon={<ReloadOutlined />}
                 onClick={() => fetchData(true)}
-                loading={loading}
-                disabled={!selectedGoogleAdsAccount || !selectedAdsenseAccount}
+                loading={loadingForce}
+                disabled={!selectedGoogleAdsAccount || !selectedAdsenseAccount || loading}
                 danger
               >
-                Force Refresh (Bypass Cache)
+                Force Refresh
               </Button>
             </Col>
           </Row>
@@ -429,14 +444,14 @@ export default function AdSensePage() {
             <Alert message="Error" description={error} type="error" showIcon style={{ marginBottom: 24 }} />
           )}
 
-          {loading && (
+          {(loading || loadingForce) && (
             <div style={{ textAlign: 'center', padding: '50px' }}>
               <Spin size="large" />
               <p style={{ marginTop: 16 }}>Loading AFS data...</p>
             </div>
           )}
 
-          {data && !loading && (() => {
+          {data && !loading && !loadingForce && (() => {
             const filteredSummary = getFilteredSummary();
             const filteredCampaigns = getFilteredCampaigns();
             const paginatedCampaigns = getPaginatedCampaigns();
