@@ -1,6 +1,6 @@
 import React from 'react';
 import { Row, Col, Typography, Tooltip } from 'antd';
-import { ArrowUpOutlined, ArrowDownOutlined, DollarOutlined, LineChartOutlined, EyeOutlined, WarningOutlined } from '@ant-design/icons';
+import { ArrowUpOutlined, ArrowDownOutlined, DollarOutlined, LineChartOutlined, EyeOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { AdsComArticleData } from '../../lib/adscom-api';
 import { GoogleAdsAd } from '../../lib/google-ads-api';
 
@@ -19,6 +19,7 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ revenueData, costData }) =>
   const totalImpressions = costData.reduce((sum, ad) => sum + (ad.metrics?.impressions || 0), 0);
   const totalCostClicks = costData.reduce((sum, ad) => sum + (ad.metrics?.clicks || 0), 0);
   const totalCost = costData.reduce((sum, ad) => sum + (ad.metrics?.cost || 0), 0);
+  const totalConversions = costData.reduce((sum, ad) => sum + (ad.metrics?.conversions || 0), 0);
   const totalProfit = totalRevenue - totalCost;
   
   // Calculate ROI using correct formula: (Profit / Cost) * 100%
@@ -32,9 +33,12 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ revenueData, costData }) =>
   // Calculate averages
   const avgCTR = totalVisits > 0 ? (totalClicks / totalVisits) * 100 : 0;
   const avgRPM = totalVisits > 0 ? (totalRevenue / totalVisits) * 1000 : 0;
-  
+
   // Calculate average EPC (Earnings Per Click)
   const avgEPC = totalClicks > 0 ? totalRevenue / totalClicks : 0;
+
+  // Calculate conversion rate
+  const conversionRate = totalCostClicks > 0 ? (totalConversions / totalCostClicks) * 100 : 0;
   
   // Display the actual count of articles rather than campaigns
   const articleCount = revenueData.length;
@@ -69,8 +73,8 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ revenueData, costData }) =>
         <Title level={4} className="dashboard-title">Dashboard Overview</Title>
       </div>
       
-      <Row gutter={[32, 20]} justify="center" align="stretch">
-        <Col xs={12} sm={12} md={8} lg={6} xl={6}>
+      <Row gutter={[16, 16]} justify="center" align="stretch">
+        <Col xs={12} sm={12} md={8} lg={4} xl={4}>
           <div className="tile tile-1">
             <div className="tile-content">
               <div className="tile-icon tile-icon-1">
@@ -88,7 +92,7 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ revenueData, costData }) =>
           </div>
         </Col>
         
-        <Col xs={12} sm={12} md={8} lg={6} xl={6}>
+        <Col xs={12} sm={12} md={8} lg={4} xl={4}>
           <div className="tile tile-2">
             <div className="tile-content">
               <div className="tile-icon tile-icon-2">
@@ -106,7 +110,7 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ revenueData, costData }) =>
           </div>
         </Col>
         
-        <Col xs={12} sm={12} md={8} lg={6} xl={6}>
+        <Col xs={12} sm={12} md={8} lg={4} xl={4}>
           <div className="tile tile-3">
             <div className="tile-content">
               <div className="tile-icon tile-icon-3">
@@ -131,7 +135,7 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ revenueData, costData }) =>
           </div>
         </Col>
         
-        <Col xs={12} sm={12} md={8} lg={6} xl={6}>
+        <Col xs={12} sm={12} md={8} lg={4} xl={4}>
           <div className="tile tile-4">
             <div className="tile-content">
               <div className="tile-icon tile-icon-4">
@@ -143,9 +147,53 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ revenueData, costData }) =>
                   ${safeFormat.epc(avgEPC)}
                 </div>
                 <div className="tile-footer">
-                  <span className="metric-label">Clicks:</span>
+                  <span className="metric-label">CTR:</span>
                   <span className="metric-value" style={{ color: 'var(--secondary-color)' }}>
-                    {safeFormat.number(totalClicks)}
+                    {safeFormat.percentage(avgCTR)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Col>
+
+        <Col xs={12} sm={12} md={8} lg={4} xl={4}>
+          <div className="tile tile-5">
+            <div className="tile-content">
+              <div className="tile-icon tile-icon-5">
+                <EyeOutlined />
+              </div>
+              <div className="tile-info">
+                <div className="tile-title">TOTAL CLICKS</div>
+                <div className="tile-value" style={{ color: 'var(--info-color)' }}>
+                  {safeFormat.number(totalClicks)}
+                </div>
+                <div className="tile-footer">
+                  <span className="metric-label">Visits:</span>
+                  <span className="metric-value" style={{ color: 'var(--info-color)' }}>
+                    {safeFormat.number(totalVisits)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Col>
+
+        <Col xs={12} sm={12} md={8} lg={4} xl={4}>
+          <div className="tile tile-6">
+            <div className="tile-content">
+              <div className="tile-icon tile-icon-6">
+                <CheckCircleOutlined />
+              </div>
+              <div className="tile-info">
+                <div className="tile-title">CONVERSIONS</div>
+                <div className="tile-value" style={{ color: 'var(--warning-color)' }}>
+                  {safeFormat.number(totalConversions)}
+                </div>
+                <div className="tile-footer">
+                  <span className="metric-label">Conv. Rate:</span>
+                  <span className="metric-value" style={{ color: 'var(--warning-color)' }}>
+                    {safeFormat.percentage(conversionRate)}
                   </span>
                 </div>
               </div>
@@ -190,7 +238,7 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ revenueData, costData }) =>
           border-radius: 12px;
           box-shadow: 0 2px 8px rgba(0,0,0,0.08);
           border: 1px solid rgba(0,0,0,0.05);
-          padding: 20px;
+          padding: 16px;
           width: 100%;
           min-width: 0;
           height: 100%;
@@ -213,12 +261,12 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ revenueData, costData }) =>
           display: flex;
           align-items: center;
           justify-content: center;
-          width: 36px;
-          height: 36px;
+          width: 32px;
+          height: 32px;
           border-radius: 8px;
-          margin-right: 12px;
+          margin-right: 10px;
           color: white;
-          font-size: 16px;
+          font-size: 14px;
           flex-shrink: 0;
           transition: transform 0.3s cubic-bezier(0.4,0,0.2,1), box-shadow 0.3s cubic-bezier(0.4,0,0.2,1);
         }
@@ -245,7 +293,11 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ revenueData, costData }) =>
         }
         
         .tile-icon-5 {
-          background: linear-gradient(135deg, #ef4444 0%, #f87171 100%);
+          background: linear-gradient(135deg, #06b6d4 0%, #22d3ee 100%);
+        }
+
+        .tile-icon-6 {
+          background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%);
         }
         
         .tile-info {
@@ -266,7 +318,7 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ revenueData, costData }) =>
         }
         
         .tile-value {
-          font-size: 26px;
+          font-size: 22px;
           font-weight: 700;
           margin-bottom: 4px;
           white-space: nowrap;
@@ -342,6 +394,11 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ revenueData, costData }) =>
         
         .summary-cards-container .ant-col:nth-child(5) .tile {
           animation: slideUp 0.3s ease-out 0.2s forwards;
+          opacity: 0;
+        }
+
+        .summary-cards-container .ant-col:nth-child(6) .tile {
+          animation: slideUp 0.3s ease-out 0.25s forwards;
           opacity: 0;
         }
         

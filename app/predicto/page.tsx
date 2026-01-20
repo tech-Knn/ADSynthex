@@ -342,7 +342,7 @@ export default function PredictoPage() {
             <>
               {/* Cost & Revenue Summary Cards */}
               <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                <Col xs={24} sm={12} lg={6}>
+                <Col xs={24} sm={12} lg={6} xl={4}>
                   <Card>
                     <Statistic
                       title="Total Cost"
@@ -353,7 +353,7 @@ export default function PredictoPage() {
                     />
                   </Card>
                 </Col>
-                <Col xs={24} sm={12} lg={6}>
+                <Col xs={24} sm={12} lg={6} xl={4}>
                   <Card>
                     <Statistic
                       title="Total Revenue"
@@ -364,7 +364,7 @@ export default function PredictoPage() {
                     />
                   </Card>
                 </Col>
-                <Col xs={24} sm={12} lg={6}>
+                <Col xs={24} sm={12} lg={6} xl={4}>
                   <Card>
                     <Statistic
                       title="Total Profit"
@@ -378,7 +378,7 @@ export default function PredictoPage() {
                     />
                   </Card>
                 </Col>
-                <Col xs={24} sm={12} lg={6}>
+                <Col xs={24} sm={12} lg={6} xl={4}>
                   <Card>
                     <Statistic
                       title="Average ROI"
@@ -389,6 +389,24 @@ export default function PredictoPage() {
                         color: data.summary.average_roi >= 0 ? '#52c41a' : '#ff4d4f',
                         fontSize: '24px'
                       }}
+                    />
+                  </Card>
+                </Col>
+                <Col xs={24} sm={12} lg={6} xl={4}>
+                  <Card>
+                    <Statistic
+                      title="Total Clicks"
+                      value={data.campaign_aggregated.reduce((sum: number, item: any) => sum + (item.predicto_clicks || 0), 0)}
+                      valueStyle={{ color: '#1890ff', fontSize: '24px' }}
+                    />
+                  </Card>
+                </Col>
+                <Col xs={24} sm={12} lg={6} xl={4}>
+                  <Card>
+                    <Statistic
+                      title="Total Conversions"
+                      value={data.campaign_aggregated.reduce((sum: number, item: any) => sum + (item.conversions || 0), 0)}
+                      valueStyle={{ color: '#faad14', fontSize: '24px' }}
                     />
                   </Card>
                 </Col>

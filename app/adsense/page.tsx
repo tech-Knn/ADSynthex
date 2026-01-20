@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Layout, Typography, DatePicker, Button, Row, Col, Alert, Spin, Select, Input, Tooltip } from 'antd';
+import { Layout, Typography, DatePicker, Button, Row, Col, Alert, Spin, Select, Input, Tooltip, Table, Card } from 'antd';
 import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import DashboardLayout from '@/components/Layout/DashboardLayout';
@@ -500,6 +500,115 @@ export default function AdSensePage() {
                     </Row>
                   </div>
                 </Col>
+
+                {/* Account-Level Performance Table (only show for multi-account view) */}
+                {selectedGoogleAdsAccount === 'all' && data.account_level_aggregated && data.account_level_aggregated.length > 0 && (
+                  <Col span={24}>
+                    <Card
+                      title={<Title level={4}>Account-Level Performance</Title>}
+                      style={{ marginBottom: 24 }}
+                    >
+                      <Table
+                        columns={[
+                          {
+                            title: 'Account ID',
+                            dataIndex: 'account_id',
+                            key: 'account_id',
+                            fixed: 'left',
+                            width: 150,
+                            render: (id: string) => {
+                              const account = googleAdsAccounts.find(acc => acc.id === id);
+                              return <Text strong>{account?.name || id}</Text>;
+                            },
+                          },
+                          {
+                            title: 'Campaigns',
+                            dataIndex: 'campaignCount',
+                            key: 'campaignCount',
+                            width: 100,
+                            render: (count: number) => <Text>{count || 0}</Text>,
+                          },
+                          {
+                            title: 'Cost',
+                            dataIndex: 'cost',
+                            key: 'cost',
+                            width: 120,
+                            render: (cost: number) => (
+                              <Text strong style={{ color: '#ff4d4f' }}>
+                                ${(cost || 0).toFixed(2)}
+                              </Text>
+                            ),
+                            sorter: (a: any, b: any) => (a.cost || 0) - (b.cost || 0),
+                            defaultSortOrder: 'descend',
+                          },
+                          {
+                            title: 'Revenue',
+                            dataIndex: 'revenue',
+                            key: 'revenue',
+                            width: 120,
+                            render: (revenue: number) => (
+                              <Text strong style={{ color: '#52c41a' }}>
+                                ${(revenue || 0).toFixed(2)}
+                              </Text>
+                            ),
+                            sorter: (a: any, b: any) => (a.revenue || 0) - (b.revenue || 0),
+                          },
+                          {
+                            title: 'Profit',
+                            dataIndex: 'profit',
+                            key: 'profit',
+                            width: 120,
+                            render: (profit: number) => (
+                              <Text strong style={{ color: (profit || 0) >= 0 ? '#52c41a' : '#ff4d4f' }}>
+                                ${(profit || 0).toFixed(2)}
+                              </Text>
+                            ),
+                            sorter: (a: any, b: any) => (a.profit || 0) - (b.profit || 0),
+                          },
+                          {
+                            title: 'ROI',
+                            dataIndex: 'roi',
+                            key: 'roi',
+                            width: 100,
+                            render: (roi: number) => (
+                              <Text strong style={{ color: (roi || 0) >= 0 ? '#52c41a' : '#ff4d4f' }}>
+                                {(roi || 0).toFixed(1)}%
+                              </Text>
+                            ),
+                            sorter: (a: any, b: any) => (a.roi || 0) - (b.roi || 0),
+                          },
+                          {
+                            title: 'ROAS',
+                            dataIndex: 'roas',
+                            key: 'roas',
+                            width: 100,
+                            render: (roas: number) => (
+                              <Text strong style={{ color: (roas || 0) >= 1 ? '#52c41a' : '#ff4d4f' }}>
+                                {(roas || 0).toFixed(2)}x
+                              </Text>
+                            ),
+                            sorter: (a: any, b: any) => (a.roas || 0) - (b.roas || 0),
+                          },
+                          {
+                            title: 'Conversions',
+                            dataIndex: 'conversions',
+                            key: 'conversions',
+                            width: 100,
+                            render: (conversions: number) => (
+                              <Text>{Math.round(conversions || 0).toLocaleString()}</Text>
+                            ),
+                            sorter: (a: any, b: any) => (a.conversions || 0) - (b.conversions || 0),
+                          },
+                        ]}
+                        dataSource={data.account_level_aggregated}
+                        rowKey="account_id"
+                        pagination={false}
+                        size="middle"
+                        scroll={{ x: 1000 }}
+                      />
+                    </Card>
+                  </Col>
+                )}
 
                 <Col span={24}>
                   <div style={{ background: '#fff', padding: '20px', borderRadius: '8px' }}>
