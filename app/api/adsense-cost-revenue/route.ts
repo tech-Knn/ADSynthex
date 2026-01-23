@@ -48,10 +48,45 @@ export async function POST(request: NextRequest) {
       console.log('[ADSENSE_REVENUE] FORCE LIVE MODE - ALL CACHES BYPASSED ');
     }
 
-    // IMPORTANT: Account-level caching strategy with separation of concerns
-    // Instead of caching the entire combined result, we cache each account separately
-    // This allows reusing cached data when switching between "all accounts" and single account views
-    const CACHE_TTL = 15 * 60 * 1000; // 15 minutes in milliseconds
+    // ==================== AGGREGATED CACHING STRATEGY ====================
+    // CRITICAL FIX: Use aggregated cache to ensure data consistency
+    // Instead of mixing cached and fresh data from individual accounts,
+    // we cache and serve the FINAL combined result as a single unit
+    const AGGREGATED_CACHE_TTL = 10 * 60; // 10 minutes in seconds
+    const ACCOUNT_CACHE_TTL = 15 * 60 * 1000; // 15 minutes in milliseconds (for fallback)
+
+    // Generate aggregated cache key
+    const accountsKey = accountIds?.length > 0
+      ? accountIds.sort().join(',')
+      : customerId || 'unknown';
+    const aggregatedCacheKey = `afs_aggregated:${accountsKey}:${adsenseAccountId}:${startDate}:${endDate}`;
+
+    // Check aggregated cache FIRST (unless force refresh)
+    if (!forceLive) {
+      try {
+        const cachedResult = await redisCacheManager.get(aggregatedCacheKey, {
+          dataType: 'unified',
+          forceRefresh: false
+        });
+
+        if (cachedResult.data && cachedResult.age < AGGREGATED_CACHE_TTL * 1000) {
+          const cacheAgeSeconds = Math.round(cachedResult.age / 1000);
+          console.log(`[ADSENSE_REVENUE] AGGREGATED CACHE HIT! Age: ${cacheAgeSeconds}s, returning consistent data`);
+
+          return NextResponse.json({
+            ...cachedResult.data,
+            _source: 'aggregated_cache',
+            _cacheAge: `${cacheAgeSeconds}s`,
+            _message: `Served from cache (${cacheAgeSeconds}s old). Use Force Refresh for live data.`
+          });
+        }
+        console.log(`[ADSENSE_REVENUE] Aggregated cache miss or stale, fetching fresh data...`);
+      } catch (err) {
+        console.warn('[ADSENSE_REVENUE] Aggregated cache check failed:', err);
+      }
+    }
+
+    const CACHE_TTL = ACCOUNT_CACHE_TTL; // Keep for backward compat
 
     if (!startDate || !endDate) {
       console.error('[ADSENSE_REVENUE] Missing date range');
@@ -83,7 +118,7 @@ export async function POST(request: NextRequest) {
 
       // Verify account exists in ACCOUNT_FEED_ACCESS
       if (!ACCOUNT_FEED_ACCESS[normalizedAccId]) {
-        console.error(`[ADSENSE_REVENUE] ❌ Access denied: Account ${normalizedAccId} not found in ACCOUNT_FEED_ACCESS`);
+        console.error(`[ADSENSE_REVENUE] Access denied: Account ${normalizedAccId} not found in ACCOUNT_FEED_ACCESS`);
         return NextResponse.json({
           error: 'Invalid account ID',
           message: `Account ${accId} is not configured`
@@ -92,7 +127,7 @@ export async function POST(request: NextRequest) {
 
       // Verify account has 'adsense' feed permission
       if (!hasAccessToFeed(normalizedAccId, 'adsense')) {
-        console.error(`[ADSENSE_REVENUE] ❌ Access denied: Account ${normalizedAccId} does not have adsense feed access`);
+        console.error(`[ADSENSE_REVENUE] Access denied: Account ${normalizedAccId} does not have adsense feed access`);
         return NextResponse.json({
           error: 'Access denied',
           message: `Account ${accId} does not have AFS access`
@@ -109,7 +144,7 @@ export async function POST(request: NextRequest) {
 
       // Check single account access
       if (customerId && customerId !== accountValue) {
-        console.error(`[ADSENSE_REVENUE] ❌ User ${userAccountId} attempted to access account ${customerId}`);
+        console.error(`[ADSENSE_REVENUE] User ${userAccountId} attempted to access account ${customerId}`);
         return NextResponse.json({ error: 'Access denied to this account' }, { status: 403 });
       }
 
@@ -117,14 +152,14 @@ export async function POST(request: NextRequest) {
       if (accountIds && accountIds.length > 0) {
         const hasUnauthorized = accountIds.some((id: string) => id !== accountValue);
         if (hasUnauthorized) {
-          console.error(`[ADSENSE_REVENUE] ❌ User ${userAccountId} attempted to access unauthorized accounts: ${accountIds.join(', ')}`);
+          console.error(`[ADSENSE_REVENUE] User ${userAccountId} attempted to access unauthorized accounts: ${accountIds.join(', ')}`);
           return NextResponse.json({ error: 'Access denied to requested accounts' }, { status: 403 });
         }
       }
 
-      console.log(`[ADSENSE_REVENUE] ✅ User ${userAccountId} authorized for requested accounts`);
+      console.log(`[ADSENSE_REVENUE] User ${userAccountId} authorized for requested accounts`);
     } else if (authType === 'admin') {
-      console.log(`[ADSENSE_REVENUE] ✅ Admin access granted for ${requestedAccountIds.length} account(s)`);
+      console.log(`[ADSENSE_REVENUE] Admin access granted for ${requestedAccountIds.length} account(s)`);
     }
 
     // ==================== ACCOUNT-LEVEL CACHING ====================
@@ -144,7 +179,7 @@ export async function POST(request: NextRequest) {
         });
 
         if (cached.data && !cached.isStale && cached.age < CACHE_TTL) {
-          console.log(`[ADSENSE_COST_REVENUE] ✅ Cache HIT for account ${accountId}: Age ${Math.round(cached.age / 1000)}s`);
+          console.log(`[ADSENSE_COST_REVENUE] Cache HIT for account ${accountId}: Age ${Math.round(cached.age / 1000)}s`);
           return cached.data;
         }
         return null;
@@ -158,11 +193,10 @@ export async function POST(request: NextRequest) {
     const cacheAccountData = async (accountId: string, data: any) => {
       try {
         const cacheKey = getAccountCacheKey(accountId);
-        await redisCacheManager.set(cacheKey, data, {
-          dataType: 'unified',
+        await redisCacheManager.set(cacheKey, data, CACHE_TTL / 1000, { dataType: 'unified' }, {
           priority: 'high'
         });
-        console.log(`[ADSENSE_COST_REVENUE] ✅ Cached data for account ${accountId}`);
+        console.log(`[ADSENSE_COST_REVENUE] Cached data for account ${accountId}`);
       } catch (err) {
         console.warn(`[ADSENSE_COST_REVENUE] Failed to cache account ${accountId}:`, err);
       }
@@ -170,9 +204,9 @@ export async function POST(request: NextRequest) {
 
     // ==================== FETCH FROM APIS ====================
     if (forceLive) {
-      console.log('[ADSENSE_REVENUE] ⚡ FORCE LIVE: Fetching FRESH data directly from APIs (bypassing ALL caches)...');
+      console.log('[ADSENSE_REVENUE] FORCE LIVE: Fetching FRESH data directly from APIs (bypassing ALL caches)...');
     } else {
-      console.log('[ADSENSE_REVENUE] ⚡ Fetching data from APIs (account-level cache allowed)...');
+      console.log('[ADSENSE_REVENUE] Fetching data from APIs (account-level cache allowed)...');
     }
 
     // Check if querying "today's" data for smarter caching
@@ -214,10 +248,10 @@ export async function POST(request: NextRequest) {
         // Store cached data
         cachedAccounts.forEach(c => {
           cachedAccountData.set(c.accountId, c.cached);
-          console.log(`[ADSENSE_COST_REVENUE] ✅ Using cached data for account ${c.accountId}`);
+          console.log(`[ADSENSE_COST_REVENUE] Using cached data for account ${c.accountId}`);
         });
       } else {
-        console.log('[ADSENSE_COST_REVENUE] 🔥 FORCE LIVE: Bypassing account-level cache for ALL accounts');
+        console.log('[ADSENSE_COST_REVENUE] FORCE LIVE: Bypassing account-level cache for ALL accounts');
       }
 
       if (forceLive) {
@@ -230,6 +264,7 @@ export async function POST(request: NextRequest) {
 
         // CRITICAL FIX: Batch requests to prevent overwhelming API and rate limits
         const BATCH_SIZE = 3;
+        const MAX_RETRIES = 2; // Retry failed accounts up to 2 more times
         const batches: string[][] = [];
         for (let i = 0; i < uncachedAccountIds.length; i += BATCH_SIZE) {
           batches.push(uncachedAccountIds.slice(i, i + BATCH_SIZE));
@@ -237,25 +272,37 @@ export async function POST(request: NextRequest) {
 
         console.log(`[ADSENSE_COST_REVENUE] Processing ${batches.length} batches of max ${BATCH_SIZE} accounts each`);
 
-        // Process batches sequentially
-        const allResults: any[] = [];
+        // Process batches sequentially with results tracking
+        const allResults: Map<string, any> = new Map(); // Track results by account ID
+        let failedAccountIds: string[] = [];
+
         for (let i = 0; i < batches.length; i++) {
           const batch = batches[i];
           console.log(`[ADSENSE_COST_REVENUE] Batch ${i + 1}/${batches.length}: Fetching ${batch.length} accounts: ${batch.join(', ')}`);
 
           const batchResults = await Promise.all(
-            batch.map((accId: string) =>
-              bulletproofAPI.getData(startDate, endDate, accId, {
+            batch.map(async (accId: string) => {
+              const result = await bulletproofAPI.getData(startDate, endDate, accId, {
                 priority: isToday ? 9 : 8,
-                allowStale: !forceLive, // CRITICAL: Bypass cache when forceLive=true
-                maxWait: 30000,
+                allowStale: !forceLive,
+                maxWait: 45000, // Increased timeout for reliability
                 feedType: 'adsense'
-              })
-            )
+              });
+              return { accId, result };
+            })
           );
 
-          allResults.push(...batchResults);
-          console.log(`[ADSENSE_COST_REVENUE] Batch ${i + 1}/${batches.length}: Completed, ${batchResults.filter(r => r.data).length}/${batch.length} succeeded`);
+          // Track successes and failures
+          batchResults.forEach(({ accId, result }) => {
+            if (result.data?.campaigns || result.data?.ads) {
+              allResults.set(accId, result);
+            } else {
+              failedAccountIds.push(accId);
+              console.warn(`[ADSENSE_COST_REVENUE] Account ${accId} failed in batch ${i + 1}`);
+            }
+          });
+
+          console.log(`[ADSENSE_COST_REVENUE] Batch ${i + 1}/${batches.length}: ${allResults.size} total successes, ${failedAccountIds.length} failures`);
 
           // Delay between batches
           if (i < batches.length - 1) {
@@ -263,7 +310,46 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        googleAdsDataPromises = Promise.resolve(allResults);
+        // CRITICAL: Retry failed accounts to ensure data consistency
+        for (let retry = 0; retry < MAX_RETRIES && failedAccountIds.length > 0; retry++) {
+          console.log(`[ADSENSE_COST_REVENUE] Retry ${retry + 1}/${MAX_RETRIES}: Retrying ${failedAccountIds.length} failed accounts: ${failedAccountIds.join(', ')}`);
+
+          await new Promise(resolve => setTimeout(resolve, 2000)); // Wait before retry
+
+          const retryResults = await Promise.all(
+            failedAccountIds.map(async (accId: string) => {
+              const result = await bulletproofAPI.getData(startDate, endDate, accId, {
+                priority: 10, // Highest priority for retries
+                allowStale: true, // Accept any data on retry
+                maxWait: 60000, // Longer timeout for retries
+                feedType: 'adsense'
+              });
+              return { accId, result };
+            })
+          );
+
+          // Process retry results
+          const stillFailedIds: string[] = [];
+          retryResults.forEach(({ accId, result }) => {
+            if (result.data?.campaigns || result.data?.ads) {
+              allResults.set(accId, result);
+              console.log(`[ADSENSE_COST_REVENUE] Retry succeeded for account ${accId}`);
+            } else {
+              stillFailedIds.push(accId);
+            }
+          });
+
+          failedAccountIds = stillFailedIds;
+        }
+
+        if (failedAccountIds.length > 0) {
+          console.error(`[ADSENSE_COST_REVENUE] CRITICAL: ${failedAccountIds.length} accounts failed after all retries: ${failedAccountIds.join(', ')}`);
+        }
+
+        console.log(`[ADSENSE_COST_REVENUE] Final: ${allResults.size}/${uncachedAccountIds.length} accounts fetched successfully`);
+
+        // Convert map to array for processing
+        googleAdsDataPromises = Promise.resolve(Array.from(allResults.values()));
       } else {
         console.log('[ADSENSE_COST_REVENUE] All accounts cached, no API fetching needed!');
         googleAdsDataPromises = Promise.resolve([]);
@@ -275,13 +361,13 @@ export async function POST(request: NextRequest) {
       const cachedData = forceLive ? null : await checkAccountCache(customerId);
 
       if (cachedData && !forceLive) {
-        console.log('[ADSENSE_COST_REVENUE] ✅ Using cached data for account', customerId);
+        console.log('[ADSENSE_COST_REVENUE] Using cached data for account', customerId);
         cachedAccountData.set(customerId, cachedData);
         googleAdsDataPromises = Promise.resolve([]); // No need to fetch
       } else {
         // STEP 2: Fetch if not cached OR if forceLive=true
         if (forceLive) {
-          console.log('[ADSENSE_COST_REVENUE] 🔥 FORCE LIVE: Bypassing account-level cache, fetching fresh data');
+          console.log('[ADSENSE_COST_REVENUE] FORCE LIVE: Bypassing account-level cache, fetching fresh data');
         } else {
           console.log('[ADSENSE_COST_REVENUE] Cache MISS, fetching from bulletproofAPI');
         }
@@ -341,16 +427,25 @@ export async function POST(request: NextRequest) {
         }
 
         // STEP 2: Process freshly fetched accounts
+        // Results now come as an array where each item has the result directly
+        // Account IDs are tracked via the Map keys before conversion
         let successCount = 0;
         let failedAccounts: string[] = [];
-        const uncachedAccountIds = accountsData.length > 0 ? accountIds.filter((id: string) => !cachedAccountData.has(id)) : [];
 
-        accountsData.forEach((accountResult: any, index: number) => {
-          const accData = accountResult.data;
-          const accountId = uncachedAccountIds[index];
+        // The results are now in format: { data: { campaigns, ads }, message, ... }
+        // BUT we converted from Map values, so we need to extract account_id from the data itself
+        accountsData.forEach((accountResultWrapper: any) => {
+          // accountResultWrapper is the result object from bulletproofAPI.getData
+          const accData = accountResultWrapper.data;
 
-          if (!accountId) {
-            console.error(`[ADSENSE_COST_REVENUE] ❌ CRITICAL: Missing account ID for index ${index}`);
+          // Try to extract account_id from the data itself
+          const accountId = accData?.campaigns?.[0]?.customer_id ||
+            accData?.ads?.[0]?.customer_id ||
+            accData?.customer_id ||
+            'unknown';
+
+          if (accountId === 'unknown') {
+            console.warn(`[ADSENSE_COST_REVENUE] Could not determine account ID from result`);
             return;
           }
 
@@ -360,32 +455,24 @@ export async function POST(request: NextRequest) {
             if (accData?.campaigns) {
               accData.campaigns.forEach((c: any) => {
                 c.account_id = accountId;
-                // VALIDATION: Ensure customer_id matches
-                if (c.customer_id && c.customer_id !== accountId) {
-                  console.warn(`[ADSENSE_COST_REVENUE] ⚠️  Campaign customer_id mismatch: expected ${accountId}, got ${c.customer_id}`);
-                }
               });
               googleAdsData.campaigns.push(...accData.campaigns);
             }
             if (accData?.ads) {
               accData.ads.forEach((a: any) => {
                 a.account_id = accountId;
-                // VALIDATION: Ensure customer_id matches
-                if (a.customer_id && a.customer_id !== accountId) {
-                  console.warn(`[ADSENSE_COST_REVENUE] ⚠️  Ad customer_id mismatch: expected ${accountId}, got ${a.customer_id}`);
-                }
               });
               googleAdsData.ads.push(...accData.ads);
             }
 
-            console.log(`[ADSENSE_COST_REVENUE] ✅ Account ${accountId}: ${accData.campaigns?.length || 0} campaigns, ${accData.ads?.length || 0} ads tagged`);
+            console.log(`[ADSENSE_COST_REVENUE] Account ${accountId}: ${accData.campaigns?.length || 0} campaigns, ${accData.ads?.length || 0} ads tagged`);
 
             // CRITICAL: Cache this account's data separately
             cacheAccountData(accountId, { googleAdsData: accData });
           } else {
             // Account failed
             failedAccounts.push(accountId);
-            console.warn(`[ADSENSE_COST_REVENUE] ⚠️  Account ${accountId} returned no data: ${accountResult.message || 'Unknown error'}`);
+            console.warn(`[ADSENSE_COST_REVENUE]  Account ${accountId} returned no data`);
           }
         });
 
@@ -393,8 +480,8 @@ export async function POST(request: NextRequest) {
         console.log(`[ADSENSE_COST_REVENUE] Multi-account: ${cachedCount} cached + ${successCount} fetched, ${googleAdsData.campaigns.length} campaigns, ${googleAdsData.ads.length} ads`);
 
         if (failedAccounts.length > 0) {
-          console.error(`[ADSENSE_COST_REVENUE] ❌ PARTIAL DATA! ${failedAccounts.length} accounts failed: ${failedAccounts.join(', ')}`);
-          message += `⚠️ Warning: ${failedAccounts.length} accounts failed! `;
+          console.error(`[ADSENSE_COST_REVENUE] PARTIAL DATA! ${failedAccounts.length} accounts failed: ${failedAccounts.join(', ')}`);
+          message += `Warning: ${failedAccounts.length} accounts failed! `;
         }
       } else {
         // Single account
@@ -409,7 +496,7 @@ export async function POST(request: NextRequest) {
               c.account_id = customerId;
               // Validate customer_id matches if present
               if (c.customer_id && c.customer_id !== customerId) {
-                console.warn(`[ADSENSE_COST_REVENUE] ⚠️  Cached campaign customer_id mismatch: expected ${customerId}, got ${c.customer_id}`);
+                console.warn(`[ADSENSE_COST_REVENUE]  Cached campaign customer_id mismatch: expected ${customerId}, got ${c.customer_id}`);
               }
             });
           }
@@ -418,7 +505,7 @@ export async function POST(request: NextRequest) {
               a.account_id = customerId;
               // Validate customer_id matches if present
               if (a.customer_id && a.customer_id !== customerId) {
-                console.warn(`[ADSENSE_COST_REVENUE] ⚠️  Cached ad customer_id mismatch: expected ${customerId}, got ${a.customer_id}`);
+                console.warn(`[ADSENSE_COST_REVENUE]  Cached ad customer_id mismatch: expected ${customerId}, got ${a.customer_id}`);
               }
             });
           }
@@ -435,7 +522,7 @@ export async function POST(request: NextRequest) {
             googleAdsData.campaigns.forEach((c: any) => {
               c.account_id = customerId;
               if (c.customer_id && c.customer_id !== customerId) {
-                console.warn(`[ADSENSE_COST_REVENUE] ⚠️  Fresh campaign customer_id mismatch: expected ${customerId}, got ${c.customer_id}`);
+                console.warn(`[ADSENSE_COST_REVENUE]  Fresh campaign customer_id mismatch: expected ${customerId}, got ${c.customer_id}`);
               }
             });
           }
@@ -443,7 +530,7 @@ export async function POST(request: NextRequest) {
             googleAdsData.ads.forEach((a: any) => {
               a.account_id = customerId;
               if (a.customer_id && a.customer_id !== customerId) {
-                console.warn(`[ADSENSE_COST_REVENUE] ⚠️  Fresh ad customer_id mismatch: expected ${customerId}, got ${a.customer_id}`);
+                console.warn(`[ADSENSE_COST_REVENUE]  Fresh ad customer_id mismatch: expected ${customerId}, got ${a.customer_id}`);
               }
             });
           }
@@ -471,7 +558,7 @@ export async function POST(request: NextRequest) {
     console.log(`[ADSENSE_COST_REVENUE] Unique customer IDs in Google Ads data: ${Array.from(uniqueCustomerIds).join(', ')}`);
     console.log(`[ADSENSE_COST_REVENUE] Expected customer ID: ${customerId || 'all'}`);
     if (customerId && uniqueCustomerIds.size > 1) {
-      console.error(`[ADSENSE_COST_REVENUE] ⚠️ WARNING: Expected single account but got ${uniqueCustomerIds.size} accounts!`);
+      console.error(`[ADSENSE_COST_REVENUE] WARNING: Expected single account but got ${uniqueCustomerIds.size} accounts!`);
     }
 
     // Handle AdSense data
@@ -575,7 +662,7 @@ export async function POST(request: NextRequest) {
 
         // VALIDATION: Warn if account_id is unknown
         if (accountId === 'unknown') {
-          console.warn(`[ADSENSE_COST_REVENUE] ⚠️  WARNING: Campaign ${campaignId} has unknown account_id! This will cause revenue misattribution.`);
+          console.warn(`[ADSENSE_COST_REVENUE]  WARNING: Campaign ${campaignId} has unknown account_id! This will cause revenue misattribution.`);
         }
 
         const campaignStatus = campaign?.campaign_status || campaign?.status || adCampaignStatus || 'UNKNOWN';
@@ -614,7 +701,7 @@ export async function POST(request: NextRequest) {
     console.log(`[ADSENSE_COST_REVENUE] Campaign accounts: ${Array.from(campaignAccountIds).join(', ')}`);
     console.log(`[ADSENSE_COST_REVENUE] Expected account: ${customerId || 'all'}`);
     if (customerId && campaignAccountIds.size > 1) {
-      console.error(`[ADSENSE_COST_REVENUE] ⚠️ WARNING: Expected campaigns from 1 account, found ${campaignAccountIds.size} accounts!`);
+      console.error(`[ADSENSE_COST_REVENUE] WARNING: Expected campaigns from 1 account, found ${campaignAccountIds.size} accounts!`);
     }
 
     // Debug: Show campaign status distribution
@@ -666,10 +753,10 @@ export async function POST(request: NextRequest) {
     }
     console.log(`[ADSENSE_COST_REVENUE] Style map covers ${styleMapAccountIds.size} account(s): ${Array.from(styleMapAccountIds).join(', ')}`);
     if (customerId && styleMapAccountIds.size > 1) {
-      console.error(`[ADSENSE_COST_REVENUE] ⚠️ WARNING: Style map should only have 1 account, found ${styleMapAccountIds.size}!`);
+      console.error(`[ADSENSE_COST_REVENUE] WARNING: Style map should only have 1 account, found ${styleMapAccountIds.size}!`);
     }
 
-    // ⚠️ WARNING: Check for potential style_id sharing across accounts
+    // WARNING: Check for potential style_id sharing across accounts
     // If viewing single account, this is expected. If viewing "All", this helps debug revenue duplication
     const accountContext = isMultiAccount ? `${accountIds.length} accounts combined` : `single account ${customerId}`;
     console.log(`[ADSENSE_COST_REVENUE] Context: ${accountContext}`);
@@ -737,11 +824,11 @@ export async function POST(request: NextRequest) {
     console.log(`[ADSENSE_COST_REVENUE] Campaign cost processing: ${campaignsWithCost} campaigns with cost / ${totalCampaigns} total (${campaignsWithoutStyleId} without style_id)`);
 
     // DEBUG: Show date distribution
-    console.log(`[ADSENSE_COST_REVENUE] 📅 Campaign data covers ${campaignDates.size} unique dates: ${Array.from(campaignDates).sort().join(', ')}`);
-    console.log(`[ADSENSE_COST_REVENUE] 📅 Rows per date:`, Object.fromEntries(
+    console.log(`[ADSENSE_COST_REVENUE] Campaign data covers ${campaignDates.size} unique dates: ${Array.from(campaignDates).sort().join(', ')}`);
+    console.log(`[ADSENSE_COST_REVENUE] Rows per date:`, Object.fromEntries(
       Array.from(campaignRowsByDate.entries()).sort((a, b) => a[0].localeCompare(b[0]))
     ));
-    console.log(`[ADSENSE_COST_REVENUE] 📅 Expected date range: ${startDate} to ${endDate}`);
+    console.log(`[ADSENSE_COST_REVENUE] Expected date range: ${startDate} to ${endDate}`);
 
     // Calculate total conversions from Google Ads
     const totalGoogleAdsConversions = Array.from(costByStyleDomain.values()).reduce((sum, data) => sum + data.conversions, 0);
@@ -828,7 +915,7 @@ export async function POST(request: NextRequest) {
           const hasStyleId = currentAccountStyleIds.has(rev.style_id);
           const hasCost = costByStyleDomain.has(key);
           const reason = hasStyleId ? 'domain mismatch' : 'style_id not in account';
-          console.log(`[ADSENSE_COST_REVENUE] ⚠️  SKIPPED #${skippedRevenueItems}: style=${rev.style_id}, domain=${normalizedDomain}, earnings=$${rev.earnings.toFixed(2)}, reason=${reason}, hasCost=${hasCost}, key="${key}"`);
+          console.log(`[ADSENSE_COST_REVENUE]  SKIPPED #${skippedRevenueItems}: style=${rev.style_id}, domain=${normalizedDomain}, earnings=$${rev.earnings.toFixed(2)}, reason=${reason}, hasCost=${hasCost}, key="${key}"`);
         }
         continue;
       }
@@ -838,7 +925,7 @@ export async function POST(request: NextRequest) {
 
       // Log first 5 allocated items for debugging
       if (allocatedRevenueItems <= 5) {
-        console.log(`[ADSENSE_COST_REVENUE] ✅ ALLOCATED #${allocatedRevenueItems}: style=${rev.style_id}, domain=${normalizedDomain}, country=${rev.country_name || 'N/A'}, earnings=$${rev.earnings.toFixed(2)} (exact match)`);
+        console.log(`[ADSENSE_COST_REVENUE] ALLOCATED #${allocatedRevenueItems}: style=${rev.style_id}, domain=${normalizedDomain}, country=${rev.country_name || 'N/A'}, earnings=$${rev.earnings.toFixed(2)} (exact match)`);
       }
 
       if (!revenueByStyleDomain.has(key)) {
@@ -907,7 +994,7 @@ export async function POST(request: NextRequest) {
         noRevenueTotalCost += costData.cost;
       }
     }
-    console.log(`[ADSENSE_COST_REVENUE] ⚠️ Total: ${noRevenueCount} cost entries with NO revenue, total cost: $${noRevenueTotalCost.toFixed(2)}`);
+    console.log(`[ADSENSE_COST_REVENUE] Total: ${noRevenueCount} cost entries with NO revenue, total cost: $${noRevenueTotalCost.toFixed(2)}`);
 
     // Extract article information from Google Ads campaign URLs
     console.log(`[ADSENSE_COST_REVENUE] Extracting article names from campaign URLs...`);
@@ -1103,7 +1190,7 @@ export async function POST(request: NextRequest) {
     // FINAL VALIDATION: Check for entries with unknown account_id
     const entriesWithUnknownAccount = campaign_aggregated.filter(c => c.account_id === 'unknown');
     if (entriesWithUnknownAccount.length > 0) {
-      console.error(`[ADSENSE_COST_REVENUE] ❌ VALIDATION ERROR: ${entriesWithUnknownAccount.length} entries have unknown account_id`);
+      console.error(`[ADSENSE_COST_REVENUE] VALIDATION ERROR: ${entriesWithUnknownAccount.length} entries have unknown account_id`);
       entriesWithUnknownAccount.slice(0, 5).forEach((entry, idx) => {
         console.error(`  ${idx + 1}. Campaign: ${entry.campaign_name}, Style: ${entry.style_id}, Cost: $${entry.cost.toFixed(2)}, Revenue: $${entry.revenue.toFixed(2)}`);
       });
@@ -1113,10 +1200,10 @@ export async function POST(request: NextRequest) {
     const returnedAccountIds = new Set(account_level_aggregated.map(a => a.account_id));
     const missingAccounts = requestedAccountIds.filter(id => !returnedAccountIds.has(id));
     if (missingAccounts.length > 0) {
-      console.warn(`[ADSENSE_COST_REVENUE] ⚠️  WARNING: ${missingAccounts.length} requested accounts have no data: ${missingAccounts.join(', ')}`);
+      console.warn(`[ADSENSE_COST_REVENUE]  WARNING: ${missingAccounts.length} requested accounts have no data: ${missingAccounts.join(', ')}`);
     }
 
-    console.log(`[ADSENSE_COST_REVENUE] ✅ VALIDATION COMPLETE: ${account_level_aggregated.length} accounts, ${campaign_aggregated.length} campaigns`);
+    console.log(`[ADSENSE_COST_REVENUE] VALIDATION COMPLETE: ${account_level_aggregated.length} accounts, ${campaign_aggregated.length} campaigns`);
 
     // CRITICAL: Final data isolation filter - Remove any entries not belonging to requested accounts
     const requestedAccountSet = new Set(requestedAccountIds);
@@ -1127,7 +1214,7 @@ export async function POST(request: NextRequest) {
     const filteredCampaignAggregated = campaign_aggregated.filter((entry: any) => {
       const belongsToRequested = requestedAccountSet.has(entry.account_id);
       if (!belongsToRequested && entry.account_id !== 'unknown') {
-        console.warn(`[ADSENSE_COST_REVENUE] ⚠️  FILTERED OUT: Campaign ${entry.campaign_name} belongs to ${entry.account_id}, not in requested accounts`);
+        console.warn(`[ADSENSE_COST_REVENUE]  FILTERED OUT: Campaign ${entry.campaign_name} belongs to ${entry.account_id}, not in requested accounts`);
       }
       return belongsToRequested;
     });
@@ -1136,7 +1223,7 @@ export async function POST(request: NextRequest) {
     const filteredAccountLevelAggregated = account_level_aggregated.filter((account: any) => {
       const belongsToRequested = requestedAccountSet.has(account.account_id);
       if (!belongsToRequested && account.account_id !== 'unknown') {
-        console.warn(`[ADSENSE_COST_REVENUE] ⚠️  FILTERED OUT: Account ${account.account_id} not in requested accounts`);
+        console.warn(`[ADSENSE_COST_REVENUE]  FILTERED OUT: Account ${account.account_id} not in requested accounts`);
       }
       return belongsToRequested;
     });
@@ -1145,13 +1232,13 @@ export async function POST(request: NextRequest) {
     const filteredAccountCount = filteredAccountLevelAggregated.length;
 
     if (originalCampaignCount !== filteredCampaignCount) {
-      console.error(`[ADSENSE_COST_REVENUE] ❌ DATA MIXING DETECTED: Filtered out ${originalCampaignCount - filteredCampaignCount} campaigns from other accounts!`);
+      console.error(`[ADSENSE_COST_REVENUE] DATA MIXING DETECTED: Filtered out ${originalCampaignCount - filteredCampaignCount} campaigns from other accounts!`);
     }
     if (originalAccountCount !== filteredAccountCount) {
-      console.error(`[ADSENSE_COST_REVENUE] ❌ DATA MIXING DETECTED: Filtered out ${originalAccountCount - filteredAccountCount} accounts from other accounts!`);
+      console.error(`[ADSENSE_COST_REVENUE] DATA MIXING DETECTED: Filtered out ${originalAccountCount - filteredAccountCount} accounts from other accounts!`);
     }
 
-    console.log(`[ADSENSE_COST_REVENUE] 🔒 DATA ISOLATION: Campaigns ${filteredCampaignCount}/${originalCampaignCount}, Accounts ${filteredAccountCount}/${originalAccountCount}`);
+    console.log(`[ADSENSE_COST_REVENUE] DATA ISOLATION: Campaigns ${filteredCampaignCount}/${originalCampaignCount}, Accounts ${filteredAccountCount}/${originalAccountCount}`);
 
     // Recalculate summary with filtered data
     const filteredTotalCost = filteredCampaignAggregated.reduce((sum: number, c: any) => sum + c.cost, 0);
@@ -1198,15 +1285,25 @@ export async function POST(request: NextRequest) {
       _message: message.trim()
     };
 
-    // Note: Caching is handled at the account level earlier in the code (see getAccountCacheKey)
-    // Each account's data is cached separately for better reusability
+    // ==================== SAVE AGGREGATED CACHE ====================
+    // CRITICAL: Cache the FINAL combined result to ensure consistency
+    // Next request will get this exact same data until cache expires
+    try {
+      await redisCacheManager.set(aggregatedCacheKey, response, AGGREGATED_CACHE_TTL, { dataType: 'unified' }, {
+        priority: 'high'
+      });
+      console.log(`[ADSENSE_REVENUE] Saved aggregated result to cache (TTL: ${AGGREGATED_CACHE_TTL}s)`);
+    } catch (err) {
+      console.warn('[ADSENSE_REVENUE] Failed to save aggregated cache:', err);
+    }
 
-    // Disable HTTP caching (account-level Redis cache is used above)
+    // Disable HTTP caching (Redis cache is used above)
     return NextResponse.json(response, {
       headers: {
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
         'Pragma': 'no-cache',
-        'Expires': '0'
+        'Expires': '0',
+        'X-Cache-Status': 'fresh'
       }
     });
 

@@ -457,8 +457,8 @@ export async function POST(request: NextRequest) {
 
             console.log(`[PREDICTO_COST_REVENUE] 🔍 DYNAMIC DETECTION: Found ${accountChannelIds.size} channel IDs from campaigns: ${Array.from(accountChannelIds).join(', ')}`);
           } else {
-            console.warn(`[PREDICTO_COST_REVENUE] ⚠️  WARNING: No campaigns have Final URLs! Channel mapping will not work.`);
-            console.warn(`[PREDICTO_COST_REVENUE] ⚠️  Make sure your Google Ads campaigns have Final URLs with cid parameter (e.g., ?cid=ch88087)`);
+            console.warn(`[PREDICTO_COST_REVENUE]  WARNING: No campaigns have Final URLs! Channel mapping will not work.`);
+            console.warn(`[PREDICTO_COST_REVENUE]  Make sure your Google Ads campaigns have Final URLs with cid parameter (e.g., ?cid=ch88087)`);
           }
         }
       } else {
@@ -511,7 +511,7 @@ export async function POST(request: NextRequest) {
         console.log(`[PREDICTO_COST_REVENUE]    - Account expects: ${accountChannelsArray.join(', ')}`);
         console.log(`[PREDICTO_COST_REVENUE]    - Found in Predicto: ${matchingChannels.length > 0 ? matchingChannels.join(', ') : 'NONE'}`);
         if (missingChannels.length > 0) {
-          console.warn(`[PREDICTO_COST_REVENUE]    - ⚠️  MISSING in Predicto: ${missingChannels.join(', ')}`);
+          console.warn(`[PREDICTO_COST_REVENUE]    -  MISSING in Predicto: ${missingChannels.join(', ')}`);
         }
 
         // Calculate total revenue for account's channels
@@ -551,7 +551,7 @@ export async function POST(request: NextRequest) {
       // STRICT CHANNEL OWNERSHIP FILTERING: Use ownership config to prevent cross-account leakage
       // For single account views, only show revenue from channels that BELONG to this account
       if (!isMultiAccount && finalCustomerId) {
-        console.log(`[PREDICTO_COST_REVENUE] 🔒 STRICT OWNERSHIP FILTERING for account ${finalCustomerId}`);
+        console.log(`[PREDICTO_COST_REVENUE] STRICT OWNERSHIP FILTERING for account ${finalCustomerId}`);
 
         // Import channel ownership configuration
         const { getAccountChannels, validateChannelOwnership } = await import('@/lib/predicto-channel-ownership');
@@ -561,8 +561,8 @@ export async function POST(request: NextRequest) {
         const ownedChannelSet = new Set(ownedChannels);
 
         if (ownedChannels.length === 0) {
-          console.warn(`[PREDICTO_COST_REVENUE]    ⚠️  No channel ownership configured for account ${finalCustomerId}`);
-          console.warn(`[PREDICTO_COST_REVENUE]    🔒 STRICT MODE: Blocking ALL revenue-only channels to prevent cross-account leakage`);
+          console.warn(`[PREDICTO_COST_REVENUE]     No channel ownership configured for account ${finalCustomerId}`);
+          console.warn(`[PREDICTO_COST_REVENUE]    STRICT MODE: Blocking ALL revenue-only channels to prevent cross-account leakage`);
           console.warn(`[PREDICTO_COST_REVENUE]    Please configure channel ownership in lib/predicto-channel-ownership.ts to see revenue`);
           console.warn(`[PREDICTO_COST_REVENUE]    Run: POST /api/predicto-channel-discovery to discover your channels`);
 
@@ -585,7 +585,7 @@ export async function POST(request: NextRequest) {
           const validation = validateChannelOwnership(finalCustomerId, Array.from(accountChannelIds));
 
           if (validation.invalid.length > 0) {
-            console.warn(`[PREDICTO_COST_REVENUE]    ⚠️  INVALID channels in campaign URLs (don't belong to this account):`);
+            console.warn(`[PREDICTO_COST_REVENUE]     INVALID channels in campaign URLs (don't belong to this account):`);
             console.warn(`[PREDICTO_COST_REVENUE]       ${validation.invalid.join(', ')}`);
             console.warn(`[PREDICTO_COST_REVENUE]       These channels need to be removed/corrected in Google Ads!`);
           }
@@ -619,7 +619,7 @@ export async function POST(request: NextRequest) {
           });
 
           console.log(
-            `[PREDICTO_COST_REVENUE] 🔒 Strict filtering: ${beforeFilter} → ${combined.length} items (showing only owned channels)`
+            `[PREDICTO_COST_REVENUE] Strict filtering: ${beforeFilter} → ${combined.length} items (showing only owned channels)`
           );
         }
       } else if (isMultiAccount) {
@@ -654,7 +654,7 @@ export async function POST(request: NextRequest) {
         const afterValidation = combined.length;
 
         if (beforeValidation !== afterValidation) {
-          console.log(`[PREDICTO_COST_REVENUE] ✅ Data validation: ${beforeValidation} → ${afterValidation} items (removed ${beforeValidation - afterValidation} invalid items)`);
+          console.log(`[PREDICTO_COST_REVENUE] Data validation: ${beforeValidation} → ${afterValidation} items (removed ${beforeValidation - afterValidation} invalid items)`);
         }
         console.log(`[PREDICTO_COST_REVENUE] Final dataset: ${afterValidation} items (${combined.filter(i => i.has_cost_data).length} with cost, ${combined.filter(i => i.has_revenue_data).length} with revenue)`);
       } else if (isMultiAccount) {

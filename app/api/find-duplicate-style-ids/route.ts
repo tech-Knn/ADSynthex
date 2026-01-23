@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
     console.log(`[DUPLICATE_CHECKER] Found ${unique.length} UNIQUE style_ids`);
 
     if (duplicates.length > 0) {
-      console.log('[DUPLICATE_CHECKER] ⚠️  TOP 5 DUPLICATES:');
+      console.log('[DUPLICATE_CHECKER]  TOP 5 DUPLICATES:');
       duplicates.slice(0, 5).forEach((dup, idx) => {
         console.log(`  ${idx + 1}. Style ${dup.styleId} used by ${dup.accountCount} accounts: ${dup.accounts.join(', ')}`);
       });

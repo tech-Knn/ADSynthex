@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Layout,
   Typography,
@@ -10,20 +10,25 @@ import {
   Col,
   Card,
   Alert,
-  Spin,
   Select,
   Space,
   Table,
   Statistic,
 } from 'antd';
-import { ReloadOutlined } from '@ant-design/icons';
+import { ReloadOutlined, SyncOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import DashboardLayout from '@/components/Layout/DashboardLayout';
+import { DashboardSkeleton, CacheIndicator } from '@/components/DashboardSkeleton';
 
 const { Header, Content } = Layout;
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 const { Option } = Select;
+
+// Cache configuration
+const CACHE_KEY_PREFIX = 'predicto_data_';
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 
 interface AccountSummary {
   customer_id: string;
@@ -76,18 +81,69 @@ export default function PredictoPage() {
   const [loadingAccounts, setLoadingAccounts] = useState(true);
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  // Cache state for instant data loading
+  const [isFromCache, setIsFromCache] = useState(false);
+  const [cacheAge, setCacheAge] = useState<number | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   // Default to today's date
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>([
     dayjs(),
     dayjs()
   ]);
 
+  // Generate cache key based on current selection
+  const getCacheKey = useCallback((account: string, dates: [Dayjs, Dayjs]) => {
+    const startDate = dates[0].format('YYYY-MM-DD');
+    const endDate = dates[1].format('YYYY-MM-DD');
+    return `${CACHE_KEY_PREFIX}${account}:${startDate}:${endDate}`;
+  }, []);
+
+  // Load cached data from localStorage
+  const loadCachedData = useCallback((account: string, dates: [Dayjs, Dayjs]): PredictoCostRevenueResponse | null => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const key = getCacheKey(account, dates);
+      const cached = localStorage.getItem(key);
+      if (!cached) return null;
+      const { data, timestamp } = JSON.parse(cached);
+      const age = Date.now() - timestamp;
+      setCacheAge(Math.round(age / 1000));
+      console.log(`[PREDICTO_CACHE] Loaded cached data (age: ${Math.round(age / 1000)}s)`);
+      return data;
+    } catch (e) {
+      console.warn('[PREDICTO_CACHE] Failed to load cache:', e);
+      return null;
+    }
+  }, [getCacheKey]);
+
+  // Save data to localStorage cache
+  const saveCacheData = useCallback((account: string, dates: [Dayjs, Dayjs], data: PredictoCostRevenueResponse) => {
+    if (typeof window === 'undefined') return;
+    try {
+      const key = getCacheKey(account, dates);
+      localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
+      console.log('[PREDICTO_CACHE] Data cached successfully');
+    } catch (e) {
+      console.warn('[PREDICTO_CACHE] Failed to save cache:', e);
+    }
+  }, [getCacheKey]);
+
   useEffect(() => {
     fetchAccounts();
   }, []);
 
+  // Load cached data immediately when selection changes
   useEffect(() => {
     if (selectedAccount) {
+      // Immediately show cached data if available
+      const cached = loadCachedData(selectedAccount, dateRange);
+      if (cached) {
+        setData(cached);
+        setIsFromCache(true);
+        setIsRefreshing(true);
+        console.log('[PREDICTO] Showing cached data immediately, refreshing in background...');
+      }
+      // Always fetch fresh data
       fetchData();
     }
   }, [selectedAccount, dateRange]);
@@ -196,14 +252,21 @@ export default function PredictoPage() {
         console.log('[PREDICTO] Total Revenue:', result.summary?.total_revenue || 0);
         console.log('[PREDICTO] Total Profit:', result.summary?.total_profit || 0);
         setData(result);
+        // Cache the fresh data for instant loading next time
+        saveCacheData(selectedAccount, dateRange, result);
+        setIsFromCache(false);
+        setIsRefreshing(false);
+        setCacheAge(0);
       } else {
         const errorMsg = result.error || result.message || 'Failed to fetch data';
         console.error('[PREDICTO] API error:', errorMsg);
         setError(errorMsg);
+        setIsRefreshing(false);
       }
     } catch (error: any) {
       console.error('[PREDICTO] Exception during fetch:', error);
       setError(error.message || 'Failed to fetch Predicto cost-revenue data');
+      setIsRefreshing(false);
     } finally {
       // Clear appropriate loading state
       if (forceRefresh) {
@@ -248,6 +311,7 @@ export default function PredictoPage() {
               Predicto Dashboard
             </Title>
             <Space>
+              <CacheIndicator isFromCache={isFromCache} isRefreshing={isRefreshing || loading || forceRefreshLoading} cacheAge={cacheAge} />
               <Text style={{ color: 'white', fontSize: '14px' }}>Channel-Based Cost & Revenue Tracking</Text>
             </Space>
           </div>
@@ -328,14 +392,7 @@ export default function PredictoPage() {
           )}
 
           {(loading || forceRefreshLoading) && !data && (
-            <Card>
-              <div style={{ textAlign: 'center', padding: '60px 0' }}>
-                <Spin size="large" />
-                <div style={{ marginTop: 16 }}>
-                  <Text>Loading Predicto cost-revenue data...</Text>
-                </div>
-              </div>
-            </Card>
+            <DashboardSkeleton />
           )}
 
           {!loading && !forceRefreshLoading && data && data.campaign_aggregated && data.summary && (

@@ -1,15 +1,20 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Layout, Typography, DatePicker, Button, Row, Col, Alert, Spin, Select, Input, Tooltip, Table, Card } from 'antd';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Layout, Typography, DatePicker, Button, Row, Col, Alert, Select, Input, Tooltip, Table, Card } from 'antd';
 import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import DashboardLayout from '@/components/Layout/DashboardLayout';
+import { DashboardSkeleton, CacheIndicator } from '@/components/DashboardSkeleton';
 
 const { Content } = Layout;
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 const { Option } = Select;
+
+// Cache configuration for instant loading
+const AFS_CACHE_PREFIX = 'afs_data_';
+const AFS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 interface AdSenseCostRevenueResponse {
   google_ads_data: any;
@@ -40,6 +45,10 @@ export default function AdSensePage() {
   const [selectedAdsenseAccount, setSelectedAdsenseAccount] = useState<string>('');
   const [loadingAccounts, setLoadingAccounts] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  // Cache state for instant data loading
+  const [isFromCache, setIsFromCache] = useState(false);
+  const [cacheAge, setCacheAge] = useState<number | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>([dayjs(), dayjs()]);
 
@@ -54,6 +63,43 @@ export default function AdSensePage() {
   // Pagination
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(20);
+
+  // Generate cache key based on current selection
+  const getCacheKey = useCallback((googleAccount: string, adsenseAccount: string, dates: [Dayjs, Dayjs]) => {
+    const startDate = dates[0].format('YYYY-MM-DD');
+    const endDate = dates[1].format('YYYY-MM-DD');
+    return `${AFS_CACHE_PREFIX}${googleAccount}:${adsenseAccount}:${startDate}:${endDate}`;
+  }, []);
+
+  // Load cached data from localStorage
+  const loadCachedData = useCallback((googleAccount: string, adsenseAccount: string, dates: [Dayjs, Dayjs]): AdSenseCostRevenueResponse | null => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const key = getCacheKey(googleAccount, adsenseAccount, dates);
+      const cached = localStorage.getItem(key);
+      if (!cached) return null;
+      const { data, timestamp } = JSON.parse(cached);
+      const age = Date.now() - timestamp;
+      setCacheAge(Math.round(age / 1000));
+      console.log(`[AFS_CACHE] Loaded cached data (age: ${Math.round(age / 1000)}s)`);
+      return data;
+    } catch (e) {
+      console.warn('[AFS_CACHE] Failed to load cache:', e);
+      return null;
+    }
+  }, [getCacheKey]);
+
+  // Save data to localStorage cache
+  const saveCacheData = useCallback((googleAccount: string, adsenseAccount: string, dates: [Dayjs, Dayjs], data: AdSenseCostRevenueResponse) => {
+    if (typeof window === 'undefined') return;
+    try {
+      const key = getCacheKey(googleAccount, adsenseAccount, dates);
+      localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
+      console.log('[AFS_CACHE] Data cached successfully');
+    } catch (e) {
+      console.warn('[AFS_CACHE] Failed to save cache:', e);
+    }
+  }, [getCacheKey]);
 
   useEffect(() => {
     fetchGoogleAdsAccounts();
@@ -77,9 +123,18 @@ export default function AdSensePage() {
     }
   }, [data]);
 
-  // Auto-fetch data when accounts are loaded
+  // Auto-fetch data when accounts are loaded (with cache support)
   useEffect(() => {
-    if (!loadingAccounts && selectedGoogleAdsAccount && selectedAdsenseAccount && !data && !loading && !loadingForce) {
+    if (!loadingAccounts && selectedGoogleAdsAccount && selectedAdsenseAccount && !loading && !loadingForce) {
+      // Immediately show cached data if available
+      const cached = loadCachedData(selectedGoogleAdsAccount, selectedAdsenseAccount, dateRange);
+      if (cached) {
+        setData(cached);
+        setIsFromCache(true);
+        setIsRefreshing(true);
+        console.log('[AFS] Showing cached data immediately, refreshing in background...');
+      }
+      // Always fetch fresh data
       console.log('[AFS] Auto-fetching data on page load');
       fetchData();
     }
@@ -134,7 +189,7 @@ export default function AdSensePage() {
         return hasAdsenseAccess;
       });
 
-      console.log('[AFS] ✅ Filtered AFS accounts:', adsenseAccounts.length, '(configured: 23 total)');
+      console.log('[AFS] Filtered AFS accounts:', adsenseAccounts.length, '(configured: 23 total)');
 
       const sortedAccounts = adsenseAccounts.sort((a: any, b: any) => {
 
@@ -251,11 +306,16 @@ export default function AdSensePage() {
       }
 
       setData(result);
-      //filter on termuxtools.com
+      // Cache the fresh data for instant loading next time
+      saveCacheData(selectedGoogleAdsAccount, selectedAdsenseAccount, dateRange, result);
+      setIsFromCache(false);
+      setIsRefreshing(false);
+      setCacheAge(0);
       console.log('[AFS] Data set successfully');
     } catch (err: any) {
       console.error('[AFS] Fetch error:', err);
       setError(err.message || 'Failed to fetch AFS data');
+      setIsRefreshing(false);
     } finally {
       setLoading(false);
       setLoadingForce(false);
@@ -348,10 +408,13 @@ export default function AdSensePage() {
           <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
             <Col span={24}>
               <div style={{ background: '#fff', padding: '20px', borderRadius: '8px' }}>
-                <Title level={3}>
-                  <SearchOutlined /> AdSense for Search (AFS) - TermuxTools
-                </Title>
-                <Text type="secondary" style={{ display: 'block' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Title level={3} style={{ margin: 0 }}>
+                    <SearchOutlined /> AdSense for Search (AFS) - TermuxTools
+                  </Title>
+                  <CacheIndicator isFromCache={isFromCache} isRefreshing={isRefreshing || loading || loadingForce} cacheAge={cacheAge} />
+                </div>
+                <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
                   {/* Cost and Revenue tracking for termuxtools.com */}
                 </Text>
               </div>
@@ -416,27 +479,27 @@ export default function AdSensePage() {
 
           <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
             <Col span={24}>
-              <Button
-                type="primary"
-                icon={<ReloadOutlined />}
-                onClick={() => fetchData(false)}
-                loading={loading}
-                disabled={!selectedGoogleAdsAccount || !selectedAdsenseAccount || loadingForce}
-                style={{ marginRight: 16 }}
-              >
-                Fetch Data
-              </Button>
-              <Button
-                type="default"
-                size="small"
-                icon={<ReloadOutlined />}
-                onClick={() => fetchData(true)}
-                loading={loadingForce}
-                disabled={!selectedGoogleAdsAccount || !selectedAdsenseAccount || loading}
-                danger
-              >
-                Force Refresh
-              </Button>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                <Button
+                  type="primary"
+                  icon={<ReloadOutlined />}
+                  onClick={() => fetchData(false)}
+                  loading={loading}
+                  disabled={!selectedGoogleAdsAccount || !selectedAdsenseAccount || loadingForce}
+                >
+                  Fetch Data
+                </Button>
+                <Button
+                  type="default"
+                  icon={<ReloadOutlined />}
+                  onClick={() => fetchData(true)}
+                  loading={loadingForce}
+                  disabled={!selectedGoogleAdsAccount || !selectedAdsenseAccount || loading}
+                  danger
+                >
+                  Force Refresh
+                </Button>
+              </div>
             </Col>
           </Row>
 
@@ -444,11 +507,8 @@ export default function AdSensePage() {
             <Alert message="Error" description={error} type="error" showIcon style={{ marginBottom: 24 }} />
           )}
 
-          {(loading || loadingForce) && (
-            <div style={{ textAlign: 'center', padding: '50px' }}>
-              <Spin size="large" />
-              <p style={{ marginTop: 16 }}>Loading AFS data...</p>
-            </div>
+          {(loading || loadingForce) && !data && (
+            <DashboardSkeleton />
           )}
 
           {data && !loading && !loadingForce && (() => {
@@ -502,7 +562,7 @@ export default function AdSensePage() {
                 </Col>
 
                 {/* Account-Level Performance Table (only show for multi-account view) */}
-                {selectedGoogleAdsAccount === 'all' && data.account_level_aggregated && data.account_level_aggregated.length > 0 && (
+                {selectedGoogleAdsAccount === 'all' && data && (
                   <Col span={24}>
                     <Card
                       title={<Title level={4}>Account-Level Performance</Title>}
@@ -600,7 +660,36 @@ export default function AdSensePage() {
                             sorter: (a: any, b: any) => (a.conversions || 0) - (b.conversions || 0),
                           },
                         ]}
-                        dataSource={data.account_level_aggregated}
+                        dataSource={(() => {
+                          // Create a map of account data from API response
+                          const accountDataMap = new Map();
+                          if (data.account_level_aggregated) {
+                            data.account_level_aggregated.forEach((acc: any) => {
+                              accountDataMap.set(acc.account_id, acc);
+                            });
+                          }
+
+                          // Merge with all accounts to show accounts with zero data
+                          return googleAdsAccounts.map(account => {
+                            const apiData = accountDataMap.get(account.id);
+                            if (apiData) {
+                              return apiData;
+                            }
+                            // Return zero data for accounts without campaigns
+                            return {
+                              account_id: account.id,
+                              campaignCount: 0,
+                              cost: 0,
+                              revenue: 0,
+                              profit: 0,
+                              roi: 0,
+                              roas: 0,
+                              conversions: 0,
+                              clicks: 0,
+                              impressions: 0,
+                            };
+                          });
+                        })()}
                         rowKey="account_id"
                         pagination={false}
                         size="middle"

@@ -2,7 +2,7 @@
  * Predicto Channel Ownership Configuration
  * Defines which channel IDs belong to which Google Ads account
  *
- * ⚠️ IMPORTANT: Keep this in sync with lib/account-access-control.ts
+ * IMPORTANT: Keep this in sync with lib/account-access-control.ts
  * The PRIMARY source of truth is lib/account-access-control.ts ACCOUNT_CHANNEL_ACCESS
  * which is used by the API routes. This file is used for validation and diagnostics.
  *

@@ -29,7 +29,7 @@ async function testPredictoDiagnostic() {
     const result = await response.json();
 
     if (result.status === 'error') {
-      console.error('❌ Error:', result.error);
+      console.error('Error:', result.error);
       return;
     }
 
@@ -70,7 +70,7 @@ async function testPredictoDiagnostic() {
       console.log('═══════════════════════════════════════════════\n');
 
       diagnostic.issues.forEach((issue: any, index: number) => {
-        const emoji = issue.severity === 'CRITICAL' ? '🚨' : issue.severity === 'WARNING' ? '⚠️' : 'ℹ️';
+        const emoji = issue.severity === 'CRITICAL' ? '🚨' : issue.severity === 'WARNING' ? '' : 'ℹ️';
         console.log(`${emoji} Issue ${index + 1} [${issue.severity}]`);
         console.log(`   Problem: ${issue.issue}`);
         console.log(`   Impact: ${issue.impact}`);
@@ -78,7 +78,7 @@ async function testPredictoDiagnostic() {
         console.log('');
       });
     } else {
-      console.log('\n✅ No critical issues found!');
+      console.log('\nNo critical issues found!');
     }
 
     if (diagnostic.recommendations.length > 0) {
@@ -119,8 +119,8 @@ async function testPredictoDiagnostic() {
         console.log(`   ID: ${campaign.campaign_id}`);
         console.log(`   Name: ${campaign.campaign_name}`);
         console.log(`   Cost: $${campaign.cost.toFixed(2)}`);
-        console.log(`   Has URLs: ${campaign.has_urls ? '✅' : '❌'}`);
-        console.log(`   Has channel IDs: ${campaign.has_channel_ids ? '✅' : '❌'}`);
+        console.log(`   Has URLs: ${campaign.has_urls ? '' : ''}`);
+        console.log(`   Has channel IDs: ${campaign.has_channel_ids ? '' : ''}`);
         if (campaign.extracted_channel_ids.length > 0) {
           console.log(`   Channel IDs: ${campaign.extracted_channel_ids.join(', ')}`);
         }
@@ -141,20 +141,20 @@ async function testPredictoDiagnostic() {
     if (diagnostic.details.all_google_channel_ids.length > 0) {
       console.log(`   ${diagnostic.details.all_google_channel_ids.join(', ')}`);
     } else {
-      console.log('   ❌ None extracted (check Final URLs!)');
+      console.log('   None extracted (check Final URLs!)');
     }
 
     console.log('\nPredicto Channel IDs:');
     if (diagnostic.details.all_predicto_channel_ids.length > 0) {
       console.log(`   ${diagnostic.details.all_predicto_channel_ids.slice(0, 20).join(', ')}${diagnostic.details.all_predicto_channel_ids.length > 20 ? '...' : ''}`);
     } else {
-      console.log('   ❌ None found');
+      console.log('   None found');
     }
 
     console.log('\n═══════════════════════════════════════════════\n');
 
   } catch (error: any) {
-    console.error('❌ Test failed:', error.message);
+    console.error('Test failed:', error.message);
   }
 }
 

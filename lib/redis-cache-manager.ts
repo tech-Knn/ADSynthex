@@ -210,7 +210,7 @@ export class RedisCacheManager {
 
       // CRITICAL: Skip Redis if data > 8MB (Upstash limit is 10MB, leave 2MB buffer)
       if (dataSizeMB > 8) {
-        console.warn(`[REDIS_CACHE] ⚠️  Compressed data size ${dataSizeMB.toFixed(2)}MB exceeds 8MB limit, skipping Redis cache (memory only)`);
+        console.warn(`[REDIS_CACHE]  Compressed data size ${dataSizeMB.toFixed(2)}MB exceeds 8MB limit, skipping Redis cache (memory only)`);
         console.warn(`[REDIS_CACHE] Key: ${key}`);
         console.warn(`[REDIS_CACHE] TIP: Use smaller date ranges to enable Redis caching`);
         return; // Skip Redis, keep in memory only

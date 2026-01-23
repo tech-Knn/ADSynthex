@@ -34,26 +34,26 @@ function testChannelMappings() {
     const accountId = `CID_${account.id}`;
     const channels = getAllowedChannels(accountId);
 
-    console.log(`📋 ${account.name} (${account.id})`);
+    console.log(` ${account.name} (${account.id})`);
     console.log(`   Account ID: ${accountId}`);
 
     if (channels.length > 0) {
       accountsWithChannels++;
       totalChannels += channels.length;
-      console.log(`   ✅ Channels: ${channels.length} channels configured`);
+      console.log(`   Channels: ${channels.length} channels configured`);
       console.log(`   📌 Channel IDs: ${channels.join(', ')}`);
 
       // Test a few channel access checks
       const testChannel = channels[0];
       const hasAccess = hasAccessToChannel(accountId, testChannel);
-      console.log(`   🔐 Access Test: hasAccessToChannel('${accountId}', '${testChannel}') = ${hasAccess}`);
+      console.log(` Access Test: hasAccessToChannel('${accountId}', '${testChannel}') = ${hasAccess}`);
 
       if (!hasAccess) {
-        console.log(`   ❌ ERROR: Channel access check failed!`);
+        console.log(`   ERROR: Channel access check failed!`);
       }
     } else {
-      console.log(`   ⚠️  WARNING: No channels configured for this account`);
-      console.log(`   💡 This account will use dynamic channel detection from Final URLs`);
+      console.log(`    WARNING: No channels configured for this account`);
+      console.log(`  This account will use dynamic channel detection from Final URLs`);
     }
 
     console.log('');
@@ -61,7 +61,7 @@ function testChannelMappings() {
 
   // Summary
   console.log('='.repeat(80));
-  console.log('\n📊 SUMMARY\n');
+  console.log('\n SUMMARY\n');
   console.log(`   Total Predicto Accounts: ${totalAccounts}`);
   console.log(`   Accounts with Channel Mappings: ${accountsWithChannels}`);
   console.log(`   Accounts without Mappings: ${totalAccounts - accountsWithChannels}`);
@@ -69,7 +69,7 @@ function testChannelMappings() {
   console.log(`   Average Channels per Account: ${(totalChannels / accountsWithChannels).toFixed(1)}`);
 
   // Check for specific problematic accounts mentioned by user
-  console.log('\n🔍 SPECIFIC ACCOUNT CHECKS\n');
+  console.log('\n SPECIFIC ACCOUNT CHECKS\n');
 
   const problematicAccounts = [
     { id: '1640518611', name: 'EST 02' },
@@ -83,24 +83,24 @@ function testChannelMappings() {
 
     console.log(`   ${account.name} (${account.id}):`);
     if (channels.length > 0) {
-      console.log(`      ✅ Configured with ${channels.length} channels: ${channels.join(', ')}`);
+      console.log(`      Configured with ${channels.length} channels: ${channels.join(', ')}`);
     } else {
-      console.log(`      ❌ NOT CONFIGURED - will not map correctly!`);
+      console.log(`      NOT CONFIGURED - will not map correctly!`);
     }
   });
 
   // Recommendations
-  console.log('\n💡 RECOMMENDATIONS\n');
+  console.log('\n RECOMMENDATIONS\n');
   if (accountsWithChannels === totalAccounts) {
-    console.log('   ✅ All accounts have channel mappings configured');
-    console.log('   ✅ Predicto integration should work correctly');
+    console.log('   All accounts have channel mappings configured');
+    console.log('   Predicto integration should work correctly');
   } else {
-    console.log(`   ⚠️  ${totalAccounts - accountsWithChannels} account(s) missing channel mappings`);
-    console.log('   📝 Add channel mappings to ACCOUNT_CHANNEL_ACCESS in lib/account-access-control.ts');
+    console.log(`    ${totalAccounts - accountsWithChannels} account(s) missing channel mappings`);
+    console.log('   Add channel mappings to ACCOUNT_CHANNEL_ACCESS in lib/account-access-control.ts');
   }
 
   console.log('\n' + '='.repeat(80));
-  console.log('\n✅ Channel mapping test complete!\n');
+  console.log('\nChannel mapping test complete!\n');
 }
 
 // Run the test

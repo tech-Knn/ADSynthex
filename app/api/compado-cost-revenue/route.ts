@@ -259,7 +259,7 @@ export async function POST(request: NextRequest) {
           const batchNum = Math.floor(i / BATCH_SIZE) + 1;
           const totalBatches = Math.ceil(accountIds.length / BATCH_SIZE);
 
-          console.log(`[COMPADO_COST_REVENUE] 🔄 Processing batch ${batchNum}/${totalBatches} (${batch.length} accounts)...`);
+          console.log(`[COMPADO_COST_REVENUE] Processing batch ${batchNum}/${totalBatches} (${batch.length} accounts)...`);
           const batchStartTime = Date.now();
 
           const batchResults = await Promise.all(
@@ -305,13 +305,13 @@ export async function POST(request: NextRequest) {
 
       const fetchTime = Date.now() - fetchStartTime;
       const fetchTimeSeconds = (fetchTime / 1000).toFixed(1);
-      console.log(`[COMPADO_COST_REVENUE] ⚡ Parallel fetch completed in ${fetchTime}ms (${fetchTimeSeconds}s)`);
+      console.log(`[COMPADO_COST_REVENUE] Parallel fetch completed in ${fetchTime}ms (${fetchTimeSeconds}s)`);
 
       // PERFORMANCE INSIGHT: Log fetch speed rating
       if (fetchTime < 5000) {
         console.log(`[COMPADO_COST_REVENUE] 🚀 Excellent speed! < 5s`);
       } else if (fetchTime < 15000) {
-        console.log(`[COMPADO_COST_REVENUE] ✅ Good speed: ${fetchTimeSeconds}s`);
+        console.log(`[COMPADO_COST_REVENUE] Good speed: ${fetchTimeSeconds}s`);
       } else if (fetchTime < 30000) {
         console.log(`[COMPADO_COST_REVENUE] ⏱️ Moderate speed: ${fetchTimeSeconds}s - Consider smaller date ranges`);
       } else {
@@ -320,7 +320,7 @@ export async function POST(request: NextRequest) {
 
       // Handle Google Ads result
       if (googleAdsResult.status === 'rejected') {
-        console.error('[COMPADO_COST_REVENUE] ❌ Google Ads fetch failed:', googleAdsResult.reason);
+        console.error('[COMPADO_COST_REVENUE] Google Ads fetch failed:', googleAdsResult.reason);
         throw new Error(`Google Ads API failed: ${googleAdsResult.reason}`);
       }
 
@@ -381,7 +381,7 @@ export async function POST(request: NextRequest) {
 
       // Validate Google Ads data
       if (!googleAdsData || (!googleAdsData.campaigns && !googleAdsData.clicks)) {
-        console.error('[COMPADO_COST_REVENUE] ❌ No Google Ads data received from API!');
+        console.error('[COMPADO_COST_REVENUE] No Google Ads data received from API!');
         console.error('[COMPADO_COST_REVENUE] googleAdsData:', googleAdsData);
         console.error('[COMPADO_COST_REVENUE] Request details:', {
           startDate,
@@ -414,7 +414,7 @@ export async function POST(request: NextRequest) {
         console.log(`[COMPADO_COST_REVENUE] Checking if campaigns returned for BoldmoveGuide accounts...`);
 
         if (totalCampaigns === 0) {
-          console.warn(`[COMPADO_COST_REVENUE] ⚠️⚠️⚠️ ZERO campaigns for BoldmoveGuide account!`);
+          console.warn(`[COMPADO_COST_REVENUE] ZERO campaigns for BoldmoveGuide account!`);
           console.warn(`[COMPADO_COST_REVENUE] This means Google Ads API didn't return data for this account`);
           console.warn(`[COMPADO_COST_REVENUE] Possible causes:`);
           console.warn(`[COMPADO_COST_REVENUE]   1. Account not yet synced (try force refresh)`);
@@ -428,12 +428,12 @@ export async function POST(request: NextRequest) {
 
       // Warn about large datasets
       if (totalClicks > 100000) {
-        console.warn(`[COMPADO_COST_REVENUE] ⚠️  Large dataset detected: ${totalClicks} clicks. Processing may take longer...`);
+        console.warn(`[COMPADO_COST_REVENUE]  Large dataset detected: ${totalClicks} clicks. Processing may take longer...`);
       }
 
       // DIAGNOSTIC: Check if campaigns is empty for date ranges
       if (googleAdsData?.campaigns?.length === 0) {
-        console.warn(`[COMPADO_COST_REVENUE] ⚠️  ZERO CAMPAIGNS returned for date range: ${startDate} to ${endDate}`);
+        console.warn(`[COMPADO_COST_REVENUE]  ZERO CAMPAIGNS returned for date range: ${startDate} to ${endDate}`);
         console.warn(`[COMPADO_COST_REVENUE] This will result in "No Conversion Data Available" message`);
         console.warn(`[COMPADO_COST_REVENUE] Possible causes:`);
         console.warn(`[COMPADO_COST_REVENUE]   1. No campaigns ran during this period`);
@@ -457,7 +457,7 @@ export async function POST(request: NextRequest) {
 
         message += `Compado: ${compadoData.length} conversions, $${totalCompadoRevenueUsd.toFixed(2)} revenue. `;
       } else {
-        console.warn('[COMPADO_COST_REVENUE] ⚠️  Compado fetch failed:', compadoConversions.reason);
+        console.warn('[COMPADO_COST_REVENUE]  Compado fetch failed:', compadoConversions.reason);
         message += 'Compado: API error. ';
       }
 
@@ -489,7 +489,7 @@ export async function POST(request: NextRequest) {
           if (metrics.total_cost === 0) zeroCostCampaigns++;
         });
         if (zeroCostCampaigns > 0) {
-          console.warn(`[COMPADO_COST_REVENUE] ⚠️  ${zeroCostCampaigns}/${campaignMetricsMap.size} campaigns have zero cost`);
+          console.warn(`[COMPADO_COST_REVENUE]  ${zeroCostCampaigns}/${campaignMetricsMap.size} campaigns have zero cost`);
         }
       }
 
@@ -505,7 +505,7 @@ export async function POST(request: NextRequest) {
 
       const processingTime = Date.now() - processingStart;
       const processingSeconds = (processingTime / 1000).toFixed(1);
-      console.log(`[COMPADO_COST_REVENUE] ⚡ Data processing completed in ${processingTime}ms (${processingSeconds}s)`);
+      console.log(`[COMPADO_COST_REVENUE] Data processing completed in ${processingTime}ms (${processingSeconds}s)`);
 
       // PERFORMANCE SUMMARY
       const totalTime = Date.now() - startTime;
@@ -515,7 +515,7 @@ export async function POST(request: NextRequest) {
       console.log(`[COMPADO_COST_REVENUE]   - Fetch: ${fetchTimeSeconds}s (${((fetchTime / totalTime) * 100).toFixed(0)}%)`);
       console.log(`[COMPADO_COST_REVENUE]   - Processing: ${processingSeconds}s (${((processingTime / totalTime) * 100).toFixed(0)}%)`);
       console.log(`[COMPADO_COST_REVENUE] Data volume: ${totalClicks.toLocaleString()} clicks, ${totalCampaigns} campaigns`);
-      console.log(`[COMPADO_COST_REVENUE] Speed rating: ${totalTime < 10000 ? '🚀 Excellent' : totalTime < 30000 ? '✅ Good' : totalTime < 60000 ? '⏱️ Moderate' : '🐌 Slow'}`);
+      console.log(`[COMPADO_COST_REVENUE] Speed rating: ${totalTime < 10000 ? '🚀 Excellent' : totalTime < 30000 ? 'Good' : totalTime < 60000 ? '⏱️ Moderate' : '🐌 Slow'}`);
       console.log(`[COMPADO_COST_REVENUE] ===========================================================`);
 
       // Simplified cost statistics logging (performance optimization)
@@ -575,7 +575,7 @@ export async function POST(request: NextRequest) {
 
       // Validate we're using live campaign data
       if (campaignMetricsMap.size === 0) {
-        console.warn('[COMPADO_COST_REVENUE] ⚠️  No campaign metrics available - campaigns may show with zero cost');
+        console.warn('[COMPADO_COST_REVENUE]  No campaign metrics available - campaigns may show with zero cost');
       } else {
         console.log(`[COMPADO_COST_REVENUE] ✓ Using ${campaignMetricsMap.size} campaigns from LIVE Google Ads API`);
       }
@@ -604,7 +604,7 @@ export async function POST(request: NextRequest) {
       console.log(`[COMPADO_COST_REVENUE]   - Difference: $${costDifference.toFixed(2)} (${costDifferencePercent.toFixed(1)}%)`);
 
       if (Math.abs(costDifferencePercent) > 5) {
-        console.warn(`[COMPADO_COST_REVENUE] ⚠️⚠️⚠️  COST MISMATCH > 5% - Check aggregation logic!`);
+        console.warn(`[COMPADO_COST_REVENUE]  COST MISMATCH > 5% - Check aggregation logic!`);
       }
 
       // Log what campaigns we're returning
@@ -619,7 +619,7 @@ export async function POST(request: NextRequest) {
         const campaignsWithRevenue = campaignAggregated.filter(c => c.revenue > 0);
         console.log(`[COMPADO_COST_REVENUE] Campaign breakdown: ${campaignsWithConversions.length} with conversions, ${campaignsWithRevenue.length} with revenue, ${campaignAggregated.length} total`);
       } else {
-        console.warn(`[COMPADO_COST_REVENUE] ⚠️⚠️⚠️  NO CAMPAIGNS in aggregated data - dashboard will show "No Conversion Data Available"!`);
+        console.warn(`[COMPADO_COST_REVENUE]  NO CAMPAIGNS in aggregated data - dashboard will show "No Conversion Data Available"!`);
         console.warn(`[COMPADO_COST_REVENUE] Date range: ${startDate} to ${endDate}`);
         console.warn(`[COMPADO_COST_REVENUE] Google Ads campaigns fetched: ${googleAdsData?.campaigns?.length || 0}`);
         console.warn(`[COMPADO_COST_REVENUE] Compado conversions fetched: ${compadoData.length}`);
@@ -636,7 +636,7 @@ export async function POST(request: NextRequest) {
       // campaignAggregated contains campaign-level data (actual campaigns to display)
       const summary = getCompadoCostRevenueSummary(campaignAggregated);
 
-      console.log(`[COMPADO_COST_REVENUE] ✅ Mapping complete:`, {
+      console.log(`[COMPADO_COST_REVENUE] Mapping complete:`, {
         click_level_mappings: costRevenueMapping.length,
         campaigns: campaignAggregated.length,
         total_cost: `$${totalCostFromCampaigns.toFixed(2)}`,
@@ -695,7 +695,7 @@ export async function POST(request: NextRequest) {
         const cacheSize = JSON.stringify(cachePayload).length / 1024;
         console.log(`[COMPADO_COST_REVENUE] ✓ Cached aggregated results: ${cacheSize.toFixed(2)}KB (TTL: 5 min)`);
       } catch (cacheError: any) {
-        console.error(`[COMPADO_COST_REVENUE] ⚠️  Failed to cache aggregated results:`, cacheError.message);
+        console.error(`[COMPADO_COST_REVENUE]  Failed to cache aggregated results:`, cacheError.message);
         // Continue even if caching fails
       }
 

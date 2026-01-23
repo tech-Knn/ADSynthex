@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
     console.log('Created ad:', adResourceName, 'with ID:', adId);
 
     // Log the successful ad creation for tracking
-    console.log(`✅ ${campaignType || 'Search'} Ad created successfully:
+    console.log(`${campaignType || 'Search'} Ad created successfully:
     - Campaign ID: ${campaignId}
     - Ad Group ID: ${adGroupId}
     - Ad ID: ${adId}

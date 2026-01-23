@@ -135,7 +135,7 @@ export async function saveCost(
   } catch (error: any) {
     // Handle bulk write errors
     if (error.code === 11000) {
-      console.warn(`[DB] ⚠️  Duplicate key errors in ${collectionName} (expected with upserts)`);
+      console.warn(`[DB]  Duplicate key errors in ${collectionName} (expected with upserts)`);
       return { inserted: 0, updated: 0, errors: error.writeErrors?.length || 0 };
     }
 
@@ -258,7 +258,7 @@ export async function saveRevenue(
     return { inserted, updated, errors: 0 };
   } catch (error: any) {
     if (error.code === 11000) {
-      console.warn(`[DB] ⚠️  Duplicate key errors in ${collectionName}`);
+      console.warn(`[DB]  Duplicate key errors in ${collectionName}`);
       return { inserted: 0, updated: 0, errors: error.writeErrors?.length || 0 };
     }
 

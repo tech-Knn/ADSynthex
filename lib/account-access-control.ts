@@ -193,7 +193,7 @@ export function getFeedTypeFromRoute(pathname: string): FeedType | null {
 /**
  * Channel Access Control for Predicto
  *
- * ⚠️ IMPORTANT: THIS IS THE SOURCE OF TRUTH FOR CHANNEL OWNERSHIP
+ * IMPORTANT: THIS IS THE SOURCE OF TRUTH FOR CHANNEL OWNERSHIP
  * This configuration is used by app/api/predicto-cost-revenue/route.ts
  *
  * Maps account IDs to their allowed channel IDs (custom_channel_id from Predicto)

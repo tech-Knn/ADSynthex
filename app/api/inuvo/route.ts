@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
 
       // Check if user is requesting a different account
       if (customerId && customerId !== accountValue) {
-        console.log(`[INUVO_ENDPOINT] ⚠️  Access denied: User ${userAccountId} attempted to access account ${customerId}`);
+        console.log(`[INUVO_ENDPOINT]  Access denied: User ${userAccountId} attempted to access account ${customerId}`);
         return NextResponse.json(
           { error: 'Access denied: You can only view data for your own account' },
           { status: 403 }
@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
 
       // Force the request to use the user's account
       customerId = accountValue;
-      console.log(`[INUVO_ENDPOINT] 🔒 User ${userAccountId} accessing their own account data`);
+      console.log(`[INUVO_ENDPOINT] User ${userAccountId} accessing their own account data`);
     }
 
     console.log(`[INUVO_ENDPOINT] Cost/Revenue mapping request: ${startDate} to ${endDate}, type: ${dataType}, forceRefresh: ${forceRefresh}`);
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
       const shouldClearCache = actualForceRefresh || (customerId && newInuvoAccounts.includes(customerId));
 
       if (shouldClearCache && customerId) {
-        console.log(`[INUVO_ENDPOINT] ⚡ Clearing cache for account ${customerId} to ensure fresh data...`);
+        console.log(`[INUVO_ENDPOINT] Clearing cache for account ${customerId} to ensure fresh data...`);
         try {
           const { redisCacheManager } = await import('@/lib/redis-cache-manager');
           const keys = await redisCacheManager.getKeysByPattern(`*${customerId}*`);
@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
           }
           console.log(`[INUVO_ENDPOINT] ✓ Cleared ${keys.length} cache entries for account ${customerId}`);
         } catch (cacheError) {
-          console.warn(`[INUVO_ENDPOINT] ⚠️  Failed to clear cache:`, cacheError);
+          console.warn(`[INUVO_ENDPOINT]  Failed to clear cache:`, cacheError);
         }
       }
 

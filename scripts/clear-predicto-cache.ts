@@ -37,12 +37,12 @@ async function clearPredictoCache() {
       console.log(`  ✓ Deleted: ${key}`);
     }
 
-    console.log(`\n✅ Successfully cleared ${deleted} cache keys!`);
+    console.log(`\nSuccessfully cleared ${deleted} cache keys!`);
     console.log('\n💡 Now refresh the Predicto page to fetch fresh data.');
 
     process.exit(0);
   } catch (error: any) {
-    console.error('❌ Error clearing cache:', error.message);
+    console.error('Error clearing cache:', error.message);
     process.exit(1);
   }
 }

@@ -64,7 +64,7 @@ export class BulletproofGoogleAdsAPI {
     // If this exact request is already being processed, wait for it
     const existing = this.inflightRequests.get(requestKey);
     if (existing) {
-      console.log(`[BULLETPROOF_API] 🔄 Request deduplication: Waiting for in-flight request (${requestKey})`);
+      console.log(`[BULLETPROOF_API] Request deduplication: Waiting for in-flight request (${requestKey})`);
       return existing.promise;
     }
 

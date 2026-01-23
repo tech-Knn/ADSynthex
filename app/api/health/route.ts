@@ -148,9 +148,9 @@ function generateRecommendations(data: {
 
   // Quota warnings
   if (data.quotaUsagePercent > 90) {
-    recommendations.push('⚠️ CRITICAL: Daily quota usage above 90% - Consider reducing API calls');
+    recommendations.push('CRITICAL: Daily quota usage above 90% - Consider reducing API calls');
   } else if (data.quotaUsagePercent > 70) {
-    recommendations.push('⚠️ WARNING: Daily quota usage above 70% - Monitor closely');
+    recommendations.push('WARNING: Daily quota usage above 70% - Monitor closely');
   }
 
   if (data.quotaStatus.isInCooldown) {
@@ -161,7 +161,7 @@ function generateRecommendations(data: {
   if (data.cacheStats.hitRate < 0.5) {
     recommendations.push('📊 Cache hit rate below 50% - Consider increasing cache TTL');
   } else if (data.cacheStats.hitRate > 0.9) {
-    recommendations.push('✅ Excellent cache performance (>90% hit rate)');
+    recommendations.push('Excellent cache performance (>90% hit rate)');
   }
 
   // Queue warnings
@@ -178,12 +178,12 @@ function generateRecommendations(data: {
   if (data.quotaStatus.circuitState === 'OPEN') {
     recommendations.push('🔴 Circuit breaker OPEN - API requests blocked due to high error rate');
   } else if (data.quotaStatus.circuitState === 'HALF_OPEN') {
-    recommendations.push('⚠️ Circuit breaker HALF_OPEN - Testing API recovery');
+    recommendations.push('Circuit breaker HALF_OPEN - Testing API recovery');
   }
 
   // All good
   if (recommendations.length === 0) {
-    recommendations.push('✅ All systems operating normally');
+    recommendations.push('All systems operating normally');
   }
 
   return recommendations;

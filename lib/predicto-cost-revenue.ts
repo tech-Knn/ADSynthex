@@ -486,7 +486,7 @@ export function mapCostRevenueByChannelId(
   console.log(`  - Unmatched channels: ${totalUnmatchedChannels}`);
 
   if (campaignsWithCostButNoRevenue > 0) {
-    console.warn(`[PREDICTO_CHANNEL_MAPPING] ⚠️  ${campaignsWithCostButNoRevenue} campaigns have cost but NO revenue match!`);
+    console.warn(`[PREDICTO_CHANNEL_MAPPING]  ${campaignsWithCostButNoRevenue} campaigns have cost but NO revenue match!`);
     console.warn(`[PREDICTO_CHANNEL_MAPPING] This suggests channel IDs in URLs don't match Predicto custom_channel_id`);
 
     // Show which channels are not matching
@@ -500,7 +500,7 @@ export function mapCostRevenueByChannelId(
     });
 
     if (unmatchedChannels.size > 0) {
-      console.warn(`[PREDICTO_CHANNEL_MAPPING] ❌ Unmatched channel IDs (in Google Ads URLs but NOT in Predicto):`);
+      console.warn(`[PREDICTO_CHANNEL_MAPPING] Unmatched channel IDs (in Google Ads URLs but NOT in Predicto):`);
       console.warn(`[PREDICTO_CHANNEL_MAPPING]    ${Array.from(unmatchedChannels).slice(0, 20).join(', ')}`);
       console.warn(`[PREDICTO_CHANNEL_MAPPING]    These channels need to be updated in Google Ads final URLs!`);
     }

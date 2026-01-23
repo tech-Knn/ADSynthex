@@ -185,7 +185,7 @@ const UIComparisonPage: React.FC = () => {
                 title={
                   <div className="flex items-center">
                     <Avatar style={{ backgroundColor: '#ff4d4f', marginRight: 8 }}>
-                      ❌
+                      
                     </Avatar>
                     {comparisonData.overview.before.title}
                   </div>
@@ -221,7 +221,7 @@ const UIComparisonPage: React.FC = () => {
                 title={
                   <div className="flex items-center">
                     <Avatar style={{ backgroundColor: '#52c41a', marginRight: 8 }}>
-                      ✅
+                      
                     </Avatar>
                     {comparisonData.overview.after.title}
                   </div>

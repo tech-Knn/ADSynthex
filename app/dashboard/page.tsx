@@ -80,7 +80,7 @@ const fetchGoogleAdsData = async (startDate: string, endDate: string): Promise<G
     const loadTime = Date.now() - startTime;
     
     // Log performance and Google compliance status
-    console.log(`⚡ Production API response in ${loadTime}ms:`, {
+    console.log(`Production API response in ${loadTime}ms:`, {
       source: data._source,
       systemHealth: data._systemHealth?.systemHealth,
       quotaUsage: data._quotaStatus?.usagePercentage,
@@ -191,22 +191,22 @@ function DashboardContent() {
       
       // Store update time information
       if (adscomData && adscomData.lastUpdated) {
-        console.log(`🔄 Received update info: Last updated at ${new Date(adscomData.lastUpdated).toLocaleTimeString()}, next update in ${adscomData.nextUpdateIn || 'unknown'} seconds`);
+        console.log(`Received update info: Last updated at ${new Date(adscomData.lastUpdated).toLocaleTimeString()}, next update in ${adscomData.nextUpdateIn || 'unknown'} seconds`);
         
         setLastUpdated(adscomData.lastUpdated);
         setNextUpdateIn(adscomData.nextUpdateIn || null);
         
         // Set up auto-refresh timer if enabled
         if (autoRefresh && adscomData.nextUpdateIn && adscomData.nextUpdateIn > 0) {
-          console.log(`🔄 Setting up auto-refresh timer for ${adscomData.nextUpdateIn} seconds from now`);
+          console.log(`Setting up auto-refresh timer for ${adscomData.nextUpdateIn} seconds from now`);
           scheduleNextRefresh(adscomData.nextUpdateIn);
         } else if (autoRefresh && (!adscomData.nextUpdateIn || adscomData.nextUpdateIn <= 0)) {
           // If nextUpdateIn is missing or zero, set a default refresh interval (5 minutes)
-          console.log('🔄 No valid nextUpdateIn received, setting default refresh interval (5 minutes)');
+          console.log('No valid nextUpdateIn received, setting default refresh interval (5 minutes)');
           scheduleNextRefresh(300);
         }
       } else {
-        console.warn('🔄 No update time information received from API');
+        console.warn('No update time information received from API');
         
         // If no lastUpdated info is available, calculate based on current time
         const now = new Date();
@@ -220,7 +220,7 @@ function DashboardContent() {
         
         const nextUpdateIn = ((15 - (minutes % 15)) * 60) - now.getSeconds();
         
-        console.log(`🔄 Calculated update times: Last updated at ${lastUpdate.toLocaleTimeString()}, next update in ${nextUpdateIn} seconds`);
+        console.log(`Calculated update times: Last updated at ${lastUpdate.toLocaleTimeString()}, next update in ${nextUpdateIn} seconds`);
         
         setLastUpdated(lastUpdate.toISOString());
         setNextUpdateIn(nextUpdateIn);
@@ -256,7 +256,7 @@ function DashboardContent() {
     
     if (seconds <= 0) {
       // If time is already up, refresh immediately
-      console.log('🔄 AUTO-REFRESH: Time is up, refreshing immediately');
+      console.log('AUTO-REFRESH: Time is up, refreshing immediately');
       handleRefresh();
       return;
     }
@@ -264,11 +264,11 @@ function DashboardContent() {
     // Add a small buffer (2 seconds) to ensure we get the fresh data
     const refreshTime = (seconds + 2) * 1000;
     
-    console.log(`🔄 AUTO-REFRESH: Scheduled next refresh in ${refreshTime/1000} seconds (${new Date(Date.now() + refreshTime).toLocaleTimeString()})`);
+    console.log(`AUTO-REFRESH: Scheduled next refresh in ${refreshTime/1000} seconds (${new Date(Date.now() + refreshTime).toLocaleTimeString()})`);
     
     // Set the new timer
     autoRefreshTimerRef.current = setTimeout(() => {
-      console.log(`🔄 AUTO-REFRESH: Executing refresh at ${new Date().toLocaleTimeString()}`);
+      console.log(`AUTO-REFRESH: Executing refresh at ${new Date().toLocaleTimeString()}`);
       message.info({
         content: 'Auto-refreshing data from Ads.com...',
         duration: 2,
@@ -281,16 +281,16 @@ function DashboardContent() {
   // Toggle auto-refresh
   const toggleAutoRefresh = (checked: boolean) => {
     setAutoRefresh(checked);
-    console.log(`🔄 AUTO-REFRESH: ${checked ? 'Enabled' : 'Disabled'}`);
+    console.log(`AUTO-REFRESH: ${checked ? 'Enabled' : 'Disabled'}`);
     
     if (!checked && autoRefreshTimerRef.current) {
       // Clear the timer if auto-refresh is disabled
       clearTimeout(autoRefreshTimerRef.current);
       autoRefreshTimerRef.current = null;
-      console.log('🔄 AUTO-REFRESH: Timer cleared');
+      console.log('AUTO-REFRESH: Timer cleared');
     } else if (checked && nextUpdateIn && nextUpdateIn > 0) {
       // Set up the timer if auto-refresh is enabled
-      console.log(`🔄 AUTO-REFRESH: Setting up timer with ${nextUpdateIn} seconds until next update`);
+      console.log(`AUTO-REFRESH: Setting up timer with ${nextUpdateIn} seconds until next update`);
       scheduleNextRefresh(nextUpdateIn);
       message.success({
         content: `Auto-refresh enabled. Next update in ${formatNextUpdate()}`,
@@ -398,7 +398,7 @@ function DashboardContent() {
   useEffect(() => {
     // If we have nextUpdateIn data and auto-refresh is enabled, set up the timer
     if (autoRefresh && nextUpdateIn !== null) {
-      console.log(`🔄 AUTO-REFRESH: Initial setup with ${nextUpdateIn} seconds until next update`);
+      console.log(`AUTO-REFRESH: Initial setup with ${nextUpdateIn} seconds until next update`);
       scheduleNextRefresh(nextUpdateIn);
       
       // Set up a countdown timer to update the UI every second
@@ -411,11 +411,11 @@ function DashboardContent() {
           if (newValue <= 0) {
             clearInterval(countdownInterval);
             // Double-check that refresh happens
-            console.log('🔄 AUTO-REFRESH: Countdown reached zero, triggering refresh');
+            console.log('AUTO-REFRESH: Countdown reached zero, triggering refresh');
             // Small delay to avoid race conditions
             setTimeout(() => {
               if (!autoRefreshTimerRef.current) {
-                console.log('🔄 AUTO-REFRESH: Backup refresh triggered');
+                console.log('AUTO-REFRESH: Backup refresh triggered');
                 handleRefresh();
               }
             }, 500);
@@ -433,7 +433,7 @@ function DashboardContent() {
     // Clean up function
     return () => {
       if (autoRefreshTimerRef.current) {
-        console.log('🔄 AUTO-REFRESH: Cleaning up timer on unmount');
+        console.log('AUTO-REFRESH: Cleaning up timer on unmount');
         clearTimeout(autoRefreshTimerRef.current);
         autoRefreshTimerRef.current = null;
       }
@@ -708,7 +708,7 @@ function DashboardContent() {
       autoRefreshTimerRef.current = null;
     }
     
-    console.log('🔄 Manual refresh triggered at', new Date().toLocaleTimeString());
+    console.log('Manual refresh triggered at', new Date().toLocaleTimeString());
     
     fetchData(startDate, endDate, selectedCustomerId);
   };
@@ -898,7 +898,7 @@ function DashboardContent() {
                   type="text"
                   icon={<ReloadOutlined />} 
                   onClick={() => {
-                    console.log('🔄 Manual refresh of Ads.com data requested');
+                    console.log('Manual refresh of Ads.com data requested');
                     message.loading({
                       content: 'Refreshing Ads.com data...',
                       key: 'adscomRefresh',

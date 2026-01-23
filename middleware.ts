@@ -23,6 +23,8 @@ const publicPaths = [
   '/api/debug-adsense-revenue',  // Debug endpoint for revenue diagnostics
   '/api/clear-cache',  // Cache clearing endpoint
   '/api/find-duplicate-style-ids',  // Find duplicate style_ids across accounts
+  '/api/adsense-accounts',  // Get AdSense accounts
+  '/api/afs-unmapped-revenue',  // Get unmapped AFS revenue
   '/logout'
 ];
 

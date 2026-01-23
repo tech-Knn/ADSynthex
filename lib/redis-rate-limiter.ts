@@ -236,7 +236,7 @@ export class RedisRateLimiter {
         const match = errorString.match(pattern);
         if (match) {
           retrySeconds = parseInt(match[1]);
-          console.log(`[REDIS_RATE_LIMITER] ⚠️ EXTRACTED COOLDOWN: ${retrySeconds}s (~${Math.round(retrySeconds / 3600)} hours)`);
+          console.log(`[REDIS_RATE_LIMITER] EXTRACTED COOLDOWN: ${retrySeconds}s (~${Math.round(retrySeconds / 3600)} hours)`);
           break;
         }
       }

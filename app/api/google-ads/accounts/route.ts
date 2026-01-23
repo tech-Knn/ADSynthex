@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
     // Check rate limits BEFORE making any API calls
     const canRequest = productionRateManager.canMakeRequest(undefined, 'standard');
     if (!canRequest.allowed) {
-      console.warn(`[MCC_ACCOUNTS] ⚠️  Rate limit protection: ${canRequest.reason}`);
+      console.warn(`[MCC_ACCOUNTS]  Rate limit protection: ${canRequest.reason}`);
 
       // CRITICAL: Serve stale cache if available (even if old) to avoid rate limits
       if (cachedAccounts && cacheAge < STALE_CACHE_DURATION) {
