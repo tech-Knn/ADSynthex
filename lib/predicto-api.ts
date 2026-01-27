@@ -37,14 +37,22 @@ export class PredictoApiClient {
   }
 
   async fetchRevenueData(params: PredictoApiParams): Promise<PredictoRevenueData[]> {
+    console.log('[PREDICTO_API] ===== Fetching Revenue Data =====');
+    console.log('[PREDICTO_API] Start date:', params.start_date);
+    console.log('[PREDICTO_API] End date:', params.end_date);
+    console.log('[PREDICTO_API] Metrics:', params.metrics);
+    console.log('[PREDICTO_API] Dimensions:', params.dimensions);
+
     if (params.end_date) {
       const daysDiff = Math.ceil(
         (new Date(params.end_date).getTime() - new Date(params.start_date).getTime()) / (1000 * 60 * 60 * 24)
       );
 
       if (daysDiff > this.maxDataRangeDays) {
+        console.error(`[PREDICTO_API] ❌ Date range too large: ${daysDiff} days (max: ${this.maxDataRangeDays})`);
         throw new Error(`Date range exceeds maximum of ${this.maxDataRangeDays} days`);
       }
+      console.log(`[PREDICTO_API] Date range: ${daysDiff} days`);
     }
 
     const queryParams = new URLSearchParams({ start_date: params.start_date });
@@ -58,26 +66,81 @@ export class PredictoApiClient {
     const dimensions = params.dimensions || ['custom_channel_id', 'date'];
     queryParams.append('dimensions', dimensions.join(','));
 
-    const response = await fetch(
-      `${this.baseUrl}/api/search/reporting/?${queryParams.toString()}`,
-      {
+    const apiUrl = `${this.baseUrl}/api/search/reporting/?${queryParams.toString()}`;
+    console.log('[PREDICTO_API] Request URL:', apiUrl);
+
+    const authToken = this.getAuthToken();
+    const maskedToken = authToken.length > 10
+      ? `${authToken.substring(0, 6)}...${authToken.substring(authToken.length - 4)}`
+      : '***';
+    console.log('[PREDICTO_API] Auth token (masked):', maskedToken);
+
+    let response;
+    try {
+      const fetchStartTime = Date.now();
+      response = await fetch(apiUrl, {
         method: 'GET',
         headers: {
-          Authorization: `Bearer ${this.getAuthToken()}`,
-
+          Authorization: `Bearer ${authToken}`,
           'Content-Type': 'application/json',
         },
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`Predicto API error: ${response.status} ${response.statusText}`);
+      });
+      const fetchTime = Date.now() - fetchStartTime;
+      console.log(`[PREDICTO_API] HTTP Response: ${response.status} ${response.statusText} (${fetchTime}ms)`);
+    } catch (fetchError) {
+      console.error('[PREDICTO_API] 🚨 FETCH ERROR:', fetchError);
+      throw new Error(`Failed to connect to Predicto API: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`);
     }
 
-    const data: PredictoApiResponse = await response.json();
+    if (!response.ok) {
+      let errorBody = '';
+      try {
+        errorBody = await response.text();
+        console.error('[PREDICTO_API] Error response body:', errorBody);
+      } catch {
+        console.error('[PREDICTO_API] Could not read error response body');
+      }
+      throw new Error(`Predicto API error: ${response.status} ${response.statusText}${errorBody ? ` - ${errorBody}` : ''}`);
+    }
+
+    let data: PredictoApiResponse;
+    try {
+      data = await response.json();
+    } catch (jsonError) {
+      console.error('[PREDICTO_API] 🚨 JSON PARSE ERROR:', jsonError);
+      throw new Error(`Invalid JSON response from Predicto API: ${jsonError instanceof Error ? jsonError.message : String(jsonError)}`);
+    }
+
+    console.log('[PREDICTO_API] Response status:', data.status);
 
     if (data.status !== 'success') {
+      console.error('[PREDICTO_API] 🚨 API returned non-success status:', data.status);
+      console.error('[PREDICTO_API] Full response:', JSON.stringify(data, null, 2));
       throw new Error(`Predicto API returned status: ${data.status}`);
+    }
+
+    if (!data.data || !Array.isArray(data.data)) {
+      console.error('[PREDICTO_API] 🚨 Invalid data format - expected array, got:', typeof data.data);
+      throw new Error('Predicto API returned invalid data format');
+    }
+
+    console.log(`[PREDICTO_API] ✓ Received ${data.data.length} records`);
+
+    // Calculate totals for logging
+    const totalRevenue = data.data.reduce((sum, r) => sum + (r.revenue || r.estimated_revenue || 0), 0);
+    const totalClicks = data.data.reduce((sum, r) => sum + (r.clicks || 0), 0);
+    const totalImpressions = data.data.reduce((sum, r) => sum + (r.impressions || 0), 0);
+
+    console.log(`[PREDICTO_API] Total revenue: $${totalRevenue.toFixed(2)}`);
+    console.log(`[PREDICTO_API] Total clicks: ${totalClicks}`);
+    console.log(`[PREDICTO_API] Total impressions: ${totalImpressions}`);
+
+    // Show sample records
+    if (data.data.length > 0) {
+      console.log('[PREDICTO_API] Sample records (first 3):');
+      data.data.slice(0, 3).forEach((record, i) => {
+        console.log(`[PREDICTO_API]   ${i + 1}. Channel: ${record.custom_channel_id || record.campaign_id || 'N/A'}, Revenue: $${(record.revenue || record.estimated_revenue || 0).toFixed(2)}, Date: ${record.date}`);
+      });
     }
 
     // Normalize revenue field name
@@ -86,6 +149,7 @@ export class PredictoApiClient {
       revenue: record.revenue || record.estimated_revenue || 0,
     }));
 
+    console.log('[PREDICTO_API] ✓ Revenue data fetch complete');
     return normalizedData;
   }
 
@@ -103,7 +167,7 @@ export class PredictoApiClient {
     const campaignMap = new Map<string, PredictoRevenueData>();
 
     data.forEach((record) => {
-      const { campaign_id } = record;
+      const campaign_id = record.campaign_id || 'unknown';
 
       if (!campaignMap.has(campaign_id)) {
         campaignMap.set(campaign_id, {
@@ -118,7 +182,7 @@ export class PredictoApiClient {
       const existing = campaignMap.get(campaign_id)!;
       existing.impressions = (existing.impressions || 0) + (record.impressions || 0);
       existing.clicks = (existing.clicks || 0) + (record.clicks || 0);
-      existing.revenue += record.revenue;
+      existing.revenue = (existing.revenue || 0) + (record.revenue || 0);
     });
 
     return campaignMap;

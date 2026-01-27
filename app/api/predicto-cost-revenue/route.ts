@@ -197,6 +197,9 @@ export async function POST(request: NextRequest) {
 
     const startDateObj = new Date(startDate);
     const endDateObj = new Date(endDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Reset time for accurate date comparison
+
     const daysDiff = Math.ceil(
       (endDateObj.getTime() - startDateObj.getTime()) / (1000 * 60 * 60 * 24)
     );
@@ -204,6 +207,13 @@ export async function POST(request: NextRequest) {
     console.log(
       `[PREDICTO_COST_REVENUE] Mapping request: ${startDate} to ${endDate} (${daysDiff} days), Accounts: ${isMultiAccount && Array.isArray(finalAccountIds) ? finalAccountIds.join(', ') : finalCustomerId || 'all'}, forceRefresh: ${forceRefresh}`
     );
+
+    // CRITICAL: Check for future dates
+    if (startDateObj > today) {
+      const daysInFuture = Math.ceil((startDateObj.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      console.error(`[PREDICTO_COST_REVENUE] ⚠️ WARNING: Start date ${startDate} is ${daysInFuture} days in the FUTURE!`);
+      console.error(`[PREDICTO_COST_REVENUE] No data will be available for future dates. Did you mean ${new Date(today.getTime() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}?`);
+    }
 
     if (daysDiff > 30) {
       console.warn(
@@ -318,11 +328,21 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      // Fetch Google Ads and Predicto data in parallel
-      const [googleAdsDataRaw] = await Promise.all([googleAdsDataPromises]);
+      // Fetch Google Ads data (NOT in parallel with Predicto - we validate first)
+      const googleAdsDataRaw = await googleAdsDataPromises;
 
       const fetchTime = Date.now() - fetchStartTime;
-      console.log(`[PREDICTO_COST_REVENUE] ✓ Data fetching completed in ${(fetchTime / 1000).toFixed(1)}s`);
+      console.log(`[PREDICTO_COST_REVENUE] ✓ Google Ads data fetching completed in ${(fetchTime / 1000).toFixed(1)}s`);
+
+      // CRITICAL: Validate Google Ads data before continuing
+      if (!googleAdsDataRaw) {
+        console.error('[PREDICTO_COST_REVENUE] 🚨 CRITICAL: Google Ads API returned null/undefined!');
+        return NextResponse.json({
+          error: 'Google Ads API failed',
+          message: 'Failed to fetch cost data from Google Ads API',
+          _loadTime: `${Date.now() - startTime}ms`
+        }, { status: 503 });
+      }
 
       // Process Google Ads data
       const googleAdsData = isMultiAccount
@@ -330,6 +350,40 @@ export async function POST(request: NextRequest) {
           ? googleAdsDataRaw
           : [googleAdsDataRaw]
         : [googleAdsDataRaw];
+
+      // CRITICAL: Validate we have actual data
+      if (googleAdsData.length === 0) {
+        console.error('[PREDICTO_COST_REVENUE] 🚨 CRITICAL: No Google Ads accounts returned data!');
+        return NextResponse.json({
+          error: 'No Google Ads data',
+          message: 'All Google Ads accounts failed to return data',
+          _loadTime: `${Date.now() - startTime}ms`
+        }, { status: 503 });
+      }
+
+      // Check if any account returned null data from bulletproofAPI
+      const nullAccounts: string[] = [];
+      googleAdsData.forEach((accountData, index) => {
+        if (!accountData || accountData.data === null || accountData.data === undefined) {
+          const accountId = isMultiAccount ? finalAccountIds[index] : finalCustomerId;
+          nullAccounts.push(accountId);
+          console.error(`[PREDICTO_COST_REVENUE] 🚨 Account ${accountId} returned null data (source: ${accountData?.source}, message: ${accountData?.message})`);
+        }
+      });
+
+      if (nullAccounts.length > 0) {
+        const failureRate = nullAccounts.length / googleAdsData.length;
+        if (failureRate > 0.5) {
+          console.error(`[PREDICTO_COST_REVENUE] 🚨 CRITICAL: ${Math.round(failureRate * 100)}% of accounts returned null data!`);
+          return NextResponse.json({
+            error: 'Too many account failures',
+            message: `${nullAccounts.length} out of ${googleAdsData.length} accounts failed to return data`,
+            failedAccounts: nullAccounts,
+            _loadTime: `${Date.now() - startTime}ms`
+          }, { status: 503 });
+        }
+        console.warn(`[PREDICTO_COST_REVENUE] ⚠️ WARNING: ${nullAccounts.length} accounts have null data: ${nullAccounts.join(', ')}`);
+      }
 
       console.log(`[PREDICTO_COST_REVENUE] Processing ${googleAdsData.length} Google Ads accounts...`);
 
@@ -483,14 +537,55 @@ export async function POST(request: NextRequest) {
       const mappingStartTime = Date.now();
       console.log(`[PREDICTO_COST_REVENUE] Fetching Predicto revenue with custom_channel_id...`);
 
-      const predictoRevenue = await predictoApiClient.fetchRevenueData({
-        start_date: startDate,
-        end_date: endDate,
-        metrics: ['impressions', 'clicks', 'revenue'],
-        dimensions: ['custom_channel_id', 'date'],
-      });
+      let predictoRevenue;
+      try {
+        predictoRevenue = await predictoApiClient.fetchRevenueData({
+          start_date: startDate,
+          end_date: endDate,
+          metrics: ['impressions', 'clicks', 'revenue'],
+          dimensions: ['custom_channel_id', 'date'],
+        });
 
-      console.log(`[PREDICTO_COST_REVENUE] Retrieved ${predictoRevenue.length} Predicto revenue records`);
+        console.log(`[PREDICTO_COST_REVENUE] Retrieved ${predictoRevenue.length} Predicto revenue records`);
+
+        // CRITICAL: Validate Predicto returned actual revenue data
+        if (!predictoRevenue || !Array.isArray(predictoRevenue)) {
+          console.error('[PREDICTO_COST_REVENUE] 🚨 CRITICAL: Predicto API returned invalid data format!');
+          return NextResponse.json({
+            error: 'Invalid Predicto data',
+            message: 'Predicto API returned invalid data format',
+            _loadTime: `${Date.now() - startTime}ms`
+          }, { status: 503 });
+        }
+
+        if (predictoRevenue.length === 0) {
+          console.warn('[PREDICTO_COST_REVENUE] ⚠️ WARNING: Predicto API returned 0 revenue records');
+          console.warn('[PREDICTO_COST_REVENUE] Date range:', startDate, 'to', endDate);
+          console.warn('[PREDICTO_COST_REVENUE] This could be normal if:');
+          console.warn('[PREDICTO_COST_REVENUE]   - This is a weekend/holiday (no traffic)');
+          console.warn('[PREDICTO_COST_REVENUE]   - Accounts are new (no historical data)');
+          console.warn('[PREDICTO_COST_REVENUE]   - This is a future date');
+          console.warn('[PREDICTO_COST_REVENUE] Continuing with cost-only data...');
+          // Don't fail - continue with empty revenue (will show cost-only campaigns)
+        }
+
+        // Calculate total revenue to check if it's meaningful
+        const totalRevenue = predictoRevenue.reduce((sum, r) => sum + (r.revenue || 0), 0);
+        if (totalRevenue === 0) {
+          console.warn('[PREDICTO_COST_REVENUE] ⚠️ WARNING: Predicto returned records but total revenue is $0');
+          console.warn('[PREDICTO_COST_REVENUE] This might indicate data quality issues');
+        } else {
+          console.log(`[PREDICTO_COST_REVENUE] ✓ Total Predicto revenue: $${totalRevenue.toFixed(2)}`);
+        }
+      } catch (predictoError) {
+        console.error('[PREDICTO_COST_REVENUE] 🚨 CRITICAL: Predicto API request FAILED:', predictoError);
+        return NextResponse.json({
+          error: 'Predicto API failed',
+          message: predictoError instanceof Error ? predictoError.message : 'Failed to fetch revenue data from Predicto API',
+          details: predictoError instanceof Error ? predictoError.stack : String(predictoError),
+          _loadTime: `${Date.now() - startTime}ms`
+        }, { status: 503 });
+      }
 
       // Debug: Log Predicto channel IDs
       const predictoChannelIds = new Set<string>();
@@ -686,7 +781,56 @@ export async function POST(request: NextRequest) {
 
       const totalTime = Date.now() - startTime;
 
-      // Cache the aggregated results
+      // CRITICAL: Data quality validation before caching
+      const hasCampaigns = allCampaigns.length > 0;
+      const hasRevenue = predictoRevenue.length > 0;
+      const totalCost = summary.total_cost || 0;
+      const totalRevenue = summary.total_revenue || 0;
+      const campaignsWithCostFinal = allCampaigns.filter(c => c.cost > 0).length;
+
+      console.log(`[PREDICTO_COST_REVENUE] ===== DATA QUALITY CHECK =====`);
+      console.log(`[PREDICTO_COST_REVENUE] Campaigns: ${allCampaigns.length} total, ${campaignsWithCostFinal} with cost`);
+      console.log(`[PREDICTO_COST_REVENUE] Revenue records: ${predictoRevenue.length}`);
+      console.log(`[PREDICTO_COST_REVENUE] Total cost: $${totalCost.toFixed(2)}`);
+      console.log(`[PREDICTO_COST_REVENUE] Total revenue: $${totalRevenue.toFixed(2)}`);
+
+      // WARNING: If we have campaigns with metrics but NO cost data was extracted, the data structure is wrong
+      // This is different from having $0 cost (which is valid for new campaigns)
+      if (hasCampaigns && campaignsWithCostFinal === 0 && allCampaigns.some(c => c.clicks > 0 || c.impressions > 0)) {
+        console.error(`[PREDICTO_COST_REVENUE] 🚨 DATA QUALITY WARNING: ${allCampaigns.length} campaigns with clicks/impressions but $0 cost`);
+        console.error(`[PREDICTO_COST_REVENUE] This indicates cost data extraction failed - NOT caching this response!`);
+
+        return NextResponse.json({
+          success: false,
+          warning: 'Data quality issue detected',
+          message: `Found ${allCampaigns.length} campaigns with traffic but cost extraction failed. Data structure may be incorrect.`,
+          dataQualityIssues: {
+            hasCampaigns,
+            hasRevenue,
+            campaignCount: allCampaigns.length,
+            campaignsWithCost: campaignsWithCostFinal,
+            revenueRecords: predictoRevenue.length,
+            totalCost,
+            totalRevenue
+          },
+          _loadTime: `${Date.now() - startTime}ms`,
+          _notCached: true,
+          _recommendation: 'Check if campaign.metrics.cost field structure has changed'
+        }, {
+          status: 200,
+          headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate',
+            'X-Data-Quality': 'degraded'
+          }
+        });
+      }
+
+      // Info: Log if we have cost but no revenue (legitimate scenario)
+      if (totalCost > 0 && totalRevenue === 0) {
+        console.log(`[PREDICTO_COST_REVENUE] ℹ️  Cost without revenue: This is normal for weekends/holidays or new campaigns`);
+      }
+
+      // Cache the aggregated results only if data quality is good
       const cacheData = {
         campaign_aggregated: aggregated,
         summary: summary,
@@ -698,7 +842,7 @@ export async function POST(request: NextRequest) {
       await redisCacheManager.set(aggregatedCacheKey, cacheData, 1800, {
         dataType: 'predicto',
       });
-      console.log(`[PREDICTO_COST_REVENUE] ✓ Cached aggregated results with 30min TTL`);
+      console.log(`[PREDICTO_COST_REVENUE] ✅ Data quality passed - Cached aggregated results with 30min TTL`);
 
       message = `Successfully mapped Predicto cost-revenue data in ${(totalTime / 1000).toFixed(1)}s${!isMultiAccount ? ' - single account view' : ' - multi-account view'}`;
 

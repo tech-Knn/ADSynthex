@@ -36,6 +36,8 @@
 'CID_1173588441': ['adsense'],  // AFS-IST-18
 'CID_1786688915': ['adsense'],  // AFS-IST-19
 'CID_5822945286': ['adsense'],  // AFS-IST-20
+'CID_5767125301': ['adsense'], // AFS-IST-22
+'CID_8238574545': ['adsense'], // AFS-IST-23 ✅
 'CID_7507601023': ['adsense'], // AFS-IST-21 ✅
 'CID_9249163427': ['adsense'],  // TRT-AFS 01
 ```

@@ -17,14 +17,14 @@ function initializeMCCClient() {
       client_secret: process.env.GOOGLE_ADS_CLIENT_SECRET || '',
       developer_token: process.env.GOOGLE_ADS_DEVELOPER_TOKEN || ''
     });
-    
+
     // Create MCC customer instance
     const mccCustomer = client.Customer({
       customer_id: process.env.GOOGLE_ADS_MANAGER_ID || '',
       refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN || '',
       login_customer_id: process.env.GOOGLE_ADS_MANAGER_ID || ''
     });
-    
+
     return { client, mccCustomer };
   } catch (error) {
     console.error('Error initializing Google Ads MCC client:', error);
@@ -103,7 +103,7 @@ export async function GET(request: NextRequest) {
         message: 'API rate limit reached. Please wait before retrying.'
       }, { status: 429 });
     }
-    
+
     // Check required environment variables
     const requiredEnvVars = [
       'GOOGLE_ADS_CLIENT_ID',
@@ -112,13 +112,13 @@ export async function GET(request: NextRequest) {
       'GOOGLE_ADS_DEVELOPER_TOKEN',
       'GOOGLE_ADS_MANAGER_ID'
     ];
-    
+
     const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
-    
+
     if (missingVars.length > 0) {
       console.error(`Missing environment variables for Google Ads API: ${missingVars.join(', ')}`);
       return NextResponse.json(
-        { 
+        {
           error: 'Missing environment variables',
           missing: missingVars,
           message: 'Please configure all required Google Ads API credentials'
@@ -129,24 +129,24 @@ export async function GET(request: NextRequest) {
 
     console.log('Environment variables validation passed');
     console.log('MCC Account ID:', process.env.GOOGLE_ADS_MANAGER_ID);
-    
+
     // Initialize the MCC client
     const { mccCustomer } = initializeMCCClient();
-    
+
     console.log('Querying all accessible customer accounts under MCC...');
-    
+
     //Record the API request for quota tracking
     productionRateManager.recordRequest(undefined, 'standard');
-    
+
     // Execute the query to get all customer accounts
     const customerAccounts = await mccCustomer.query(CUSTOMER_ACCOUNTS_QUERY);
-    
+
     console.log(`Found ${customerAccounts.length} customer accounts under MCC`);
-    
+
     // Process and format the results
     const processedAccounts: CustomerAccount[] = customerAccounts.map((account: any) => {
       const customerClient = account.customer_client;
-      
+
       return {
         id: customerClient.id?.toString() || 'unknown',
         name: customerClient.descriptive_name || 'Unknown Account',
@@ -159,12 +159,12 @@ export async function GET(request: NextRequest) {
         is_test_account: customerClient.test_account || false
       };
     });
-    
+
     // Log all accounts in a detailed format
     console.log('\n=== ALL ACCOUNTS UNDER MCC ===');
     console.log(`Total accounts found: ${processedAccounts.length}`);
     console.log('Account details:');
-    
+
     processedAccounts.forEach((account, index) => {
       console.log(`\n--- Account ${index + 1} ---`);
       console.log(`ID: ${account.id}`);
@@ -177,18 +177,18 @@ export async function GET(request: NextRequest) {
       console.log(`Is Test Account: ${account.is_test_account}`);
       console.log(`Resource Name: ${account.resource_name}`);
     });
-    
+
     // Separate accounts by type
     const managedAccounts = processedAccounts.filter(acc => !acc.is_manager && !acc.is_test_account);
     const managerAccounts = processedAccounts.filter(acc => acc.is_manager);
     const testAccounts = processedAccounts.filter(acc => acc.is_test_account);
-    
+
     console.log('\n=== ACCOUNT SUMMARY ===');
     console.log(`Total accounts: ${processedAccounts.length}`);
     console.log(`Managed accounts (non-manager, non-test): ${managedAccounts.length}`);
     console.log(`Manager accounts: ${managerAccounts.length}`);
     console.log(`Test accounts: ${testAccounts.length}`);
-    
+
     // Log managed accounts specifically
     if (managedAccounts.length > 0) {
       console.log('\n=== MANAGED ACCOUNTS (TARGET FOR DATA FETCHING) ===');
@@ -196,7 +196,7 @@ export async function GET(request: NextRequest) {
         console.log(`${index + 1}. ${account.id} - ${account.name} (${account.currency_code})`);
       });
     }
-    
+
     // Compare with current TARGET_ACCOUNTS configuration
     const currentTargetAccounts = [
       { id: '8677814915', name: 'Ads.com - RSOC - IST' },
@@ -212,35 +212,35 @@ export async function GET(request: NextRequest) {
       { id: '7605096292', name: 'Ads.com - RSOC - UTC - 11' },
       { id: '5719842337', name: 'Ads.com - RSOC - UTC - 12' },
       { id: '9341614254', name: 'Ads.com - RSOC - UTC - 13' },
-      { id: '9790364217', name: 'Ads.com - UTC - 14'},
-      { id: '2420687578', name: 'Ads.com -UTC - 16'},
-      { id: '6324595978', name: 'Ads.com - RSOC - UTC - 17'},
-      { id: '5133038944', name: 'Ads.com - RSOC - UTC 18'},
-      { id: '9084731648', name: 'Ads.com - RSOC - UTC - 19'},
-      { id: '5109995931', name: 'Ads.com - RSOC - UTC - 20'},
-      { id: '3218250684', name: 'Ads.com - UTC - 21'},
-      { id: '7035336235', name: 'Ads.com - UTC - 22'},
-      { id: '5343981146', name: 'Ads.com - UTC - 23'},
-      { id: '1908857409', name: 'Ads.com - UTC - 24'},
-      { id: '3848887282', name: 'Ads.com - UTC - 25'},
-      { id: '4213092623', name: 'Ads.com - UTC - 26'},
-      { id: '6626619603', name: 'Ads.com - RSOC - UTC - 27'},
-      { id: '8914190629', name: 'Ads.com - RSOC - UTC - 28'},
-      { id: '8807720960', name: 'Ads.com - RSOC - UTC - Yahoo'},
+      { id: '9790364217', name: 'Ads.com - UTC - 14' },
+      { id: '2420687578', name: 'Ads.com -UTC - 16' },
+      { id: '6324595978', name: 'Ads.com - RSOC - UTC - 17' },
+      { id: '5133038944', name: 'Ads.com - RSOC - UTC 18' },
+      { id: '9084731648', name: 'Ads.com - RSOC - UTC - 19' },
+      { id: '5109995931', name: 'Ads.com - RSOC - UTC - 20' },
+      { id: '3218250684', name: 'Ads.com - UTC - 21' },
+      { id: '7035336235', name: 'Ads.com - UTC - 22' },
+      { id: '5343981146', name: 'Ads.com - UTC - 23' },
+      { id: '1908857409', name: 'Ads.com - UTC - 24' },
+      { id: '3848887282', name: 'Ads.com - UTC - 25' },
+      { id: '4213092623', name: 'Ads.com - UTC - 26' },
+      { id: '6626619603', name: 'Ads.com - RSOC - UTC - 27' },
+      { id: '8914190629', name: 'Ads.com - RSOC - UTC - 28' },
+      { id: '8807720960', name: 'Ads.com - RSOC - UTC - Yahoo' },
       { id: '4277350349', name: 'RSOC - UTC - Ads.com' },
     ];
-    
+
     console.log('\n=== CONFIGURATION COMPARISON ===');
     console.log(`Current TARGET_ACCOUNTS count: ${currentTargetAccounts.length}`);
     console.log(`Discovered managed accounts count: ${managedAccounts.length}`);
-    
+
     // Find accounts in config but not discovered
     const configAccountIds = currentTargetAccounts.map(acc => acc.id);
     const discoveredAccountIds = managedAccounts.map(acc => acc.id);
-    
+
     const missingFromDiscovered = configAccountIds.filter(id => !discoveredAccountIds.includes(id));
     const newlyDiscovered = discoveredAccountIds.filter(id => !configAccountIds.includes(id));
-    
+
     if (missingFromDiscovered.length > 0) {
       console.log('\nAccounts in config but NOT found in MCC:');
       missingFromDiscovered.forEach(id => {
@@ -248,7 +248,7 @@ export async function GET(request: NextRequest) {
         console.log(`- ${id} (${configAccount?.name || 'Unknown'})`);
       });
     }
-    
+
     if (newlyDiscovered.length > 0) {
       console.log('\nNewly discovered accounts NOT in config:');
       newlyDiscovered.forEach(id => {
@@ -256,7 +256,7 @@ export async function GET(request: NextRequest) {
         console.log(`- ${id} (${discoveredAccount?.name || 'Unknown'})`);
       });
     }
-    
+
     console.log('\n=== MCC ACCOUNTS DISCOVERY COMPLETED ===\n');
 
     // Prepare the response
@@ -297,14 +297,14 @@ export async function GET(request: NextRequest) {
         'Expires': '0'
       }
     });
-    
+
   } catch (error: any) {
     console.error('Error fetching MCC accounts:', error);
 
     // Check if it's a rate limit error
     const isRateLimitError = error.message?.includes('Too many requests') ||
-                             error.message?.includes('RATE_LIMIT_EXCEEDED') ||
-                             error.message?.includes('RESOURCE_EXHAUSTED');
+      error.message?.includes('RATE_LIMIT_EXCEEDED') ||
+      error.message?.includes('RESOURCE_EXHAUSTED');
 
     if (isRateLimitError) {
       console.error('[MCC_ACCOUNTS] 🚨 Google API rate limit error detected!');
@@ -312,7 +312,7 @@ export async function GET(request: NextRequest) {
       // CRITICAL: Serve stale cache if available to prevent complete failure
       const cacheAge = Date.now() - cacheTimestamp;
       if (cachedAccounts && cacheAge < STALE_CACHE_DURATION) {
-        console.log(`[MCC_ACCOUNTS] 🛡️ Serving stale cache due to rate limit error (age: ${Math.floor(cacheAge / 1000)}s)`);
+        console.log(`[MCC_ACCOUNTS]  Serving stale cache due to rate limit error (age: ${Math.floor(cacheAge / 1000)}s)`);
         return NextResponse.json({
           ...cachedAccounts,
           _cached: true,

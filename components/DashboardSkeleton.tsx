@@ -3,27 +3,16 @@
 import React from 'react';
 import { Card, Row, Col, Skeleton } from 'antd';
 
-/**
- * Skeleton loading states for dashboard components
- * Provides immediate visual feedback while data loads
- */
-
 interface SkeletonCardProps {
     height?: number;
 }
 
-/**
- * Skeleton for summary statistic cards
- */
 export const SkeletonStatCard: React.FC<SkeletonCardProps> = ({ height = 100 }) => (
     <Card style={{ height }}>
         <Skeleton active paragraph={{ rows: 1 }} />
     </Card>
 );
 
-/**
- * Skeleton for summary cards row
- */
 export const SkeletonSummaryCards: React.FC = () => (
     <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -34,9 +23,6 @@ export const SkeletonSummaryCards: React.FC = () => (
     </Row>
 );
 
-/**
- * Skeleton for data table
- */
 export const SkeletonTable: React.FC<{ rows?: number }> = ({ rows = 5 }) => (
     <Card>
         <Skeleton active paragraph={{ rows: 1 }} style={{ marginBottom: 24 }} />
@@ -52,9 +38,6 @@ export const SkeletonTable: React.FC<{ rows?: number }> = ({ rows = 5 }) => (
     </Card>
 );
 
-/**
- * Full dashboard skeleton for Predicto/AFS pages
- */
 export const DashboardSkeleton: React.FC = () => (
     <>
         <SkeletonSummaryCards />
@@ -62,9 +45,6 @@ export const DashboardSkeleton: React.FC = () => (
     </>
 );
 
-/**
- * Cache freshness indicator badge
- */
 interface CacheIndicatorProps {
     isFromCache: boolean;
     isRefreshing: boolean;

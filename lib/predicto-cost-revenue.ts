@@ -486,8 +486,25 @@ export function mapCostRevenueByChannelId(
   console.log(`  - Unmatched channels: ${totalUnmatchedChannels}`);
 
   if (campaignsWithCostButNoRevenue > 0) {
-    console.warn(`[PREDICTO_CHANNEL_MAPPING]  ${campaignsWithCostButNoRevenue} campaigns have cost but NO revenue match!`);
+    console.warn(`[PREDICTO_CHANNEL_MAPPING] 🚨 ${campaignsWithCostButNoRevenue} campaigns have cost but NO revenue match!`);
     console.warn(`[PREDICTO_CHANNEL_MAPPING] This suggests channel IDs in URLs don't match Predicto custom_channel_id`);
+
+    // CRITICAL DIAGNOSTIC: Compare Google Ads channels vs Predicto channels
+    console.log(`[PREDICTO_CHANNEL_MAPPING] ===== CHANNEL MISMATCH DIAGNOSTIC =====`);
+    console.log(`[PREDICTO_CHANNEL_MAPPING] Google Ads channels (from URLs): ${Array.from(allGoogleAdsChannels).slice(0, 20).join(', ')}`);
+    console.log(`[PREDICTO_CHANNEL_MAPPING] Predicto channels (from API): ${Array.from(channelRevenueMap.keys()).slice(0, 20).join(', ')}`);
+
+    // Find channels in Google Ads but NOT in Predicto
+    const googleAdsOnly = Array.from(allGoogleAdsChannels).filter(ch => !channelRevenueMap.has(ch));
+    console.log(`[PREDICTO_CHANNEL_MAPPING] 🔍 Google Ads channels NOT in Predicto (${googleAdsOnly.length}): ${googleAdsOnly.slice(0, 10).join(', ')}`);
+
+    // Find channels in Predicto but NOT in Google Ads
+    const predictoOnly = Array.from(channelRevenueMap.keys()).filter(ch => !allGoogleAdsChannels.has(ch));
+    console.log(`[PREDICTO_CHANNEL_MAPPING] 🔍 Predicto channels NOT in Google Ads (${predictoOnly.length}): ${predictoOnly.slice(0, 10).join(', ')}`);
+
+    // Find channels in BOTH
+    const matchingChannels = Array.from(allGoogleAdsChannels).filter(ch => channelRevenueMap.has(ch));
+    console.log(`[PREDICTO_CHANNEL_MAPPING] ✅ Matching channels (${matchingChannels.length}): ${matchingChannels.slice(0, 10).join(', ')}`);
 
     // Show which channels are not matching
     const unmatchedChannels = new Set<string>();
