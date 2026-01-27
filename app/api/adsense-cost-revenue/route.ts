@@ -1032,7 +1032,7 @@ export async function POST(request: NextRequest) {
       // Note: conversions will be populated from Google Ads data, not AdSense clicks
     }
 
-    console.log(`[ADSENSE_COST_REVENUE] 💰 Revenue allocation: ${allocatedRevenueItems} items / $${allocatedRevenueValue.toFixed(2)} allocated to this account (exact match)`);
+    console.log(`[ADSENSE_COST_REVENUE]  Revenue allocation: ${allocatedRevenueItems} items / $${allocatedRevenueValue.toFixed(2)} allocated to this account (exact match)`);
     console.log(`[ADSENSE_COST_REVENUE] Revenue skipped: ${skippedRevenueItems} items / $${skippedRevenueValue.toFixed(2)} (belongs to other accounts)`);
     console.log(`[ADSENSE_COST_REVENUE] Revenue total: ${totalRevenueItems} items / $${totalRevenueValue.toFixed(2)}`);
     console.log(`[ADSENSE_COST_REVENUE] Processing revenue for ${revenueByStyleDomain.size} style_id/domain combinations`);
@@ -1048,7 +1048,7 @@ export async function POST(request: NextRequest) {
     }
 
     // DEBUG: Check for cost entries that have NO matching revenue
-    console.log(`[ADSENSE_COST_REVENUE] 🔍 Checking for COST entries with NO revenue:`);
+    console.log(`[ADSENSE_COST_REVENUE]  Checking for COST entries with NO revenue:`);
     let noRevenueCount = 0;
     let noRevenueTotalCost = 0;
     for (const [key, costData] of costByStyleDomain.entries()) {
@@ -1330,7 +1330,7 @@ export async function POST(request: NextRequest) {
 
     // WARNING: If we have campaigns but NO cost or NO ads, the data is likely incomplete
     if (hasCampaigns && (!hasAnyCost || !hasAds)) {
-      console.error(`[ADSENSE_COST_REVENUE] 🚨 DATA QUALITY WARNING: ${googleAdsData.campaigns.length} campaigns but cost=$${filteredTotalCost} or ads=${googleAdsData.ads?.length || 0}`);
+      console.error(`[ADSENSE_COST_REVENUE]  DATA QUALITY WARNING: ${googleAdsData.campaigns.length} campaigns but cost=$${filteredTotalCost} or ads=${googleAdsData.ads?.length || 0}`);
       console.error(`[ADSENSE_COST_REVENUE] This indicates incomplete/corrupted data - NOT caching this response!`);
 
       // IMPORTANT: Return the data but with warnings - do NOT cache it

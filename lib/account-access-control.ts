@@ -89,6 +89,8 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_4920639194': ['predicto'], // Predicto - EST - 06
   'CID_7282297343': ['predicto'], // Predicto - EST - 07
   'CID_1298005744': ['predicto'], // Predicto - EST - 08
+  'CID_5777354952': ['predicto'], // Predicto - EST - 09
+  'CID_1449565595': ['predicto'], // Predicto - EST - 10
 
   // Ads.com Accounts - Only access Ads.com feed
   'CID_8677814915': ['adscom'], // IST
@@ -242,6 +244,12 @@ export const ACCOUNT_CHANNEL_ACCESS: Record<string, string[]> = {
   // Predicto - EST - 08: No channels assigned
   'CID_1298005744': [],
 
+  // Predicto - EST - 09: No channels assigned
+  'CID_5777354952': [],
+
+  // Predicto - EST - 10: No channels assigned
+  'CID_1449565595': [],
+
   // Add more account-channel mappings as needed
 };
 
@@ -356,8 +364,8 @@ export function getChannelAccessSummary(accountId: string | null): {
  */
 export function filterPredictoRevenueByChannelAccess(
   accountId: string | null,
-  revenueData: Array<{ custom_channel_id?: string; [key: string]: any }>
-): Array<{ custom_channel_id?: string; [key: string]: any }> {
+  revenueData: Array<{ custom_channel_id?: string;[key: string]: any }>
+): Array<{ custom_channel_id?: string;[key: string]: any }> {
   if (!accountId) return [];
 
   const allowedChannels = getAllowedChannels(accountId);

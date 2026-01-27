@@ -28,6 +28,8 @@ const WARMUP_ACCOUNTS = {
     '4920639194', // Predicto - EST - 06
     '7282297343', // Predicto - EST - 07
     '1298005744', // Predicto - EST - 08
+    '5777354952', // Predicto - EST - 09
+    '1449565595', // Predicto - EST - 10
   ],
   // AFS accounts - subset of most active for warmup (full list has 23)
   afs: [
