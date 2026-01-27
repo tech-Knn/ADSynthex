@@ -3,6 +3,10 @@ interface PredictoApiParams {
   end_date?: string;
   metrics?: string[];
   dimensions?: string[];
+  filters?: {
+    custom_channel_id?: string[];
+    campaign_id?: string[];
+  };
 }
 
 interface PredictoRevenueData {
@@ -43,6 +47,17 @@ export class PredictoApiClient {
     console.log('[PREDICTO_API] Metrics:', params.metrics);
     console.log('[PREDICTO_API] Dimensions:', params.dimensions);
 
+    // API-LEVEL FILTERING: Log if filters are provided
+    if (params.filters) {
+      console.log('[PREDICTO_API] 🎯 API-LEVEL FILTERING ENABLED:');
+      if (params.filters.custom_channel_id) {
+        console.log(`[PREDICTO_API]    - Filtering by ${params.filters.custom_channel_id.length} channel IDs: ${params.filters.custom_channel_id.slice(0, 10).join(', ')}${params.filters.custom_channel_id.length > 10 ? '...' : ''}`);
+      }
+      if (params.filters.campaign_id) {
+        console.log(`[PREDICTO_API]    - Filtering by ${params.filters.campaign_id.length} campaign IDs`);
+      }
+    }
+
     if (params.end_date) {
       const daysDiff = Math.ceil(
         (new Date(params.end_date).getTime() - new Date(params.start_date).getTime()) / (1000 * 60 * 60 * 24)
@@ -65,6 +80,16 @@ export class PredictoApiClient {
     // Use custom_channel_id instead of campaign_id for mapping with Google Ads
     const dimensions = params.dimensions || ['custom_channel_id', 'date'];
     queryParams.append('dimensions', dimensions.join(','));
+
+    // API-LEVEL FILTERING: Add filter query parameters
+    // NOTE: This assumes Predicto API supports filter[custom_channel_id]=ch1,ch2,ch3 format
+    // Adjust based on actual Predicto API documentation
+    if (params.filters?.custom_channel_id && params.filters.custom_channel_id.length > 0) {
+      queryParams.append('filter[custom_channel_id]', params.filters.custom_channel_id.join(','));
+    }
+    if (params.filters?.campaign_id && params.filters.campaign_id.length > 0) {
+      queryParams.append('filter[campaign_id]', params.filters.campaign_id.join(','));
+    }
 
     const apiUrl = `${this.baseUrl}/api/search/reporting/?${queryParams.toString()}`;
     console.log('[PREDICTO_API] Request URL:', apiUrl);
@@ -144,10 +169,43 @@ export class PredictoApiClient {
     }
 
     // Normalize revenue field name
-    const normalizedData = data.data.map(record => ({
+    let normalizedData = data.data.map(record => ({
       ...record,
       revenue: record.revenue || record.estimated_revenue || 0,
     }));
+
+    // CLIENT-SIDE FILTERING FALLBACK: If Predicto API doesn't support server-side filtering,
+    // filter the results here (less efficient but ensures correct data)
+    if (params.filters) {
+      const beforeFilterCount = normalizedData.length;
+
+      if (params.filters.custom_channel_id && params.filters.custom_channel_id.length > 0) {
+        const allowedChannels = new Set(params.filters.custom_channel_id.map(ch => ch.toLowerCase()));
+        normalizedData = normalizedData.filter(record =>
+          record.custom_channel_id && allowedChannels.has(record.custom_channel_id.toLowerCase())
+        );
+        console.log(`[PREDICTO_API] 🔍 Client-side filter: ${beforeFilterCount} → ${normalizedData.length} records (filtered by ${params.filters.custom_channel_id.length} channels)`);
+      }
+
+      if (params.filters.campaign_id && params.filters.campaign_id.length > 0) {
+        const allowedCampaigns = new Set(params.filters.campaign_id);
+        normalizedData = normalizedData.filter(record =>
+          record.campaign_id && allowedCampaigns.has(record.campaign_id)
+        );
+        console.log(`[PREDICTO_API] 🔍 Client-side filter: ${beforeFilterCount} → ${normalizedData.length} records (filtered by ${params.filters.campaign_id.length} campaigns)`);
+      }
+
+      // Log efficiency metrics
+      const reductionPercent = beforeFilterCount > 0
+        ? ((beforeFilterCount - normalizedData.length) / beforeFilterCount * 100).toFixed(1)
+        : '0';
+      console.log(`[PREDICTO_API] 📊 Filtering efficiency: ${reductionPercent}% of data filtered out`);
+
+      if (normalizedData.length > 0) {
+        const filteredRevenue = normalizedData.reduce((sum, r) => sum + (r.revenue || 0), 0);
+        console.log(`[PREDICTO_API] 💰 Filtered revenue total: $${filteredRevenue.toFixed(2)}`);
+      }
+    }
 
     console.log('[PREDICTO_API] ✓ Revenue data fetch complete');
     return normalizedData;

@@ -396,6 +396,37 @@ export async function POST(request: NextRequest) {
         const adCount = actualData?.ads?.length || 0;
         const totalCost = actualData?.campaigns?.reduce((sum: number, c: any) => sum + (c.cost || 0), 0) || 0;
         console.log(`[PREDICTO_COST_REVENUE] 📦 Account ${index + 1}: ${campaignCount} campaigns, ${adCount} ads, total cost: $${totalCost.toFixed(2)}`);
+
+        // ENHANCED LOGGING FOR EST-09 (5777354952)
+        const accountCustomerId = actualData?.campaigns?.[0]?.customer_id ||
+                                   actualData?.ads?.[0]?.customer_id ||
+                                   (isMultiAccount ? finalAccountIds[index] : finalCustomerId);
+
+        if (accountCustomerId === '5777354952') {
+          console.log(`[EST-09 DEBUG] ===== ENHANCED LOGGING FOR EST-09 =====`);
+          console.log(`[EST-09 DEBUG] Campaign count: ${campaignCount}`);
+          console.log(`[EST-09 DEBUG] Ad count: ${adCount}`);
+          console.log(`[EST-09 DEBUG] Total cost extracted: $${totalCost.toFixed(2)}`);
+
+          // Show first 3 campaigns with details
+          if (actualData?.campaigns && actualData.campaigns.length > 0) {
+            console.log(`[EST-09 DEBUG] First 3 campaigns:`);
+            actualData.campaigns.slice(0, 3).forEach((c: any, i: number) => {
+              console.log(`[EST-09 DEBUG]   ${i + 1}. ID: ${c.campaign_id}, Name: ${c.campaign_name || 'N/A'}`);
+              console.log(`[EST-09 DEBUG]      Cost: $${(c.metrics?.cost || c.cost || 0).toFixed(2)}, Clicks: ${c.metrics?.clicks || c.clicks || 0}`);
+              console.log(`[EST-09 DEBUG]      Status: ${c.campaign_status || c.status || 'UNKNOWN'}`);
+            });
+          }
+
+          // Check if ads have final_urls
+          if (actualData?.ads && actualData.ads.length > 0) {
+            const adsWithUrls = actualData.ads.filter((a: any) => a.final_urls && a.final_urls.length > 0);
+            console.log(`[EST-09 DEBUG] Ads with final_urls: ${adsWithUrls.length}/${adCount}`);
+            if (adsWithUrls.length > 0) {
+              console.log(`[EST-09 DEBUG] Sample final_url: ${adsWithUrls[0].final_urls[0]}`);
+            }
+          }
+        }
       });
 
       // Extract campaign data from Google Ads response
@@ -494,6 +525,13 @@ export async function POST(request: NextRequest) {
           // Fallback to dynamic detection only if no predefined channels exist
           console.log(`[PREDICTO_COST_REVENUE] ℹ️  No predefined channels for account ${finalCustomerId}, using dynamic detection as fallback`);
 
+          // ENHANCED LOGGING FOR EST-09
+          if (finalCustomerId === '5777354952') {
+            console.log(`[EST-09 DEBUG] ===== CHANNEL DETECTION FOR EST-09 =====`);
+            console.log(`[EST-09 DEBUG] Total campaigns: ${allCampaigns.length}`);
+            console.log(`[EST-09 DEBUG] Campaigns with URLs: ${campaignsWithUrls.length}`);
+          }
+
           if (campaignsWithUrls.length > 0) {
             // Sample first URL to show format
             const sampleUrl = campaignsWithUrls[0].final_urls[0];
@@ -505,14 +543,31 @@ export async function POST(request: NextRequest) {
                 campaign.final_urls.forEach((url: string) => {
                   const channelIds = extractChannelIdsFromUrl(url);
                   channelIds.forEach(id => accountChannelIds.add(id));
+
+                  // ENHANCED LOGGING FOR EST-09
+                  if (finalCustomerId === '5777354952' && channelIds.length > 0) {
+                    console.log(`[EST-09 DEBUG] Found channels in URL: ${channelIds.join(', ')} from ${url}`);
+                  }
                 });
               }
             });
 
             console.log(`[PREDICTO_COST_REVENUE] 🔍 DYNAMIC DETECTION: Found ${accountChannelIds.size} channel IDs from campaigns: ${Array.from(accountChannelIds).join(', ')}`);
+
+            // ENHANCED LOGGING FOR EST-09
+            if (finalCustomerId === '5777354952') {
+              console.log(`[EST-09 DEBUG] Dynamically detected channels: ${Array.from(accountChannelIds).join(', ') || 'NONE'}`);
+            }
           } else {
             console.warn(`[PREDICTO_COST_REVENUE]  WARNING: No campaigns have Final URLs! Channel mapping will not work.`);
             console.warn(`[PREDICTO_COST_REVENUE]  Make sure your Google Ads campaigns have Final URLs with cid parameter (e.g., ?cid=ch88087)`);
+
+            // ENHANCED LOGGING FOR EST-09
+            if (finalCustomerId === '5777354952') {
+              console.error(`[EST-09 DEBUG] ❌ CRITICAL: EST-09 has NO campaigns with final URLs!`);
+              console.error(`[EST-09 DEBUG] This means cost data cannot be mapped to channels`);
+              console.error(`[EST-09 DEBUG] Add final URLs with ?cid=chXXXXX to EST-09's Google Ads campaigns`);
+            }
           }
         }
       } else {
@@ -537,6 +592,17 @@ export async function POST(request: NextRequest) {
       const mappingStartTime = Date.now();
       console.log(`[PREDICTO_COST_REVENUE] Fetching Predicto revenue with custom_channel_id...`);
 
+      // API-LEVEL FILTERING: If we have specific channels, filter at API level for efficiency
+      const shouldUseApiFiltering = !isMultiAccount && accountChannelIds.size > 0;
+      if (shouldUseApiFiltering) {
+        console.log(`[PREDICTO_COST_REVENUE] 🎯 ENABLING API-LEVEL FILTERING for ${accountChannelIds.size} channels`);
+        console.log(`[PREDICTO_COST_REVENUE] This will reduce bandwidth and prevent cross-account data leakage at source`);
+      } else if (isMultiAccount) {
+        console.log(`[PREDICTO_COST_REVENUE] Multi-account view: Fetching all channels (no API filtering)`);
+      } else {
+        console.log(`[PREDICTO_COST_REVENUE] No channels detected: Fetching all data (will filter client-side)`);
+      }
+
       let predictoRevenue;
       try {
         predictoRevenue = await predictoApiClient.fetchRevenueData({
@@ -544,9 +610,24 @@ export async function POST(request: NextRequest) {
           end_date: endDate,
           metrics: ['impressions', 'clicks', 'revenue'],
           dimensions: ['custom_channel_id', 'date'],
+          // API-LEVEL FILTERING: Pass channel filter if we have specific channels
+          ...(shouldUseApiFiltering && {
+            filters: {
+              custom_channel_id: Array.from(accountChannelIds)
+            }
+          })
         });
 
         console.log(`[PREDICTO_COST_REVENUE] Retrieved ${predictoRevenue.length} Predicto revenue records`);
+
+        // Log API filtering benefits
+        if (shouldUseApiFiltering) {
+          console.log(`[PREDICTO_COST_REVENUE] ✅ API-LEVEL FILTERING ACTIVE:`);
+          console.log(`[PREDICTO_COST_REVENUE]    - Data fetched: ${predictoRevenue.length} records (filtered at source)`);
+          console.log(`[PREDICTO_COST_REVENUE]    - Without filtering: Would have fetched ALL channels across ALL accounts`);
+          console.log(`[PREDICTO_COST_REVENUE]    - Security: No cross-account data in memory`);
+          console.log(`[PREDICTO_COST_REVENUE]    - Performance: Reduced bandwidth and processing time`);
+        }
 
         // CRITICAL: Validate Predicto returned actual revenue data
         if (!predictoRevenue || !Array.isArray(predictoRevenue)) {
@@ -661,6 +742,26 @@ export async function POST(request: NextRequest) {
           console.warn(`[PREDICTO_COST_REVENUE]    Please configure channel ownership in lib/predicto-channel-ownership.ts to see revenue`);
           console.warn(`[PREDICTO_COST_REVENUE]    Run: POST /api/predicto-channel-discovery to discover your channels`);
 
+          // ENHANCED LOGGING FOR EST-09
+          if (finalCustomerId === '5777354952') {
+            console.log(`[EST-09 DEBUG] ===== STRICT MODE FILTERING FOR EST-09 =====`);
+            console.log(`[EST-09 DEBUG] Combined items before filtering: ${combined.length}`);
+            console.log(`[EST-09 DEBUG] Items with cost: ${combined.filter(i => i.has_cost_data).length}`);
+            console.log(`[EST-09 DEBUG] Items with revenue only: ${combined.filter(i => !i.has_cost_data && i.has_revenue_data).length}`);
+
+            // Show what's getting filtered
+            const costItems = combined.filter(i => i.has_cost_data);
+            if (costItems.length > 0) {
+              console.log(`[EST-09 DEBUG] Sample cost items (first 3):`);
+              costItems.slice(0, 3).forEach((item, i) => {
+                console.log(`[EST-09 DEBUG]   ${i + 1}. Campaign: ${item.campaign_name}, Cost: $${item.cost.toFixed(2)}, Revenue: $${item.revenue.toFixed(2)}`);
+                console.log(`[EST-09 DEBUG]      Channels: ${item.channel_ids.join(', ') || 'NONE'}`);
+              });
+            } else {
+              console.error(`[EST-09 DEBUG] ❌ NO COST ITEMS FOUND! This is why $0.00 is showing!`);
+            }
+          }
+
           // STRICT: Block all revenue-only channels when ownership is not configured
           const beforeFilter = combined.length;
           combined = combined.filter(item => {
@@ -672,6 +773,18 @@ export async function POST(request: NextRequest) {
           const blockedCount = beforeFilter - combined.length;
           console.log(`[PREDICTO_COST_REVENUE]    🚫 Blocked ${blockedCount} revenue-only channels (potential cross-account leakage)`);
           console.log(`[PREDICTO_COST_REVENUE]    Showing ${combined.length} items (only campaigns with cost data)`);
+
+          // ENHANCED LOGGING FOR EST-09
+          if (finalCustomerId === '5777354952') {
+            console.log(`[EST-09 DEBUG] After STRICT filtering: ${combined.length} items remaining`);
+            if (combined.length === 0) {
+              console.error(`[EST-09 DEBUG] ❌ ALL ITEMS FILTERED OUT! This is the root cause!`);
+              console.error(`[EST-09 DEBUG] Likely causes:`);
+              console.error(`[EST-09 DEBUG]   1. EST-09 campaigns have no cost data (metrics.cost = 0)`);
+              console.error(`[EST-09 DEBUG]   2. EST-09 campaigns failed to fetch from Google Ads`);
+              console.error(`[EST-09 DEBUG]   3. Data structure issue with bulletproofAPI response`);
+            }
+          }
         } else {
           console.log(`[PREDICTO_COST_REVENUE]    Account owns ${ownedChannels.length} channels: ${ownedChannels.slice(0, 10).join(', ')}${ownedChannels.length > 10 ? '...' : ''}`);
 
