@@ -19,6 +19,7 @@ import { ReloadOutlined, SyncOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import DashboardLayout from '@/components/Layout/DashboardLayout';
 import { DashboardSkeleton, CacheIndicator } from '@/components/DashboardSkeleton';
+import { PredictoCostRevenueMapping } from '@/components/Predicto';
 
 const { Header, Content } = Layout;
 const { Title, Text } = Typography;
@@ -574,140 +575,12 @@ export default function PredictoPage() {
                 </Card>
               )}
 
-              {/* Cost & Revenue Table */}
-              <Card title={<Title level={4}>Campaign Cost & Revenue Analysis</Title>}>
-                <Table
-                  columns={[
-                    {
-                      title: 'Campaign ID',
-                      dataIndex: 'campaign_id',
-                      key: 'campaign_id',
-                      width: 150,
-                      fixed: 'left',
-                      render: (id: string) => (
-                        <Text strong style={{ fontFamily: 'monospace', color: '#1890ff', fontSize: '12px' }}>
-                          {id}
-                        </Text>
-                      ),
-                    },
-                    {
-                      title: 'Campaign Name',
-                      dataIndex: 'campaign_name',
-                      key: 'campaign_name',
-                      width: 200,
-                      render: (name: string) => (
-                        <Text>{name || '-'}</Text>
-                      ),
-                    },
-                    {
-                      title: 'Channel IDs',
-                      dataIndex: 'channel_ids',
-                      key: 'channel_ids',
-                      width: 150,
-                      render: (ids: string[]) => (
-                        <Text style={{ fontSize: '11px', fontFamily: 'monospace' }}>
-                          {ids && ids.length > 0 ? ids.join(', ') : '-'}
-                        </Text>
-                      ),
-                    },
-                    {
-                      title: 'Cost',
-                      dataIndex: 'cost',
-                      key: 'cost',
-                      width: 110,
-                      render: (cost: number) => (
-                        <Text strong style={{ color: '#ff4d4f' }}>
-                          ${cost.toFixed(2)}
-                        </Text>
-                      ),
-                    },
-                    {
-                      title: 'Revenue',
-                      dataIndex: 'revenue',
-                      key: 'revenue',
-                      width: 110,
-                      render: (revenue: number) => (
-                        <Text strong style={{ color: '#52c41a' }}>
-                          ${revenue.toFixed(2)}
-                        </Text>
-                      ),
-                    },
-                    {
-                      title: 'Profit',
-                      dataIndex: 'profit',
-                      key: 'profit',
-                      width: 110,
-                      render: (profit: number) => (
-                        <Text strong style={{ color: profit >= 0 ? '#52c41a' : '#ff4d4f' }}>
-                          ${profit.toFixed(2)}
-                        </Text>
-                      ),
-                    },
-                    {
-                      title: 'ROI',
-                      dataIndex: 'roi',
-                      key: 'roi',
-                      width: 100,
-                      render: (roi: number) => (
-                        <Text strong style={{ color: roi >= 0 ? '#52c41a' : '#ff4d4f' }}>
-                          {roi.toFixed(1)}%
-                        </Text>
-                      ),
-                    },
-                    {
-                      title: 'ROAS',
-                      dataIndex: 'roas',
-                      key: 'roas',
-                      width: 90,
-                      render: (roas: number) => (
-                        <Text strong style={{ color: roas >= 1 ? '#52c41a' : '#ff4d4f' }}>
-                          {roas.toFixed(2)}x
-                        </Text>
-                      ),
-                    },
-                    {
-                      title: 'Clicks',
-                      dataIndex: 'predicto_clicks',
-                      key: 'predicto_clicks',
-                      width: 90,
-                      render: (clicks: number) => (
-                        <Text>{clicks?.toLocaleString() || 0}</Text>
-                      ),
-                    },
-                    {
-                      title: 'Conversions',
-                      dataIndex: 'conversions',
-                      key: 'conversions',
-                      width: 100,
-                      render: (conversions: number) => (
-                        <Text style={{ color: conversions > 0 ? '#52c41a' : '#8c8c8c' }}>
-                          {conversions?.toLocaleString() || 0}
-                        </Text>
-                      ),
-                    },
-                    {
-                      title: 'RPC',
-                      dataIndex: 'rpc',
-                      key: 'rpc',
-                      width: 90,
-                      render: (rpc: number) => (
-                        <Text>${rpc?.toFixed(3) || '0.000'}</Text>
-                      ),
-                    },
-                  ]}
-                  dataSource={data.campaign_aggregated}
-                  rowKey="campaign_id"
-                  loading={loading || forceRefreshLoading}
-                  pagination={{
-                    pageSize: 50,
-                    showSizeChanger: true,
-                    pageSizeOptions: ['20', '50', '100', '200'],
-                    showTotal: (total) => `Total ${total} campaigns`,
-                  }}
-                  scroll={{ x: 1600 }}
-                  size="middle"
-                />
-              </Card>
+              {/* Cost & Revenue Table with Search & Filtering */}
+              <PredictoCostRevenueMapping
+                data={data.campaign_aggregated}
+                summary={data.summary}
+                loading={loading || forceRefreshLoading}
+              />
             </>
           )}
 
