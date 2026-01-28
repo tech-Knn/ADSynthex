@@ -47,14 +47,13 @@ export class PredictoApiClient {
     console.log('[PREDICTO_API] Metrics:', params.metrics);
     console.log('[PREDICTO_API] Dimensions:', params.dimensions);
 
-    // API-LEVEL FILTERING: Log if filters are provided
     if (params.filters) {
-      console.log('[PREDICTO_API] 🎯 API-LEVEL FILTERING ENABLED:');
+      console.log('[PREDICTO_API] API-level filtering enabled');
       if (params.filters.custom_channel_id) {
-        console.log(`[PREDICTO_API]    - Filtering by ${params.filters.custom_channel_id.length} channel IDs: ${params.filters.custom_channel_id.slice(0, 10).join(', ')}${params.filters.custom_channel_id.length > 10 ? '...' : ''}`);
+        console.log(`[PREDICTO_API] Filtering by ${params.filters.custom_channel_id.length} channel IDs: ${params.filters.custom_channel_id.slice(0, 10).join(', ')}${params.filters.custom_channel_id.length > 10 ? '...' : ''}`);
       }
       if (params.filters.campaign_id) {
-        console.log(`[PREDICTO_API]    - Filtering by ${params.filters.campaign_id.length} campaign IDs`);
+        console.log(`[PREDICTO_API] Filtering by ${params.filters.campaign_id.length} campaign IDs`);
       }
     }
 
@@ -64,7 +63,7 @@ export class PredictoApiClient {
       );
 
       if (daysDiff > this.maxDataRangeDays) {
-        console.error(`[PREDICTO_API] ❌ Date range too large: ${daysDiff} days (max: ${this.maxDataRangeDays})`);
+        console.error(`[PREDICTO_API] Date range too large: ${daysDiff} days (max: ${this.maxDataRangeDays})`);
         throw new Error(`Date range exceeds maximum of ${this.maxDataRangeDays} days`);
       }
       console.log(`[PREDICTO_API] Date range: ${daysDiff} days`);
@@ -113,7 +112,7 @@ export class PredictoApiClient {
       const fetchTime = Date.now() - fetchStartTime;
       console.log(`[PREDICTO_API] HTTP Response: ${response.status} ${response.statusText} (${fetchTime}ms)`);
     } catch (fetchError) {
-      console.error('[PREDICTO_API] 🚨 FETCH ERROR:', fetchError);
+      console.error('[PREDICTO_API] Fetch error:', fetchError);
       throw new Error(`Failed to connect to Predicto API: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`);
     }
 
@@ -132,24 +131,24 @@ export class PredictoApiClient {
     try {
       data = await response.json();
     } catch (jsonError) {
-      console.error('[PREDICTO_API] 🚨 JSON PARSE ERROR:', jsonError);
+      console.error('[PREDICTO_API] JSON parse error:', jsonError);
       throw new Error(`Invalid JSON response from Predicto API: ${jsonError instanceof Error ? jsonError.message : String(jsonError)}`);
     }
 
     console.log('[PREDICTO_API] Response status:', data.status);
 
     if (data.status !== 'success') {
-      console.error('[PREDICTO_API] 🚨 API returned non-success status:', data.status);
+      console.error('[PREDICTO_API] API returned non-success status:', data.status);
       console.error('[PREDICTO_API] Full response:', JSON.stringify(data, null, 2));
       throw new Error(`Predicto API returned status: ${data.status}`);
     }
 
     if (!data.data || !Array.isArray(data.data)) {
-      console.error('[PREDICTO_API] 🚨 Invalid data format - expected array, got:', typeof data.data);
+      console.error('[PREDICTO_API] Invalid data format, expected array, got:', typeof data.data);
       throw new Error('Predicto API returned invalid data format');
     }
 
-    console.log(`[PREDICTO_API] ✓ Received ${data.data.length} records`);
+    console.log(`[PREDICTO_API] Received ${data.data.length} records`);
 
     // Calculate totals for logging
     const totalRevenue = data.data.reduce((sum, r) => sum + (r.revenue || r.estimated_revenue || 0), 0);
@@ -184,7 +183,7 @@ export class PredictoApiClient {
         normalizedData = normalizedData.filter(record =>
           record.custom_channel_id && allowedChannels.has(record.custom_channel_id.toLowerCase())
         );
-        console.log(`[PREDICTO_API] 🔍 Client-side filter: ${beforeFilterCount} → ${normalizedData.length} records (filtered by ${params.filters.custom_channel_id.length} channels)`);
+        console.log(`[PREDICTO_API] Client-side filter: ${beforeFilterCount} -> ${normalizedData.length} records (filtered by ${params.filters.custom_channel_id.length} channels)`);
       }
 
       if (params.filters.campaign_id && params.filters.campaign_id.length > 0) {
@@ -192,22 +191,21 @@ export class PredictoApiClient {
         normalizedData = normalizedData.filter(record =>
           record.campaign_id && allowedCampaigns.has(record.campaign_id)
         );
-        console.log(`[PREDICTO_API] 🔍 Client-side filter: ${beforeFilterCount} → ${normalizedData.length} records (filtered by ${params.filters.campaign_id.length} campaigns)`);
+        console.log(`[PREDICTO_API] Client-side filter: ${beforeFilterCount} -> ${normalizedData.length} records (filtered by ${params.filters.campaign_id.length} campaigns)`);
       }
 
-      // Log efficiency metrics
       const reductionPercent = beforeFilterCount > 0
         ? ((beforeFilterCount - normalizedData.length) / beforeFilterCount * 100).toFixed(1)
         : '0';
-      console.log(`[PREDICTO_API] 📊 Filtering efficiency: ${reductionPercent}% of data filtered out`);
+      console.log(`[PREDICTO_API] Filtering efficiency: ${reductionPercent}% of data filtered out`);
 
       if (normalizedData.length > 0) {
         const filteredRevenue = normalizedData.reduce((sum, r) => sum + (r.revenue || 0), 0);
-        console.log(`[PREDICTO_API] 💰 Filtered revenue total: $${filteredRevenue.toFixed(2)}`);
+        console.log(`[PREDICTO_API] Filtered revenue total: $${filteredRevenue.toFixed(2)}`);
       }
     }
 
-    console.log('[PREDICTO_API] ✓ Revenue data fetch complete');
+    console.log('[PREDICTO_API] Revenue data fetch complete');
     return normalizedData;
   }
 

@@ -332,14 +332,31 @@ export async function POST(request: NextRequest) {
       const googleAdsDataRaw = await googleAdsDataPromises;
 
       const fetchTime = Date.now() - fetchStartTime;
-      console.log(`[PREDICTO_COST_REVENUE] ✓ Google Ads data fetching completed in ${(fetchTime / 1000).toFixed(1)}s`);
+      console.log(`[PREDICTO] Google Ads data fetched in ${(fetchTime / 1000).toFixed(1)}s`);
 
-      // CRITICAL: Validate Google Ads data before continuing
       if (!googleAdsDataRaw) {
-        console.error('[PREDICTO_COST_REVENUE] 🚨 CRITICAL: Google Ads API returned null/undefined!');
+        console.warn('[PREDICTO] Google Ads API returned no data, trying cache fallback');
+
+        const cachedFallback = await redisCacheManager.get(aggregatedCacheKey, { dataType: 'predicto' });
+
+        if (cachedFallback.data) {
+          console.log(`[PREDICTO] Serving cached data as fallback (${Math.round(cachedFallback.age / 1000)}s old)`);
+
+          const { aggregateByAccount } = await import('@/lib/predicto-cost-revenue');
+          const cachedAccountSummaries = aggregateByAccount(cachedFallback.data.campaign_aggregated || []);
+
+          return NextResponse.json({
+            ...cachedFallback.data,
+            account_summaries: cachedAccountSummaries,
+            _source: 'cache-fallback',
+            _message: 'Google Ads API unavailable, serving cached data',
+            _timestamp: new Date().toISOString()
+          });
+        }
+
         return NextResponse.json({
           error: 'Google Ads API failed',
-          message: 'Failed to fetch cost data from Google Ads API',
+          message: 'Failed to fetch cost data and no cached data available',
           _loadTime: `${Date.now() - startTime}ms`
         }, { status: 503 });
       }
@@ -467,11 +484,26 @@ export async function POST(request: NextRequest) {
               ? Array.from(campaignFinalUrlsMap.get(campaignId)!)
               : [];
 
-            // CRITICAL FIX: Cost data is nested inside campaign.metrics
-            const cost = campaign.metrics?.cost || campaign.cost || 0;
-            const clicks = campaign.metrics?.clicks || campaign.clicks || 0;
-            const impressions = campaign.metrics?.impressions || campaign.impressions || 0;
-            const conversions = campaign.metrics?.conversions || campaign.conversions || 0;
+            const extractMetric = (campaign: any, metricName: string): number => {
+              if (campaign.metrics?.[metricName] !== undefined) {
+                return Number(campaign.metrics[metricName]) || 0;
+              }
+              if (campaign[metricName] !== undefined) {
+                return Number(campaign[metricName]) || 0;
+              }
+              if (metricName === 'cost' && campaign.metrics?.cost_micros) {
+                return campaign.metrics.cost_micros / 1_000_000;
+              }
+              if (metricName === 'cost' && campaign.cost_micros) {
+                return campaign.cost_micros / 1_000_000;
+              }
+              return 0;
+            };
+
+            const cost = extractMetric(campaign, 'cost');
+            const clicks = extractMetric(campaign, 'clicks');
+            const impressions = extractMetric(campaign, 'impressions');
+            const conversions = extractMetric(campaign, 'conversions');
 
             allCampaigns.push({
               customer_id: campaign.customer_id, // Include account ID for account-level aggregation
@@ -588,20 +620,8 @@ export async function POST(request: NextRequest) {
       }
 
 
-      // Fetch Predicto revenue data
       const mappingStartTime = Date.now();
-      console.log(`[PREDICTO_COST_REVENUE] Fetching Predicto revenue with custom_channel_id...`);
-
-      // API-LEVEL FILTERING: If we have specific channels, filter at API level for efficiency
-      const shouldUseApiFiltering = !isMultiAccount && accountChannelIds.size > 0;
-      if (shouldUseApiFiltering) {
-        console.log(`[PREDICTO_COST_REVENUE] 🎯 ENABLING API-LEVEL FILTERING for ${accountChannelIds.size} channels`);
-        console.log(`[PREDICTO_COST_REVENUE] This will reduce bandwidth and prevent cross-account data leakage at source`);
-      } else if (isMultiAccount) {
-        console.log(`[PREDICTO_COST_REVENUE] Multi-account view: Fetching all channels (no API filtering)`);
-      } else {
-        console.log(`[PREDICTO_COST_REVENUE] No channels detected: Fetching all data (will filter client-side)`);
-      }
+      console.log(`[PREDICTO] Fetching Predicto revenue data (all channels)`);
 
       let predictoRevenue;
       try {
@@ -609,29 +629,14 @@ export async function POST(request: NextRequest) {
           start_date: startDate,
           end_date: endDate,
           metrics: ['impressions', 'clicks', 'revenue'],
-          dimensions: ['custom_channel_id', 'date'],
-          // API-LEVEL FILTERING: Pass channel filter if we have specific channels
-          ...(shouldUseApiFiltering && {
-            filters: {
-              custom_channel_id: Array.from(accountChannelIds)
-            }
-          })
+          dimensions: ['custom_channel_id', 'date']
         });
 
-        console.log(`[PREDICTO_COST_REVENUE] Retrieved ${predictoRevenue.length} Predicto revenue records`);
-
-        // Log API filtering benefits
-        if (shouldUseApiFiltering) {
-          console.log(`[PREDICTO_COST_REVENUE] ✅ API-LEVEL FILTERING ACTIVE:`);
-          console.log(`[PREDICTO_COST_REVENUE]    - Data fetched: ${predictoRevenue.length} records (filtered at source)`);
-          console.log(`[PREDICTO_COST_REVENUE]    - Without filtering: Would have fetched ALL channels across ALL accounts`);
-          console.log(`[PREDICTO_COST_REVENUE]    - Security: No cross-account data in memory`);
-          console.log(`[PREDICTO_COST_REVENUE]    - Performance: Reduced bandwidth and processing time`);
-        }
+        console.log(`[PREDICTO] Retrieved ${predictoRevenue.length} Predicto revenue records`);
 
         // CRITICAL: Validate Predicto returned actual revenue data
         if (!predictoRevenue || !Array.isArray(predictoRevenue)) {
-          console.error('[PREDICTO_COST_REVENUE] 🚨 CRITICAL: Predicto API returned invalid data format!');
+          console.error('[PREDICTO_COST_REVENUE]  CRITICAL: Predicto API returned invalid data format!');
           return NextResponse.json({
             error: 'Invalid Predicto data',
             message: 'Predicto API returned invalid data format',
@@ -737,53 +742,44 @@ export async function POST(request: NextRequest) {
         const ownedChannelSet = new Set(ownedChannels);
 
         if (ownedChannels.length === 0) {
-          console.warn(`[PREDICTO_COST_REVENUE]     No channel ownership configured for account ${finalCustomerId}`);
-          console.warn(`[PREDICTO_COST_REVENUE]    STRICT MODE: Blocking ALL revenue-only channels to prevent cross-account leakage`);
-          console.warn(`[PREDICTO_COST_REVENUE]    Please configure channel ownership in lib/predicto-channel-ownership.ts to see revenue`);
-          console.warn(`[PREDICTO_COST_REVENUE]    Run: POST /api/predicto-channel-discovery to discover your channels`);
+          console.warn(`[PREDICTO] No channel ownership configured for account ${finalCustomerId}`);
+          console.warn(`[PREDICTO] Using smart filtering to match revenue with cost campaigns`);
+          console.warn(`[PREDICTO] For best accuracy, configure ownership in lib/predicto-channel-ownership.ts`);
 
-          // ENHANCED LOGGING FOR EST-09
-          if (finalCustomerId === '5777354952') {
-            console.log(`[EST-09 DEBUG] ===== STRICT MODE FILTERING FOR EST-09 =====`);
-            console.log(`[EST-09 DEBUG] Combined items before filtering: ${combined.length}`);
-            console.log(`[EST-09 DEBUG] Items with cost: ${combined.filter(i => i.has_cost_data).length}`);
-            console.log(`[EST-09 DEBUG] Items with revenue only: ${combined.filter(i => !i.has_cost_data && i.has_revenue_data).length}`);
-
-            // Show what's getting filtered
-            const costItems = combined.filter(i => i.has_cost_data);
-            if (costItems.length > 0) {
-              console.log(`[EST-09 DEBUG] Sample cost items (first 3):`);
-              costItems.slice(0, 3).forEach((item, i) => {
-                console.log(`[EST-09 DEBUG]   ${i + 1}. Campaign: ${item.campaign_name}, Cost: $${item.cost.toFixed(2)}, Revenue: $${item.revenue.toFixed(2)}`);
-                console.log(`[EST-09 DEBUG]      Channels: ${item.channel_ids.join(', ') || 'NONE'}`);
+          const costCampaignChannels = new Set<string>();
+          allCampaigns.forEach(c => {
+            if (c.cost > 0 && c.final_urls) {
+              c.final_urls.forEach((url: string) => {
+                extractChannelIdsFromUrl(url).forEach(ch => costCampaignChannels.add(ch.toLowerCase()));
               });
-            } else {
-              console.error(`[EST-09 DEBUG] ❌ NO COST ITEMS FOUND! This is why $0.00 is showing!`);
             }
-          }
-
-          // STRICT: Block all revenue-only channels when ownership is not configured
-          const beforeFilter = combined.length;
-          combined = combined.filter(item => {
-            // ONLY keep items with cost data (from this account's campaigns)
-            // BLOCK all revenue-only items to prevent cross-account leakage
-            return item.has_cost_data;
           });
 
-          const blockedCount = beforeFilter - combined.length;
-          console.log(`[PREDICTO_COST_REVENUE]    🚫 Blocked ${blockedCount} revenue-only channels (potential cross-account leakage)`);
-          console.log(`[PREDICTO_COST_REVENUE]    Showing ${combined.length} items (only campaigns with cost data)`);
+          console.log(`[PREDICTO] Found ${costCampaignChannels.size} channels in cost campaigns: ${Array.from(costCampaignChannels).slice(0, 5).join(', ')}`);
 
-          // ENHANCED LOGGING FOR EST-09
-          if (finalCustomerId === '5777354952') {
-            console.log(`[EST-09 DEBUG] After STRICT filtering: ${combined.length} items remaining`);
-            if (combined.length === 0) {
-              console.error(`[EST-09 DEBUG] ❌ ALL ITEMS FILTERED OUT! This is the root cause!`);
-              console.error(`[EST-09 DEBUG] Likely causes:`);
-              console.error(`[EST-09 DEBUG]   1. EST-09 campaigns have no cost data (metrics.cost = 0)`);
-              console.error(`[EST-09 DEBUG]   2. EST-09 campaigns failed to fetch from Google Ads`);
-              console.error(`[EST-09 DEBUG]   3. Data structure issue with bulletproofAPI response`);
-            }
+          const beforeFilter = combined.length;
+
+          if (costCampaignChannels.size === 0) {
+            console.warn(`[PREDICTO] No channels found in campaign URLs, skipping channel-based filtering`);
+            console.warn(`[PREDICTO] Data is already scoped to account ${finalCustomerId} by API`);
+            console.warn(`[PREDICTO] For stricter filtering, add 'cid' parameter to Google Ads final URLs`);
+
+            const kept = combined.length;
+            console.log(`[PREDICTO] Permissive mode: keeping all ${kept} items (${combined.filter(i => i.has_cost_data).length} with cost, ${combined.filter(i => !i.has_cost_data && i.has_revenue_data).length} with revenue)`);
+          } else {
+            combined = combined.filter(item => {
+              if (item.has_cost_data) return true;
+
+              if (item.channel_ids && Array.isArray(item.channel_ids)) {
+                return item.channel_ids.some(ch => costCampaignChannels.has(ch.toLowerCase()));
+              }
+
+              return false;
+            });
+
+            const kept = combined.length;
+            const blocked = beforeFilter - kept;
+            console.log(`[PREDICTO] Smart filter: kept ${kept} items (${combined.filter(i => i.has_cost_data).length} with cost, ${combined.filter(i => !i.has_cost_data && i.has_revenue_data).length} matched revenue), blocked ${blocked} unrelated channels`);
           }
         } else {
           console.log(`[PREDICTO_COST_REVENUE]    Account owns ${ownedChannels.length} channels: ${ownedChannels.slice(0, 10).join(', ')}${ownedChannels.length > 10 ? '...' : ''}`);
@@ -810,19 +806,15 @@ export async function POST(request: NextRequest) {
 
           const beforeFilter = combined.length;
 
-          // STRICT FILTER: Only show items where ALL channel_ids belong to this account
           combined = combined.filter(item => {
-            // If item has cost data, keep it (but it might have wrong revenue if channels are misconfigured)
-            if (item.has_cost_data) {
-              return true;
-            }
+            if (item.has_cost_data) return true;
 
-            // For revenue-only items, check if ANY of its channel_ids belong to this account
             if (item.channel_ids && Array.isArray(item.channel_ids) && item.channel_ids.length > 0) {
               return item.channel_ids.some(channelId => ownedChannelSet.has(channelId.toLowerCase()));
             }
 
-            // No channel_ids and no cost data - filter it out
+            if (item.customer_id && item.customer_id === finalCustomerId) return true;
+
             return false;
           });
 
@@ -846,17 +838,16 @@ export async function POST(request: NextRequest) {
         // 2. Have channel_ids that match accountChannelIds (predefined or detected), OR
         // 3. Have valid customer_id matching this account
         combined = combined.filter(item => {
-          // Always keep if has cost data (it's from this account's campaigns)
           if (item.has_cost_data) return true;
 
-          // For revenue-only items, check if channel_ids are in accountChannelIds
           if (item.channel_ids && Array.isArray(item.channel_ids)) {
             const hasMatchingChannel = item.channel_ids.some(channelId => accountChannelIds.has(channelId));
             if (hasMatchingChannel) return true;
           }
 
-          // Fallback: check if customer_id matches (for backward compatibility)
-          return item.customer_id && item.customer_id !== 'unknown';
+          if (item.customer_id && item.customer_id === finalCustomerId) return true;
+
+          return false;
         });
 
         const afterValidation = combined.length;
