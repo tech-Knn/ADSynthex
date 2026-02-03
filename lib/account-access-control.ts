@@ -50,6 +50,16 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_7507601023': ['adsense'], // AFS-IST-21
   'CID_5767125301': ['adsense'], // AFS-IST-22
   'CID_8238574545': ['adsense'], // AFS-IST-23
+  'CID_5297662537': ['adsense'], // AFS-IST-24
+  'CID_1749739427': ['adsense'], // AFS-IST-25
+  'CID_3000221235': ['adsense'], // AFS-IST-26
+  'CID_5039273517': ['adsense'], // AFS-IST-27
+  'CID_3516620995': ['adsense'], // AFS-IST-28
+  'CID_1910623888': ['adsense'], // AFS-IST-29
+  'CID_3985887988': ['adsense'], // AFS-IST-30
+  'CID_1209239435': ['adsense'], // AFS-IST-31
+  'CID_8804029676': ['adsense'], // AFS-IST-32
+  'CID_7993255100': ['adsense'], // AFS-IST-33
   'CID_9249163427': ['adsense'], // TRT-AFS 01
 
   // Compado Accounts - Only access Compado feed
