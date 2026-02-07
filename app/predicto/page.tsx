@@ -138,16 +138,15 @@ export default function PredictoPage() {
   // Load cached data immediately when selection changes
   useEffect(() => {
     if (selectedAccount) {
-      // Immediately show cached data if available
       const cached = loadCachedData(selectedAccount, dateRange);
       if (cached) {
         setData(cached);
         setIsFromCache(true);
-        setIsRefreshing(true);
-        console.log('[PREDICTO] Showing cached data immediately, refreshing in background...');
+        setIsRefreshing(false);
+        console.log('[PREDICTO] Loaded cached data. Click Refresh to update.');
+      } else {
+        fetchData();
       }
-      // Always fetch fresh data
-      fetchData();
     }
   }, [selectedAccount, dateRange]);
 
