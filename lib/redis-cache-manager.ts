@@ -49,32 +49,33 @@ export class RedisCacheManager {
 
   // TTL configuration optimized for RATE LIMIT PROTECTION + reasonable freshness (in seconds)
   // CRITICAL: Longer TTLs = fewer API calls = better rate limit protection
-  // OPTIMIZED: Significantly longer TTLs to stay within 10k daily quota
+  // EMERGENCY FIX 2026-02-07: Dramatically increased TTLs to prevent daily quota exhaustion
+  // Previous config was causing 136K+ daily requests (10K limit = exceeded by 1,262%!)
   private ttlConfig = {
     'google-ads': {
-      current: 7200,     // 2 hours for today (was 1h) - balance freshness vs quota
-      recent: 21600,     // 6 hours for last 7 days (was 2h) - data rarely changes
-      historical: 86400  // 24 hours for older data (was 4h) - historical data is stable
+      current: 28800,    // 8 hours for today (was 2h) - CRITICAL: Reduces API calls by 4x
+      recent: 43200,     // 12 hours for last 7 days (was 6h) - Data rarely changes intraday
+      historical: 86400  // 24 hours for older data (unchanged) - Historical data is stable
     },
     'adscom': {
-      current: 7200,     // 2 hours (was 1h) - Ads.com updates every 15min but we cache longer
-      recent: 21600,     // 6 hours (was 2h)
-      historical: 86400  // 24 hours (was 4h)
+      current: 28800,    // 8 hours (was 2h) - Ads.com updates every 15min but we batch requests
+      recent: 43200,     // 12 hours (was 6h) - Revenue data stabilizes after few hours
+      historical: 86400  // 24 hours (unchanged)
     },
     'compado': {
-      current: 7200,     // 2 hours (was 1h) - Conversions are relatively stable
-      recent: 21600,     // 6 hours (was 2h)
-      historical: 86400  // 24 hours (was 4h)
+      current: 28800,    // 8 hours (was 2h) - Conversions are stable throughout day
+      recent: 43200,     // 12 hours (was 6h)
+      historical: 86400  // 24 hours (unchanged)
     },
     'predicto': {
-      current: 1800,     // 30 min for current data - Predicto revenue updates frequently
-      recent: 7200,      // 2 hours for recent data
-      historical: 21600  // 6 hours for historical data
+      current: 900,      // 15 minutes for TODAY's data - Prevents stale cost showing at day start
+      recent: 7200,      // 2 hours for yesterday's data (was 4h) - Balanced freshness
+      historical: 43200  // 12 hours for historical data (was 6h) - Stable data doesn't change
     },
     'unified': {
-      current: 1800,     // 30 min for cost+revenue combined view (was 10min)
-      recent: 7200,      // 2 hours (was 30min)
-      historical: 21600  // 6 hours (was 1h)
+      current: 7200,     // 2 hours for cost+revenue combined view (was 30min) - Balanced freshness
+      recent: 14400,     // 4 hours (was 2h)
+      historical: 43200  // 12 hours (was 6h)
     }
   };
 
@@ -169,7 +170,7 @@ export class RedisCacheManager {
    * CRITICAL: Skip Redis for large datasets (>8MB) to prevent Upstash limit errors
    * OPTIMIZED: Compresses data before checking size limits
    */
-  async set(key: string, data: any, p0: number, p1: { dataType: string; }, options: CacheOptions = {}): Promise<void> {
+  async set(key: string, data: any, options: CacheOptions = {}): Promise<void> {
     try {
       const {
         ttl: customTTL,

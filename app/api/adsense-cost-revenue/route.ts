@@ -191,7 +191,9 @@ export async function POST(request: NextRequest) {
     const cacheAccountData = async (accountId: string, data: any) => {
       try {
         const cacheKey = getAccountCacheKey(accountId);
-        await redisCacheManager.set(cacheKey, data, CACHE_TTL / 1000, { dataType: 'unified' }, {
+        await redisCacheManager.set(cacheKey, data, {
+          ttl: CACHE_TTL / 1000,
+          dataType: 'unified',
           priority: 'high'
         });
         console.log(`[ADSENSE_COST_REVENUE] Cached data for account ${accountId}`);
@@ -1405,7 +1407,9 @@ export async function POST(request: NextRequest) {
     // CRITICAL: Only cache if data quality is good
     // Next request will get this exact same data until cache expires
     try {
-      await redisCacheManager.set(aggregatedCacheKey, response, AGGREGATED_CACHE_TTL, { dataType: 'unified' }, {
+      await redisCacheManager.set(aggregatedCacheKey, response, {
+        ttl: AGGREGATED_CACHE_TTL,
+        dataType: 'unified',
         priority: 'high'
       });
       console.log(`[ADSENSE_REVENUE] ✅ Data quality passed - Saved aggregated result to cache (TTL: ${AGGREGATED_CACHE_TTL}s)`);

@@ -14,11 +14,22 @@ const TARGET_ACCOUNTS = config.TARGET_ACCOUNTS;
  * Filter accounts by feed type to prevent data mixing between feeds
  * @param feedType - The feed type to filter for ('adscom', 'compado', 'inuvo')
  * @returns Filtered list of accounts belonging to the specified feed
+ * EMERGENCY FIX 2026-02-07: Returns empty array if feed is globally disabled
  */
 function filterAccountsByFeed(feedType?: FeedType | null): typeof TARGET_ACCOUNTS {
   // If no feed type specified, return all accounts (backward compatibility)
   if (!feedType) {
     return TARGET_ACCOUNTS;
+  }
+
+  // EMERGENCY FIX: Check if feed is globally disabled (ads.com, compado, inuvo not in use)
+  if (ACCOUNT_FEED_ACCESS && typeof ACCOUNT_FEED_ACCESS === 'object') {
+    const disabledFeeds: FeedType[] = ['adscom', 'compado', 'inuvo'];
+    if (disabledFeeds.includes(feedType)) {
+      console.log(`[GOOGLE_ADS_API] ⚠️  Feed ${feedType} is DISABLED (not in use - saving quota)`);
+      console.log(`[GOOGLE_ADS_API] Returning 0 accounts for ${feedType} feed (quota saving measure)`);
+      return [];
+    }
   }
 
   console.log(`[GOOGLE_ADS_API] Filtering accounts for feed type: ${feedType}`);
@@ -543,11 +554,14 @@ function processClickData(response: any[], account: any): GoogleAdsClick[] {
 }
 
 // Fetch all necessary data
+// EMERGENCY FIX 2026-02-07: Added includeClickViews parameter to reduce quota usage
+// Click view queries are EXPENSIVE (1 per account) and often not needed
 export async function fetchGoogleAdsData(
   startDate: string,
   endDate: string,
   specificAccountId?: string | null,
-  feedType?: FeedType | null
+  feedType?: FeedType | null,
+  includeClickViews: boolean = false // Default FALSE to save quota
 ): Promise<GoogleAdsData> {
   const { client, customer } = initializeGoogleAdsClient();
   const data: GoogleAdsData = {
@@ -720,7 +734,11 @@ export async function fetchGoogleAdsData(
       // Fetch click_view data (GCLIDs) for feeds that use GCLID matching
       // AFS uses style_id + domain matching (NO GCLID)
       // Compado, Ads.com, Inuvo use GCLID matching
-      if (feedType === 'adscom' || feedType === 'compado' || feedType === 'inuvo') {
+      // EMERGENCY FIX 2026-02-07: Only fetch if explicitly requested OR env var enabled
+      // This saves ~301 API calls per fetch (43 accounts × 7 = massive quota savings!)
+      const shouldFetchClickViews = includeClickViews || process.env.ENABLE_CLICK_VIEW_QUERIES === 'true';
+
+      if (shouldFetchClickViews && (feedType === 'adscom' || feedType === 'compado' || feedType === 'inuvo')) {
         console.log(`[GOOGLE_ADS_API] Fetching click_view data (GCLIDs) for ${feedType} feed...`);
         try {
           // OPTIMIZATION: Fetch entire date range in ONE query instead of day-by-day
@@ -748,6 +766,8 @@ export async function fetchGoogleAdsData(
         } catch (error: any) {
           console.warn(`[GOOGLE_ADS_API] Click view fetch failed for ${account.name}:`, error?.message || 'Unknown error');
         }
+      } else if (!shouldFetchClickViews && (feedType === 'adscom' || feedType === 'compado' || feedType === 'inuvo')) {
+        console.log(`[GOOGLE_ADS_API] Skipping click_view data (disabled to save quota - set ENABLE_CLICK_VIEW_QUERIES=true or pass includeClickViews=true to enable)`);
       } else {
         console.log(`[GOOGLE_ADS_API] Skipping click_view data (not needed for ${feedType || 'this'} feed)`);
       }

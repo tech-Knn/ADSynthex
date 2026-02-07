@@ -112,8 +112,12 @@ function DashboardContent() {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [nextUpdateIn, setNextUpdateIn] = useState<number | null>(null);
-  const [autoRefresh, setAutoRefresh] = useState<boolean>(true);
+  // EMERGENCY FIX 2026-02-07: Disable auto-refresh by default to prevent quota exhaustion
+  // Previous 5-min auto-refresh was causing 136K+ daily API calls (10K limit exceeded by 1,262%)
+  const [autoRefresh, setAutoRefresh] = useState<boolean>(false);
   const autoRefreshTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Minimum auto-refresh interval increased from 5min to 30min
+  const MIN_AUTO_REFRESH_INTERVAL = 1800; // 30 minutes in seconds
   const searchParams = useSearchParams();
   
   // Default to today initially using local timezone (avoid UTC shift)
@@ -196,14 +200,15 @@ function DashboardContent() {
         setLastUpdated(adscomData.lastUpdated);
         setNextUpdateIn(adscomData.nextUpdateIn || null);
         
-        // Set up auto-refresh timer if enabled
+        // Set up auto-refresh timer if enabled (with minimum 30-minute interval)
         if (autoRefresh && adscomData.nextUpdateIn && adscomData.nextUpdateIn > 0) {
-          console.log(`Setting up auto-refresh timer for ${adscomData.nextUpdateIn} seconds from now`);
-          scheduleNextRefresh(adscomData.nextUpdateIn);
+          const refreshInterval = Math.max(adscomData.nextUpdateIn, MIN_AUTO_REFRESH_INTERVAL);
+          console.log(`Setting up auto-refresh timer for ${refreshInterval} seconds from now (minimum: ${MIN_AUTO_REFRESH_INTERVAL}s)`);
+          scheduleNextRefresh(refreshInterval);
         } else if (autoRefresh && (!adscomData.nextUpdateIn || adscomData.nextUpdateIn <= 0)) {
-          // If nextUpdateIn is missing or zero, set a default refresh interval (5 minutes)
-          console.log('No valid nextUpdateIn received, setting default refresh interval (5 minutes)');
-          scheduleNextRefresh(300);
+          // If nextUpdateIn is missing or zero, use minimum interval (30 minutes, not 5)
+          console.log(`No valid nextUpdateIn received, setting default refresh interval (${MIN_AUTO_REFRESH_INTERVAL/60} minutes)`);
+          scheduleNextRefresh(MIN_AUTO_REFRESH_INTERVAL);
         }
       } else {
         console.warn('No update time information received from API');
@@ -224,10 +229,11 @@ function DashboardContent() {
         
         setLastUpdated(lastUpdate.toISOString());
         setNextUpdateIn(nextUpdateIn);
-        
-        // Set up auto-refresh timer if enabled
+
+        // Set up auto-refresh timer if enabled (with minimum interval)
         if (autoRefresh) {
-          scheduleNextRefresh(nextUpdateIn);
+          const refreshInterval = Math.max(nextUpdateIn, MIN_AUTO_REFRESH_INTERVAL);
+          scheduleNextRefresh(refreshInterval);
         }
       }
       

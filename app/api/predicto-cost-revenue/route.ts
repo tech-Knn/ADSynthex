@@ -943,10 +943,11 @@ export async function POST(request: NextRequest) {
         predicto_data: { record_count: predictoRevenue.length },
       };
 
-      await redisCacheManager.set(aggregatedCacheKey, cacheData, 1800, {
+      // Auto-determine TTL: 15min for today, 2h for yesterday, 12h for older data
+      await redisCacheManager.set(aggregatedCacheKey, cacheData, {
         dataType: 'predicto',
       });
-      console.log(`[PREDICTO_COST_REVENUE] ✅ Data quality passed - Cached aggregated results with 30min TTL`);
+      console.log(`[PREDICTO_COST_REVENUE] ✅ Data quality passed - Cached with dynamic TTL`);
 
       message = `Successfully mapped Predicto cost-revenue data in ${(totalTime / 1000).toFixed(1)}s${!isMultiAccount ? ' - single account view' : ' - multi-account view'}`;
 
