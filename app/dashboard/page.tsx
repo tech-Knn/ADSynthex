@@ -317,13 +317,9 @@ function DashboardContent() {
   // Helper to handle account selection
   const handleAccountChange = (customerId: string | null) => {
     setSelectedCustomerId(customerId);
-    
-    // Refresh data with new customer ID filter
-    const startDate = dateRange[0].format('YYYY-MM-DD');
-    const endDate = dateRange[1].format('YYYY-MM-DD');
-    
-    // Direct call with the customerId parameter
-    fetchData(startDate, endDate, customerId);
+
+    // DISABLED AUTO-FETCH: User must click Refresh button to load data
+    console.log(`Account changed to: ${customerId}. Click Refresh to load data.`);
   };
 
   useEffect(() => {
@@ -362,23 +358,19 @@ function DashboardContent() {
       setSelectedCustomerId(customerId);
     }
     
-    // Use the customer ID when fetching data initially
-    fetchData(today.format('YYYY-MM-DD'), today.format('YYYY-MM-DD'), customerId);
+    // DISABLED AUTO-FETCH: User must click Refresh button to load data
+    console.log('Dashboard loaded. Click Refresh to load data.');
     
     // Listen for account changes from the layout component
     const handleAccountChangedEvent = (event: CustomEvent) => {
       const newCustomerId = event.detail;
       console.log('Account changed event received:', newCustomerId);
-      
+
       // Update the selected customer ID state
       setSelectedCustomerId(newCustomerId);
-      
-      // Refresh data with new customer ID filter
-      const startDate = dateRange[0].format('YYYY-MM-DD');
-      const endDate = dateRange[1].format('YYYY-MM-DD');
-      
-      // Directly call fetchData with the new customerId to avoid state update delays
-      fetchData(startDate, endDate, newCustomerId);
+
+      // DISABLED AUTO-FETCH: User must click Refresh button to load data
+      console.log(`Account changed to: ${newCustomerId}. Click Refresh to load data.`);
     };
     
     // Add event listener
@@ -464,15 +456,8 @@ function DashboardContent() {
 
       setDateRange([dates[0], dates[1]]);
 
-      // Clear existing debounce timer
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-
-      // Debounce API calls by 500ms to prevent rapid-fire requests
-      debounceTimerRef.current = setTimeout(() => {
-        fetchData(dates[0]!.format('YYYY-MM-DD'), dates[1]!.format('YYYY-MM-DD'), selectedCustomerId);
-      }, 500);
+      // DISABLED AUTO-FETCH: User must click Refresh button to load data
+      console.log(`Date range changed to: ${dates[0].format('YYYY-MM-DD')} - ${dates[1].format('YYYY-MM-DD')}. Click Refresh to load data.`);
     }
   };
 

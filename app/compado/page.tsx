@@ -95,11 +95,12 @@ export default function CompadoPage() {
     fetchAccounts();
   }, []);
 
-  useEffect(() => {
-    if (selectedAccount) {
-      fetchData();
-    }
-  }, [dateRange, selectedAccount]);
+  // DISABLED AUTO-FETCH: User must click Refresh button to load data
+  // useEffect(() => {
+  //   if (selectedAccount) {
+  //     fetchData();
+  //   }
+  // }, [dateRange, selectedAccount]);
 
   const fetchAccounts = async () => {
     try {
