@@ -392,51 +392,12 @@ function DashboardContent() {
     };
   }, [searchParams]); // Add searchParams as dependency so the effect runs when URL changes
 
-  // Separate useEffect to handle auto-refresh setup and countdown
-  useEffect(() => {
-    // If we have nextUpdateIn data and auto-refresh is enabled, set up the timer
-    if (autoRefresh && nextUpdateIn !== null) {
-      console.log(`AUTO-REFRESH: Initial setup with ${nextUpdateIn} seconds until next update`);
-      scheduleNextRefresh(nextUpdateIn);
-      
-      // Set up a countdown timer to update the UI every second
-      const countdownInterval = setInterval(() => {
-        setNextUpdateIn(prev => {
-          if (prev === null) return null;
-          
-          const newValue = prev - 1;
-          // When countdown reaches 0, clear the interval (refresh will be handled by the timeout)
-          if (newValue <= 0) {
-            clearInterval(countdownInterval);
-            // Double-check that refresh happens
-            console.log('AUTO-REFRESH: Countdown reached zero, triggering refresh');
-            // Small delay to avoid race conditions
-            setTimeout(() => {
-              if (!autoRefreshTimerRef.current) {
-                console.log('AUTO-REFRESH: Backup refresh triggered');
-                handleRefresh();
-              }
-            }, 500);
-          }
-          return newValue;
-        });
-      }, 1000);
-      
-      // Clean up function
-      return () => {
-        clearInterval(countdownInterval);
-      };
-    }
-    
-    // Clean up function
-    return () => {
-      if (autoRefreshTimerRef.current) {
-        console.log('AUTO-REFRESH: Cleaning up timer on unmount');
-        clearTimeout(autoRefreshTimerRef.current);
-        autoRefreshTimerRef.current = null;
-      }
-    };
-  }, [nextUpdateIn, autoRefresh]); // Re-run when these values change
+  // DISABLED: Auto-refresh countdown timer removed to prevent infinite re-render loop
+  // The previous implementation had a critical bug:
+  // - useEffect depended on nextUpdateIn
+  // - setInterval inside useEffect updated nextUpdateIn every second
+  // - This caused useEffect to re-run every second → infinite loop → excessive API calls
+  // Since auto-refresh is disabled by default, this entire mechanism is unnecessary
 
   // Debounce timer for date/account changes to prevent rapid-fire API calls
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -873,17 +834,19 @@ function DashboardContent() {
                 </div>
               )}
               
-              <div className={styles.autoRefreshToggle}>
+              {/* AUTO-REFRESH TOGGLE DISABLED: Feature removed due to infinite re-render bug */}
+              {/* <div className={styles.autoRefreshToggle}>
                 <Tooltip title={autoRefresh ? "Auto-refresh enabled" : "Auto-refresh disabled"}>
-                  <Switch 
-                    size="small" 
-                    checked={autoRefresh} 
-                    onChange={toggleAutoRefresh} 
-                    checkedChildren="Auto" 
-                    unCheckedChildren="Manual" 
+                  <Switch
+                    size="small"
+                    checked={autoRefresh}
+                    onChange={toggleAutoRefresh}
+                    checkedChildren="Auto"
+                    unCheckedChildren="Manual"
                   />
                 </Tooltip>
-                <span className={styles.autoRefreshLabel}>Auto-refresh</span>
+                <span className={styles.autoRefreshLabel}>Auto-refresh</span> */}
+              <div className={styles.autoRefreshToggle}>
                 <Button 
                   size="small" 
                   type="text"

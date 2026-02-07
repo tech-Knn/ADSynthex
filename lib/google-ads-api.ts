@@ -668,40 +668,49 @@ export async function fetchGoogleAdsData(
         data.campaigns.push(...processedCampaigns);
       }
 
-      // Fetch all campaigns (with error handling to not block other queries)
-      try {
-        const allCampaignsQuery = buildAllCampaignsQuery(startDate, endDate);
-        const allCampaignsResponse = await makeApiCall(allCampaignsQuery, 'All Campaigns');
-        if (allCampaignsResponse && allCampaignsResponse.length > 0) {
-          const allCampaigns = processCampaignData(allCampaignsResponse, account);
+      // QUOTA OPTIMIZATION: Removed "All Campaigns" query for AFS feed
+      // The "Active Campaigns" query already includes ENABLED + PAUSED campaigns
+      // The only difference is REMOVED campaigns, which have $0 cost and don't contribute to revenue matching
+      // This saves 1 API call per account (33 accounts × 1 = 33 calls saved per sync)
+      // For non-AFS feeds, we could add it back if needed, but AFS uses style_id matching from ads
+      if (feedType && feedType !== 'adsense') {
+        // For other feeds (adscom, compado, inuvo), fetch all campaigns if needed
+        try {
+          const allCampaignsQuery = buildAllCampaignsQuery(startDate, endDate);
+          const allCampaignsResponse = await makeApiCall(allCampaignsQuery, 'All Campaigns');
+          if (allCampaignsResponse && allCampaignsResponse.length > 0) {
+            const allCampaigns = processCampaignData(allCampaignsResponse, account);
 
-          // Merge campaign lists, prioritizing active campaigns
-          // CRITICAL: Use campaign_id + date as key to preserve daily segmentation
-          const campaignMap = new Map();
+            // Merge campaign lists, prioritizing active campaigns
+            // CRITICAL: Use campaign_id + date as key to preserve daily segmentation
+            const campaignMap = new Map();
 
-          // First add all campaigns (use campaign_id + date as key)
-          for (const campaign of allCampaigns) {
-            const date = campaign.segments?.date || campaign.date || 'no_date';
-            const key = `${campaign.campaign_id}_${date}`;
-            campaignMap.set(key, campaign);
-          }
-
-          // Then override with active campaigns (use campaign_id + date as key)
-          for (const campaign of data.campaigns) {
-            if (campaign.customer_id === account.id) {
+            // First add all campaigns (use campaign_id + date as key)
+            for (const campaign of allCampaigns) {
               const date = campaign.segments?.date || campaign.date || 'no_date';
               const key = `${campaign.campaign_id}_${date}`;
               campaignMap.set(key, campaign);
             }
-          }
 
-          // Update campaigns list
-          data.campaigns = data.campaigns.filter(c => c.customer_id !== account.id);
-          data.campaigns.push(...Array.from(campaignMap.values()));
+            // Then override with active campaigns (use campaign_id + date as key)
+            for (const campaign of data.campaigns) {
+              if (campaign.customer_id === account.id) {
+                const date = campaign.segments?.date || campaign.date || 'no_date';
+                const key = `${campaign.campaign_id}_${date}`;
+                campaignMap.set(key, campaign);
+              }
+            }
+
+            // Update campaigns list
+            data.campaigns = data.campaigns.filter(c => c.customer_id !== account.id);
+            data.campaigns.push(...Array.from(campaignMap.values()));
+          }
+        } catch (error) {
+          console.warn(`[GOOGLE_ADS_API] All Campaigns query failed (continuing with active campaigns):`, error instanceof Error ? error.message : 'Unknown error');
+          // Continue with active campaigns data
         }
-      } catch (error) {
-        console.warn(`[GOOGLE_ADS_API] All Campaigns query failed (continuing with active campaigns):`, error instanceof Error ? error.message : 'Unknown error');
-        // Continue with active campaigns data
+      } else {
+        console.log(`[GOOGLE_ADS_API] Skipping "All Campaigns" query for ${feedType} feed (quota optimization - saves 1 API call)`);
       }
 
       // OPTIMIZATION: Only fetch active ads (removed duplicate "All Ads" query)

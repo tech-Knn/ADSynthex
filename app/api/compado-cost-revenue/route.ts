@@ -687,13 +687,17 @@ export async function POST(request: NextRequest) {
       };
 
       try {
+        // OPTIMIZATION: Increased cache TTL from 5 min to 1 hour to reduce API quota usage
+        // Compado conversion data doesn't change frequently enough to justify 5-min refreshes
+        // Previous: 5 min = up to 288 refreshes/day
+        // New: 1 hour = ~24 refreshes/day (92% reduction in API calls)
         await redisCacheManager.set(aggregatedCacheKey, cachePayload, {
           dataType: 'compado',
-          ttl: 300 // 5 minutes - fresh data every 5 minutes
+          ttl: 3600 // 1 hour (3600 seconds) - balanced between freshness and quota
         });
 
         const cacheSize = JSON.stringify(cachePayload).length / 1024;
-        console.log(`[COMPADO_COST_REVENUE] ✓ Cached aggregated results: ${cacheSize.toFixed(2)}KB (TTL: 5 min)`);
+        console.log(`[COMPADO_COST_REVENUE] ✓ Cached aggregated results: ${cacheSize.toFixed(2)}KB (TTL: 1 hour)`);
       } catch (cacheError: any) {
         console.error(`[COMPADO_COST_REVENUE]  Failed to cache aggregated results:`, cacheError.message);
         // Continue even if caching fails
