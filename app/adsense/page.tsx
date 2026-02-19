@@ -52,8 +52,8 @@ export default function AdSensePage() {
 
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>([dayjs(), dayjs()]);
 
-  // Domain filter - default to termuxtools.com
-  const [filterDomain, setFilterDomain] = useState<string>('termuxtools.com');
+  // Domain filter - default to topresearchtopics.com (termuxtools.com temporarily down)
+  const [filterDomain, setFilterDomain] = useState<string>('topresearchtopics.com');
 
   // Metric filters
   const [searchStyleId, setSearchStyleId] = useState<string>('');
@@ -106,7 +106,8 @@ export default function AdSensePage() {
     fetchAdsenseAccounts();
   }, []);
 
-  // Auto-select termuxtools.com when data loads
+  // Auto-select domain when data loads
+  // Priority: termuxtools.com > topresearchtopics.com > first available
   useEffect(() => {
     if (data?.campaign_aggregated) {
       const domains = new Set(
@@ -117,6 +118,8 @@ export default function AdSensePage() {
 
       if (domains.has('termuxtools.com')) {
         setFilterDomain('termuxtools.com');
+      } else if (domains.has('topresearchtopics.com')) {
+        setFilterDomain('topresearchtopics.com');
       } else if (domains.size > 0) {
         setFilterDomain(Array.from(domains)[0] as string);
       }

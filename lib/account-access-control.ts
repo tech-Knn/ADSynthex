@@ -27,46 +27,64 @@ export const DISABLED_FEEDS: FeedType[] = ['adscom', 'compado', 'inuvo'];
  * - 'adscom': Ads.com dashboard and reports (DISABLED - NOT IN USE)
  * - 'compado': Compado cost-revenue mapping (DISABLED - NOT IN USE)
  * - 'inuvo': Inuvo cost vs revenue dashboard (DISABLED - NOT IN USE)
- * - 'adsense': AdSense for Search (AFS) revenue mapping (ACTIVE - 33 accounts)
+ * - 'adsense': AdSense for Search (AFS) revenue mapping (ACTIVE - TRT accounts only; IST accounts disabled)
  * - 'predicto': Predicto cost-revenue mapping (ACTIVE - 10 accounts)
  */
 export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
-  // AdSense for Search (AFS) Accounts - Only access AdSense feed
-  'CID_7072817229': ['adsense'],
-  'CID_1353234754': ['adsense'],
-  'CID_6610446272': ['adsense'],
-  'CID_5700221831': ['adsense'],
-  'CID_3961840839': ['adsense'],
-  'CID_1769246493': ['adsense'],
-  'CID_8077371478': ['adsense'],
-  'CID_5932592680': ['adsense'],
-  'CID_9657188741': ['adsense'],
-  'CID_5898780123': ['adsense'],
-  'CID_3851198549': ['adsense'],
-  'CID_9841818774': ['adsense'],
-  'CID_5351234641': ['adsense'],
-  'CID_7918808672': ['adsense'], // AFS-IST-13
-  'CID_5136436733': ['adsense'], // AFS-IST-14
-  'CID_4985953086': ['adsense'], // AFS-IST-15
-  'CID_1086706941': ['adsense'], // AFS-IST-16
-  'CID_7142427325': ['adsense'], // AFS-IST-17
-  'CID_1173588441': ['adsense'], // AFS-IST-18
-  'CID_1786688915': ['adsense'], // AFS-IST-19
-  'CID_5822945286': ['adsense'], // AFS-IST-20
-  'CID_7507601023': ['adsense'], // AFS-IST-21
-  'CID_5767125301': ['adsense'], // AFS-IST-22
-  'CID_8238574545': ['adsense'], // AFS-IST-23
-  'CID_5297662537': ['adsense'], // AFS-IST-24
-  'CID_1749739427': ['adsense'], // AFS-IST-25
-  'CID_3000221235': ['adsense'], // AFS-IST-26
-  'CID_5039273517': ['adsense'], // AFS-IST-27
-  'CID_3516620995': ['adsense'], // AFS-IST-28
-  'CID_1910623888': ['adsense'], // AFS-IST-29
-  'CID_3985887988': ['adsense'], // AFS-IST-30
-  'CID_1209239435': ['adsense'], // AFS-IST-31
-  'CID_8804029676': ['adsense'], // AFS-IST-32
-  'CID_7993255100': ['adsense'], // AFS-IST-33
+  // AFS - TRT Accounts (ACTIVE - search.topresearchtopics.com)
   'CID_9249163427': ['adsense'], // TRT-AFS 01
+  'CID_1209239435': ['adsense'], // AFS-TRT-IST-01 (formerly AFS-IST-31)
+  'CID_8804029676': ['adsense'], // AFS-TRT-IST-02 (formerly AFS-IST-32)
+  'CID_7993255100': ['adsense'], // AFS-TRT-IST-03 (formerly AFS-IST-33)
+  'CID_3516620995': ['adsense'], // AFS-TRT-IST-05 (formerly AFS-IST-28)
+  'CID_1910623888': ['adsense'], // AFS-TRT-IST-04 (formerly AFS-IST-29)
+
+  // AFS - IST Accounts (DISABLED - search.termuxtools.com domain issue)
+  // 'CID_7072817229': ['adsense'], // AFS-IST-01
+  // 'CID_1353234754': ['adsense'], // AFS-IST-02
+  // 'CID_6610446272': ['adsense'], // AFS-IST-03
+  // 'CID_5700221831': ['adsense'], // AFS-IST-04
+  // 'CID_3961840839': ['adsense'], // AFS-IST-05
+  // 'CID_1769246493': ['adsense'], // AFS-IST-06
+  // 'CID_8077371478': ['adsense'], // AFS-IST-07
+  // 'CID_5932592680': ['adsense'], // AFS-IST-08
+  // 'CID_9657188741': ['adsense'], // AFS-08-GMT-7
+  // 'CID_5898780123': ['adsense'], // AFS-IST-09
+  // 'CID_3851198549': ['adsense'], // AFS-IST-10
+  // 'CID_9841818774': ['adsense'], // AFS-IST-11
+  // 'CID_5351234641': ['adsense'], // AFS-IST-12
+  // 'CID_7918808672': ['adsense'], // AFS-IST-13
+  // 'CID_5136436733': ['adsense'], // AFS-IST-14
+  // 'CID_4985953086': ['adsense'], // AFS-IST-15
+  // 'CID_1086706941': ['adsense'], // AFS-IST-16
+  // 'CID_7142427325': ['adsense'], // AFS-IST-17
+  // 'CID_1173588441': ['adsense'], // AFS-IST-18
+  // 'CID_1786688915': ['adsense'], // AFS-IST-19
+  // 'CID_5822945286': ['adsense'], // AFS-IST-20
+  // 'CID_7507601023': ['adsense'], // AFS-IST-21
+  // 'CID_5767125301': ['adsense'], // AFS-IST-22
+  // 'CID_8238574545': ['adsense'], // AFS-IST-23
+  // 'CID_5297662537': ['adsense'], // AFS-IST-24
+  // 'CID_1749739427': ['adsense'], // AFS-IST-25
+  // 'CID_3000221235': ['adsense'], // AFS-IST-26
+  // 'CID_5039273517': ['adsense'], // AFS-IST-27
+  // 'CID_3985887988': ['adsense'], // AFS-IST-30
+  // 'CID_1209239435': ['adsense'], // AFS-IST-31
+  // 'CID_8804029676': ['adsense'], // AFS-IST-32
+  // 'CID_7993255100': ['adsense'], // AFS-IST-33
+
+  // AFS - TRT Accounts (search.topresearchtopics.com)
+  // TRT-IST-04 (CID_1910623888) and TRT-IST-05 (CID_3516620995) are listed above
+  'CID_3723100505': ['adsense'], // AFS-TRT-IST-06
+  'CID_7667229570': ['adsense'], // AFS-TRT-IST-07
+  'CID_5312022044': ['adsense'], // AFS-TRT-IST-08
+  'CID_6117738068': ['adsense'], // AFS-TRT-IST-09
+  'CID_8862303731': ['adsense'], // AFS-TRT-IST-10
+  'CID_8811269949': ['adsense'], // AFS-TRT-IST-11
+  'CID_1013027376': ['adsense'], // AFS-TRT-IST-12
+  'CID_4518158484': ['adsense'], // AFS-TRT-IST-13
+  'CID_1056018921': ['adsense'], // AFS-TRT-IST-14
+  'CID_8739175417': ['adsense'], // AFS-TRT-IST-15
 
   // EMERGENCY FIX 2026-02-07: Compado accounts DISABLED (not in use, wasting quota)
   // 'CID_5416418019': ['compado'],
