@@ -147,18 +147,13 @@ export async function POST(request: NextRequest) {
             const afterFilter = filteredData.length;
             console.log(`[PREDICTO_COST_REVENUE] 🎯 Cache filtered by predefined channels (${predefinedChannels.join(', ')}): ${beforeFilter} → ${afterFilter} items`);
           } else {
-            // Fallback to customer_id filtering if no predefined channels
+            // No predefined channels for this account — show only cost items.
+            // Keeping all revenue here would leak other accounts' revenue.
             const beforeFilter = filteredData.length;
-            filteredData = filteredData.filter((item: any) => {
-              // Always keep if has cost data (it's from this account's campaigns)
-              if (item.has_cost_data) return true;
-
-              // For revenue-only items, only keep if it has valid customer_id
-              return item.customer_id && item.customer_id !== 'unknown';
-            });
+            filteredData = filteredData.filter((item: any) => item.has_cost_data);
             const afterFilter = filteredData.length;
 
-            console.log(`[PREDICTO_COST_REVENUE] Single account cache: Filtered out ${beforeFilter - afterFilter} orphaned channels`);
+            console.log(`[PREDICTO_COST_REVENUE] Single account cache (no channels configured): Filtered out ${beforeFilter - afterFilter} revenue-only items to prevent cross-account leakage`);
           }
 
           console.log(`[PREDICTO_COST_REVENUE] Showing ${filteredData.length} items: ${filteredData.filter((i: any) => i.has_cost_data).length} with cost, ${filteredData.filter((i: any) => i.has_revenue_data).length} with revenue`);
@@ -473,9 +468,15 @@ export async function POST(request: NextRequest) {
       console.log(`[PREDICTO_COST_REVENUE] 📎 Extracted final URLs for ${campaignFinalUrlsMap.size} campaigns from ads`);
 
       // Then, extract campaigns and enrich with final_urls
-      googleAdsData.forEach((accountData) => {
+      googleAdsData.forEach((accountData, accountIndex) => {
         // bulletproofAPI wraps data in accountData.data
         const actualData = accountData?.data || accountData;
+
+        // Determine the customer_id for this account's campaigns
+        // For single-account fetches this is finalCustomerId; for multi-account it's the indexed ID
+        const accountCustomerId = isMultiAccount && Array.isArray(finalAccountIds)
+          ? finalAccountIds[accountIndex]
+          : finalCustomerId;
 
         if (actualData?.campaigns && Array.isArray(actualData.campaigns)) {
           actualData.campaigns.forEach((campaign: any) => {
@@ -506,7 +507,8 @@ export async function POST(request: NextRequest) {
             const conversions = extractMetric(campaign, 'conversions');
 
             allCampaigns.push({
-              customer_id: campaign.customer_id, // Include account ID for account-level aggregation
+              // Fallback to accountCustomerId when campaign.customer_id is missing from API response
+              customer_id: campaign.customer_id || accountCustomerId,
               campaign_id: campaignId,
               campaign_name: campaign.campaign_name || campaign.name,
               final_urls: finalUrls,
@@ -760,12 +762,14 @@ export async function POST(request: NextRequest) {
           const beforeFilter = combined.length;
 
           if (costCampaignChannels.size === 0) {
-            console.warn(`[PREDICTO] No channels found in campaign URLs, skipping channel-based filtering`);
-            console.warn(`[PREDICTO] Data is already scoped to account ${finalCustomerId} by API`);
-            console.warn(`[PREDICTO] For stricter filtering, add 'cid' parameter to Google Ads final URLs`);
-
-            const kept = combined.length;
-            console.log(`[PREDICTO] Permissive mode: keeping all ${kept} items (${combined.filter(i => i.has_cost_data).length} with cost, ${combined.filter(i => !i.has_cost_data && i.has_revenue_data).length} with revenue)`);
+            // No channels detected in campaign URLs and no predefined ownership config.
+            // Filter to ONLY cost items to prevent leaking revenue from other accounts.
+            const beforeFilter = combined.length;
+            combined = combined.filter((item: any) => item.has_cost_data);
+            const afterFilter = combined.length;
+            console.warn(`[PREDICTO] No channels configured for account ${finalCustomerId} - showing cost-only data`);
+            console.warn(`[PREDICTO] Filtered out ${beforeFilter - afterFilter} revenue-only items to prevent cross-account revenue leakage`);
+            console.warn(`[PREDICTO] To see revenue, configure channel IDs in lib/account-access-control.ts or add ?cid= params to campaign URLs`);
           } else {
             combined = combined.filter(item => {
               if (item.has_cost_data) return true;

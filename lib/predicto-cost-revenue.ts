@@ -694,6 +694,16 @@ function getAccountName(customerId: string): string {
     '1298005744': 'Predicto - EST - 08',
     '5777354952': 'Predicto - EST - 09',
     '1449565595': 'Predicto - EST - 10',
+    '3485355192': 'Predicto - EST - 11',
+    '8395624186': 'Predicto - EST - 12',
+    '2866937044': 'Predicto - EST - 13',
+    '8474169341': 'Predicto - EST - 14',
+    '4690287335': 'Predicto - EST - 15',
+    '9352426268': 'Predicto - EST - 16',
+    '9084810037': 'Predicto - EST - 17',
+    '4517107811': 'Predicto - EST - 18',
+    '4272056005': 'Predicto - EST - 19',
+    '2563438099': 'Predicto - EST - 20',
   };
   return accountNames[customerId] || `Account ${customerId}`;
 }

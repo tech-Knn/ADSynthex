@@ -70,6 +70,66 @@ const CUSTOMER_ACCOUNTS = [
     value: '1298005744'
   },
   {
+    id: 'CID_5777354952',
+    name: 'Predicto - EST - 09',
+    value: '5777354952'
+  },
+  {
+    id: 'CID_1449565595',
+    name: 'Predicto - EST - 10',
+    value: '1449565595'
+  },
+  {
+    id: 'CID_3485355192',
+    name: 'Predicto - EST - 11',
+    value: '3485355192'
+  },
+  {
+    id: 'CID_8395624186',
+    name: 'Predicto - EST - 12',
+    value: '8395624186'
+  },
+  {
+    id: 'CID_2866937044',
+    name: 'Predicto - EST - 13',
+    value: '2866937044'
+  },
+  {
+    id: 'CID_8474169341',
+    name: 'Predicto - EST - 14',
+    value: '8474169341'
+  },
+  {
+    id: 'CID_4690287335',
+    name: 'Predicto - EST - 15',
+    value: '4690287335'
+  },
+  {
+    id: 'CID_9352426268',
+    name: 'Predicto - EST - 16',
+    value: '9352426268'
+  },
+  {
+    id: 'CID_9084810037',
+    name: 'Predicto - EST - 17',
+    value: '9084810037'
+  },
+  {
+    id: 'CID_4517107811',
+    name: 'Predicto - EST - 18',
+    value: '4517107811'
+  },
+  {
+    id: 'CID_4272056005',
+    name: 'Predicto - EST - 19',
+    value: '4272056005'
+  },
+  {
+    id: 'CID_2563438099',
+    name: 'Predicto - EST - 20',
+    value: '2563438099'
+  },
+  {
     id: 'CID_5416418019',
     name: 'Compado - UTC - 01',
     value: '5416418019'

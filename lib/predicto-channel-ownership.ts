@@ -88,6 +88,56 @@ export const CHANNEL_OWNERSHIP: ChannelOwnershipConfig[] = [
     account_name: 'Predicto - EST - 10',
     channel_ids: [],
   },
+  {
+    customer_id: '3485355192',
+    account_name: 'Predicto - EST - 11',
+    channel_ids: [],
+  },
+  {
+    customer_id: '8395624186',
+    account_name: 'Predicto - EST - 12',
+    channel_ids: [],
+  },
+  {
+    customer_id: '2866937044',
+    account_name: 'Predicto - EST - 13',
+    channel_ids: [],
+  },
+  {
+    customer_id: '8474169341',
+    account_name: 'Predicto - EST - 14',
+    channel_ids: [],
+  },
+  {
+    customer_id: '4690287335',
+    account_name: 'Predicto - EST - 15',
+    channel_ids: [],
+  },
+  {
+    customer_id: '9352426268',
+    account_name: 'Predicto - EST - 16',
+    channel_ids: [],
+  },
+  {
+    customer_id: '9084810037',
+    account_name: 'Predicto - EST - 17',
+    channel_ids: [],
+  },
+  {
+    customer_id: '4517107811',
+    account_name: 'Predicto - EST - 18',
+    channel_ids: [],
+  },
+  {
+    customer_id: '4272056005',
+    account_name: 'Predicto - EST - 19',
+    channel_ids: [],
+  },
+  {
+    customer_id: '2563438099',
+    account_name: 'Predicto - EST - 20',
+    channel_ids: [],
+  },
 ];
 
 /**
