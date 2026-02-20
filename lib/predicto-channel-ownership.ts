@@ -25,7 +25,7 @@ export const CHANNEL_OWNERSHIP: ChannelOwnershipConfig[] = [
     account_name: 'Predicto - EST - 01',
     channel_ids: [
       'ch88087', 'ch88092', 'ch88095', 'ch88096', 'ch88097', 'ch88098',
-      'ch88099', 'ch88101', 'ch88103', 'ch88108', 'ch88109', 'ch88111',
+      'ch88099', 'ch88101', 'ch88102', 'ch88103', 'ch88108', 'ch88109', 'ch88111',
       'ch46405', 'ch46406', 'ch46407', 'ch46409', 'ch46410', 'ch46411',
       'ch46418', 'ch4642', 'ch46420', 'ch46421', 'ch46423', 'ch46428',
       'ch46433', 'ch4644', 'ch46441',
@@ -42,7 +42,6 @@ export const CHANNEL_OWNERSHIP: ChannelOwnershipConfig[] = [
     customer_id: '8091270364',
     account_name: 'Predicto - EST - 03',
     channel_ids: [
-      'ch88102',
       'ch88105',
       'ch88106',
       'ch88107',
