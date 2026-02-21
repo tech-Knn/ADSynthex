@@ -708,9 +708,34 @@ function getAccountName(customerId: string): string {
   return accountNames[customerId] || `Account ${customerId}`;
 }
 
+// List of all Predicto accounts (EST-01 through EST-20)
+const ALL_PREDICTO_ACCOUNTS = [
+  '2382992113', // EST-01
+  '1640518611', // EST-02
+  '8091270364', // EST-03
+  '8846129452', // EST-04
+  '6474140466', // EST-05
+  '4920639194', // EST-06
+  '7282297343', // EST-07
+  '1298005744', // EST-08
+  '5777354952', // EST-09
+  '1449565595', // EST-10
+  '3485355192', // EST-11
+  '8395624186', // EST-12
+  '2866937044', // EST-13
+  '8474169341', // EST-14
+  '4690287335', // EST-15
+  '9352426268', // EST-16
+  '9084810037', // EST-17
+  '4517107811', // EST-18
+  '4272056005', // EST-19
+  '2563438099', // EST-20
+];
+
 /**
  * Aggregate cost/revenue data by account (customer_id)
  * Provides account-level breakdown of performance
+ * Shows all 20 Predicto accounts, even if they have no data
  */
 export function aggregateByAccount(
   mappings: PredictoCostRevenueMapping[]
@@ -719,6 +744,14 @@ export function aggregateByAccount(
     customer_id: string;
     campaigns: PredictoCostRevenueMapping[];
   }>();
+
+  // Initialize all 20 Predicto accounts with empty campaign arrays
+  ALL_PREDICTO_ACCOUNTS.forEach(customerId => {
+    accountMap.set(customerId, {
+      customer_id: customerId,
+      campaigns: []
+    });
+  });
 
   // Filter out orphaned channels (revenue-only items without customer_id)
   // These are channels with revenue but no matching Google Ads campaign
@@ -731,6 +764,7 @@ export function aggregateByAccount(
     const customerId = mapping.customer_id!;
 
     if (!accountMap.has(customerId)) {
+      // This is an account not in our predefined list - still add it
       accountMap.set(customerId, {
         customer_id: customerId,
         campaigns: []
@@ -779,11 +813,11 @@ export function aggregateByAccount(
     });
   });
 
-  // Sort by total cost descending
+  // Sort by total cost descending (accounts with $0 will be at the bottom)
   const sorted = accountSummaries.sort((a, b) => b.total_cost - a.total_cost);
 
   // Log account-level summary
-  console.log(`[PREDICTO_ACCOUNT_AGGREGATION] Account summaries:`);
+  console.log(`[PREDICTO_ACCOUNT_AGGREGATION] Account summaries (showing all ${accountSummaries.length} accounts):`);
   sorted.forEach(account => {
     console.log(`  - ${account.account_name}: $${account.total_cost.toFixed(2)} cost, $${account.total_revenue.toFixed(2)} revenue, ${account.roi.toFixed(1)}% ROI (${account.campaigns_matched}/${account.total_campaigns} matched)`);
   });
