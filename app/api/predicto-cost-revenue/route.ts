@@ -523,10 +523,32 @@ export async function POST(request: NextRequest) {
 
       console.log(`[PREDICTO_COST_REVENUE] Extracted ${allCampaigns.length} campaigns from Google Ads data`);
 
+      // Apply currency conversion for non-USD accounts
+      console.log('[PREDICTO_COST_REVENUE] Applying currency conversion...');
+      const { convertCampaignCostsToUsd, getAccountCurrency } = await import('@/lib/currency-converter');
+      const convertedCampaigns = await convertCampaignCostsToUsd(allCampaigns);
+
+      // Log conversion summary
+      const nonUsdAccounts = [...new Set(convertedCampaigns
+        .filter(c => c.original_currency && c.original_currency !== 'USD')
+        .map(c => c.customer_id)
+      )];
+      if (nonUsdAccounts.length > 0) {
+        nonUsdAccounts.forEach(accId => {
+          const currency = getAccountCurrency(accId);
+          const campaignCount = convertedCampaigns.filter(c => c.customer_id === accId).length;
+          console.log(`[PREDICTO_COST_REVENUE] ✓ Converted ${campaignCount} campaigns from account ${accId} (${currency}→USD)`);
+        });
+      }
+
+      // Replace allCampaigns with converted versions
+      allCampaigns.length = 0;
+      allCampaigns.push(...convertedCampaigns);
+
       // Debug: Check cost data
       const totalExtractedCost = allCampaigns.reduce((sum, c) => sum + (c.cost || 0), 0);
       const campaignsWithCost = allCampaigns.filter(c => c.cost > 0).length;
-      console.log(`[PREDICTO_COST_REVENUE] 💰 Cost data: ${campaignsWithCost}/${allCampaigns.length} campaigns have cost, total: $${totalExtractedCost.toFixed(2)}`);
+      console.log(`[PREDICTO_COST_REVENUE] 💰 Cost data: ${campaignsWithCost}/${allCampaigns.length} campaigns have cost, total: $${totalExtractedCost.toFixed(2)} USD`);
 
       // Debug: Check if campaigns have final_urls
       const campaignsWithUrls = allCampaigns.filter(c => c.final_urls && c.final_urls.length > 0);

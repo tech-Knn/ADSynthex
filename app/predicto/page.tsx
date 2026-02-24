@@ -81,6 +81,11 @@ const PREDICTO_ENABLED_ACCOUNTS: Account[] = [
   { id: '4517107811', name: 'Predicto - EST - 18' },
   { id: '4272056005', name: 'Predicto - EST - 19' },
   { id: '2563438099', name: 'Predicto - EST - 20' },
+  { id: '815308036', name: 'Predicto - EST - 21 (IDR)' },
+  { id: '5230757999', name: 'Predicto - EST - 22 (IDR)' },
+  { id: '3146472862', name: 'Predicto - EST - 23 (IDR)' },
+  { id: '8775212280', name: 'Predicto - EST - 24 (IDR)' },
+  { id: '4714948356', name: 'Predicto - EST - 25 (IDR)' },
 ];
 
 const ALL_ACCOUNTS_OPTION = { id: 'ALL_ACCOUNTS', name: 'All Accounts (Total)' };

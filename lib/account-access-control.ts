@@ -86,6 +86,13 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_1056018921': ['adsense'], // AFS-TRT-IST-14
   'CID_8739175417': ['adsense'], // AFS-TRT-IST-15
 
+  // AFS - Secondary MCC Accounts
+  'CID_5771818790': ['adsense'], // AFS-NEW-01
+  'CID_5928432468': ['adsense'], // AFS-NEW-02
+  'CID_4116426800': ['adsense'], // AFS-NEW-03
+  'CID_3638704299': ['adsense'], // AFS-NEW-04
+  'CID_3944625172': ['adsense'], // AFS-NEW-05
+
   // EMERGENCY FIX 2026-02-07: Compado accounts DISABLED (not in use, wasting quota)
   // 'CID_5416418019': ['compado'],
   // 'CID_5108802445': ['compado'],
@@ -135,6 +142,11 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_4517107811': ['predicto'], // Predicto - EST - 18
   'CID_4272056005': ['predicto'], // Predicto - EST - 19
   'CID_2563438099': ['predicto'], // Predicto - EST - 20
+  'CID_815308036': ['predicto'],  // Predicto - EST - 21 (IDR)
+  'CID_5230757999': ['predicto'], // Predicto - EST - 22 (IDR)
+  'CID_3146472862': ['predicto'], // Predicto - EST - 23 (IDR)
+  'CID_8775212280': ['predicto'], // Predicto - EST - 24 (IDR)
+  'CID_4714948356': ['predicto'], // Predicto - EST - 25 (IDR)
 
   // EMERGENCY FIX 2026-02-07: Ads.com accounts DISABLED (not in use, wasting quota)
   // These accounts were consuming click_view queries (1 per account per fetch!)
@@ -324,7 +336,20 @@ export const ACCOUNT_CHANNEL_ACCESS: Record<string, string[]> = {
   // Predicto - EST - 20: No channels assigned
   'CID_2563438099': [],
 
-  // Add more account-channel mappings as needed
+  // Predicto - EST - 21: No channels assigned (IDR)
+  'CID_815308036': [],
+
+  // Predicto - EST - 22: No channels assigned (IDR)
+  'CID_5230757999': [],
+
+  // Predicto - EST - 23: No channels assigned (IDR)
+  'CID_3146472862': [],
+
+  // Predicto - EST - 24: No channels assigned (IDR)
+  'CID_8775212280': [],
+
+  // Predicto - EST - 25: No channels assigned (IDR)
+  'CID_4714948356': [],
 };
 
 /**
