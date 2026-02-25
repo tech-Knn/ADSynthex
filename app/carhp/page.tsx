@@ -149,7 +149,9 @@ export default function CarHpPage() {
             if (account === 'all') {
                 requestBody.accountIds = CARHP_ACCOUNTS.map(a => a.id);
             } else {
-                requestBody.customerId = account;
+                // Always use accountIds array format (single-element array for one account)
+                // This ensures the multi-account code path is used which correctly handles data
+                requestBody.accountIds = [account];
             }
 
             const response = await fetch('/api/adsense-cost-revenue', {
