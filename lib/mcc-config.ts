@@ -35,20 +35,7 @@ export const MCC_CONFIGS: Record<string, MCCCredentials> = {
     },
   },
 
-  secondary: {
-    mccId: process.env.GOOGLE_ADS_MANAGER_ID_2 || '',
-    name: 'Secondary MCC (New AFS)',
-    googleAds: {
-      clientId: process.env.GOOGLE_ADS_CLIENT_ID_2 || '',
-      clientSecret: process.env.GOOGLE_ADS_CLIENT_SECRET_2 || '',
-      developerToken: process.env.GOOGLE_ADS_DEVELOPER_TOKEN_2 || process.env.GOOGLE_ADS_DEVELOPER_TOKEN || '',
-      refreshToken: process.env.GOOGLE_ADS_REFRESH_TOKEN_2 || '',
-    },
-    adSense: {
-      refreshToken: process.env.ADSENSE_REFRESH_TOKEN_2 || '',
-      publisherId: process.env.ADSENSE_PUBLISHER_ID_2,
-    },
-  },
+  // Note: Secondary MCC not in use — all accounts (TRT, CARHP) use primary MCC for Google Ads cost
 };
 
 // Account -> MCC mapping (single source of truth)
@@ -76,12 +63,14 @@ export const ACCOUNT_TO_MCC: Record<string, keyof typeof MCC_CONFIGS> = {
   '8775212280': 'primary', // Predicto EST-24 (IDR)
   '4714948356': 'primary', // Predicto EST-25 (IDR)
 
-  // Secondary MCC accounts
-  '5771818790': 'secondary',
-  '5928432468': 'secondary',
-  '4116426800': 'secondary',
-  '3638704299': 'secondary',
-  '3944625172': 'secondary',
+  // CarHp Accounts (use PRIMARY MCC for Google Ads cost)
+  '5771818790': 'primary',
+  '5928432468': 'primary',
+  '4116426800': 'primary',
+  '3638704299': 'primary',
+  '3944625172': 'primary',
+  '5079394847': 'primary',  // CarHp New 02
+  '8536037999': 'primary',  // CarHp New 01
 };
 
 export function getMCCForAccount(customerId: string): MCCCredentials | null {

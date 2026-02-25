@@ -20,6 +20,8 @@ const CARHP_ACCOUNTS = [
     { id: '4116426800', name: 'CarHp - IST - 03', descriptiveName: 'CarHp - IST - 03' },
     { id: '3638704299', name: 'CarHp - IST - 04', descriptiveName: 'CarHp - IST - 04' },
     { id: '3944625172', name: 'CarHp - IST - 05', descriptiveName: 'CarHp - IST - 05' },
+    { id: '5079394847', name: 'CarHp New 02', descriptiveName: 'CarHp New 02' },
+    { id: '8536037999', name: 'CarHp New 01', descriptiveName: 'CarHp New 01' },
 ];
 
 const CARHP_PUBLISHER_ID = 'accounts/pub-4304762948491681';

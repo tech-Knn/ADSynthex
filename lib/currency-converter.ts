@@ -15,6 +15,15 @@ export const ACCOUNT_CURRENCIES: Record<string, string> = {
   '8775212280': 'IDR', // Predicto EST-24
   '4714948356': 'IDR', // Predicto EST-25
 
+  // CarHp IDR accounts (Indonesian Rupiah)
+  '5771818790': 'IDR', // CarHp - IST - 01
+  '5928432468': 'IDR', // CarHp - IST - 02
+  '4116426800': 'IDR', // CarHp - IST - 03
+  '3638704299': 'IDR', // CarHp - IST - 04
+  '3944625172': 'IDR', // CarHp - IST - 05
+  '5079394847': 'IDR', // CarHp New 02
+  '8536037999': 'IDR', // CarHp New 01
+
   // Future: Add other non-USD accounts here as needed
   // Example:
   // '1234567890': 'EUR', // European account
