@@ -6,7 +6,7 @@
  * Regular users only have access to specific feeds based on their account type.
  */
 
-export type FeedType = 'adscom' | 'compado' | 'inuvo' | 'adsense' | 'predicto';
+export type FeedType = 'adscom' | 'compado' | 'inuvo' | 'adsense' | 'predicto' | 'carhp';
 
 export interface AccountAccessConfig {
   accountId: string;
@@ -86,12 +86,12 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_1056018921': ['adsense'], // AFS-TRT-IST-14
   'CID_8739175417': ['adsense'], // AFS-TRT-IST-15
 
-  // AFS - Secondary MCC Accounts
-  'CID_5771818790': ['adsense'], // AFS-NEW-01
-  'CID_5928432468': ['adsense'], // AFS-NEW-02
-  'CID_4116426800': ['adsense'], // AFS-NEW-03
-  'CID_3638704299': ['adsense'], // AFS-NEW-04
-  'CID_3944625172': ['adsense'], // AFS-NEW-05
+  // CarHp Accounts (search.carhp.com - GEO-based campaigns) - dedicated /carhp page
+  'CID_5771818790': ['carhp'], // CarHp-IST-01
+  'CID_5928432468': ['carhp'], // CarHp-IST-02
+  'CID_4116426800': ['carhp'], // CarHp-IST-03
+  'CID_3638704299': ['carhp'], // CarHp-IST-04
+  'CID_3944625172': ['carhp'], // CarHp-IST-05
 
   // EMERGENCY FIX 2026-02-07: Compado accounts DISABLED (not in use, wasting quota)
   // 'CID_5416418019': ['compado'],
@@ -186,6 +186,7 @@ export const FEED_ROUTES: Record<FeedType, string[]> = {
   inuvo: ['/inuvo-dashboard', '/api/inuvo'],
   adsense: ['/adsense', '/adsense-test', '/api/adsense', '/api/adsense-cost-revenue', '/api/adsense-test-revenue'],
   predicto: ['/predicto', '/api/predicto', '/api/predicto-cost-revenue'],
+  carhp: ['/carhp', '/api/adsense-cost-revenue'],
 };
 
 /**

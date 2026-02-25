@@ -1,16 +1,37 @@
 import { E } from '@upstash/redis/zmscore-DWj9Vh1g';
 import { OAuth2Client } from 'google-auth-library';
+import { getMCCForAccount, getDefaultMCC } from './mcc-config';
 
-const oauth2Client = new OAuth2Client({
-  clientId: process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_ADS_CLIENT_ID,
-  clientSecret: process.env.GOOGLE_CLIENT_SECRET || process.env.GOOGLE_ADS_CLIENT_SECRET,
-});
+export type AdSenseAccountType = 'afs' | 'carhp';
 
-const refreshToken = process.env.ADSENSE_REFRESH_TOKEN || process.env.GOOGLE_ADS_REFRESH_TOKEN;
-if (refreshToken) {
-  oauth2Client.setCredentials({
-    refresh_token: refreshToken,
-  });
+function getOAuthClient(customerId?: string, adsenseAccountType?: AdSenseAccountType): OAuth2Client {
+  // CARHP: use dedicated CARHP AdSense OAuth credentials
+  if (adsenseAccountType === 'carhp') {
+    const client = new OAuth2Client({
+      clientId: process.env.CARHP_ADSENSE_CLIENT_ID,
+      clientSecret: process.env.CARHP_ADSENSE_CLIENT_SECRET,
+    });
+    const refreshToken = process.env.CARHP_ADSENSE_REFRESH_TOKEN;
+    if (refreshToken) client.setCredentials({ refresh_token: refreshToken });
+    return client;
+  }
+
+  // AFS: use dedicated AdSense credentials if available (ADSENSE_CLIENT_ID/SECRET),
+  // falling back to Google Ads credentials (which may fail if token was generated differently)
+  const clientId = process.env.ADSENSE_CLIENT_ID || (customerId
+    ? (getMCCForAccount(customerId) || getDefaultMCC()).googleAds.clientId
+    : getDefaultMCC().googleAds.clientId);
+
+  const clientSecret = process.env.ADSENSE_CLIENT_SECRET || (customerId
+    ? (getMCCForAccount(customerId) || getDefaultMCC()).googleAds.clientSecret
+    : getDefaultMCC().googleAds.clientSecret);
+
+  const mccCreds = customerId ? (getMCCForAccount(customerId) || getDefaultMCC()) : getDefaultMCC();
+  const refreshToken = mccCreds.adSense?.refreshToken || mccCreds.googleAds.refreshToken;
+
+  const client = new OAuth2Client({ clientId, clientSecret });
+  if (refreshToken) client.setCredentials({ refresh_token: refreshToken });
+  return client;
 }
 
 export interface AdSenseRevenue {
@@ -23,8 +44,9 @@ export interface AdSenseRevenue {
   clicks: number;
 }
 
-async function getAccessToken(): Promise<string> {
-  const { token } = await oauth2Client.getAccessToken();
+async function getAccessToken(customerId?: string, adsenseAccountType?: AdSenseAccountType): Promise<string> {
+  const client = getOAuthClient(customerId, adsenseAccountType);
+  const { token } = await client.getAccessToken();
   if (!token) throw new Error('Failed to get AdSense access token');
   return token;
 }
@@ -32,13 +54,16 @@ async function getAccessToken(): Promise<string> {
 export async function fetchAdSenseRevenueByStyleId(
   accountId: string,
   startDate: string,
-  endDate: string
+  endDate: string,
+  customerId?: string,
+  adsenseAccountType?: AdSenseAccountType
 ): Promise<AdSenseRevenue[]> {
   try {
     console.log('[ADSENSE_API] Fetching revenue - Account:', accountId);
+    console.log('[ADSENSE_API] Account Type:', adsenseAccountType || 'afs (default)');
     console.log('[ADSENSE_API] Date range:', startDate, 'to', endDate);
 
-    const token = await getAccessToken();
+    const token = await getAccessToken(customerId, adsenseAccountType);
     console.log('[ADSENSE_API] Got access token:', token ? 'YES' : 'NO');
 
     // Split dates but keep as strings to preserve leading zeros
@@ -137,9 +162,9 @@ export function extractDomainFromUrl(url: string): string | null {
   }
 }
 
-export async function getAdSenseAccounts(): Promise<any[]> {
+export async function getAdSenseAccounts(customerId?: string, adsenseAccountType?: AdSenseAccountType): Promise<any[]> {
   try {
-    const token = await getAccessToken();
+    const token = await getAccessToken(customerId, adsenseAccountType);
 
     const response = await fetch('https://adsense.googleapis.com/v2/accounts', {
       headers: {

@@ -12,7 +12,8 @@ import {
   RocketOutlined,
   ThunderboltOutlined,
   GoogleOutlined,
-  FileSearchOutlined
+  FileSearchOutlined,
+  CarOutlined
 } from '@ant-design/icons';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
@@ -431,6 +432,7 @@ const getFeedTypeFromPathname = (pathname: string): FeedType | null => {
   if (pathname === '/inuvo-dashboard') return 'inuvo';
   if (pathname === '/adsense') return 'adsense';
   if (pathname === '/predicto') return 'predicto';
+  if (pathname === '/carhp') return 'carhp';
   return null;
 };
 
@@ -495,20 +497,21 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     if (pathname === '/compado') return '4';
     if (pathname === '/adsense') return '7';
     if (pathname === '/predicto') return '5';
-    return '1'; // Default to dashboard
+    if (pathname === '/carhp') return '8';
+    return '1';
   };
-  
+
   // Helper function to get cookie value
   const getCookie = (name: string): string | null => {
     if (typeof document === 'undefined') return null;
-    
+
     const cookieValue = document.cookie
       .split('; ')
       .find(row => row.startsWith(name + '='));
-      
+
     return cookieValue ? cookieValue.split('=')[1] : null;
   };
-  
+
   // Check if user is admin on component mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -526,7 +529,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         console.log(`[DashboardLayout] User ${accountId} has access to feeds:`, feeds);
       } else if (authType === 'admin') {
         // Admin has access to all feeds
-        setAllowedFeeds(['adscom', 'compado', 'inuvo', 'adsense', 'predicto']);
+        setAllowedFeeds(['adscom', 'compado', 'inuvo', 'adsense', 'predicto', 'carhp']);
       }
 
       // If not admin and we have an account ID, select it by default
@@ -542,10 +545,10 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
 
   const handleAccountClick = (accountId: string) => {
     console.log('Account selected in DashboardLayout:', accountId);
-    
+
     // Find the selected account
     const account = CUSTOMER_ACCOUNTS.find(acc => acc.id === accountId);
-    
+
     if (onAccountChange) {
       const customerId = account?.value || null;
       console.log('Calling onAccountChange with customerId:', customerId);
@@ -584,15 +587,15 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
           }}
           width={280}
         >
-          <div style={{ 
-            height: 64, 
-            display: 'flex', 
-            alignItems: 'center', 
+          <div style={{
+            height: 64,
+            display: 'flex',
+            alignItems: 'center',
             justifyContent: 'center',
             padding: '0 16px'
           }}>
-            <Title level={4} style={{ 
-              margin: 0, 
+            <Title level={4} style={{
+              margin: 0,
               background: 'var(--primary-gradient)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
@@ -601,7 +604,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
               {collapsed ? 'ASX' : 'AdSyntheX'}
             </Title>
           </div>
-          
+
           {!collapsed && (
             <div style={{ padding: '12px 16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
@@ -611,7 +614,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                   {isAdmin && <LockOutlined style={{ marginLeft: 6, color: '#52c41a' }} />}
                 </Text>
               </div>
-              
+
               {/* Show selector for admins, static text for users */}
               {isAdmin ? (
                 <Select
@@ -656,9 +659,9 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
               )}
             </div>
           )}
-          
+
           <Divider style={{ margin: '12px 0' }} />
-          
+
           <Menu
             theme="light"
             selectedKeys={[getActiveMenuKey()]}
@@ -687,11 +690,17 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 icon: <ThunderboltOutlined />,
                 label: <Link href="/compado">Compado</Link>,
               }] : []),
-              // AdSense for Search (AFS) - Only show if user has 'adsense' access
+              // AdSense for Search (AFS / TRT) - Only show if user has 'adsense' access
               ...(allowedFeeds.includes('adsense') ? [{
                 key: '7',
                 icon: <FileSearchOutlined />,
                 label: <Link href="/adsense">AFS</Link>,
+              }] : []),
+              // CarHp - Only show if user has 'carhp' access
+              ...(allowedFeeds.includes('carhp') ? [{
+                key: '8',
+                icon: <CarOutlined />,
+                label: <Link href="/carhp">CarHp</Link>,
               }] : []),
               // Predicto - Only show if user has 'predicto' access
               ...(allowedFeeds.includes('predicto') ? [{
@@ -730,7 +739,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 Revenue & Cost Dashboard
               </Title>
             </div>
-            
+
             <Tooltip title="Logout">
               <Button
                 type="primary"
