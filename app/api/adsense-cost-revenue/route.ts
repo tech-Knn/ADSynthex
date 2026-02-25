@@ -8,7 +8,9 @@ import {
 import { cookies } from 'next/headers';
 import { bulletproofAPI } from '@/lib/bulletproof-google-ads-api';
 import { redisCacheManager } from '@/lib/redis-cache-manager';
-import { ACCOUNT_FEED_ACCESS, hasAccessToFeed } from '@/lib/account-access-control';
+import { ACCOUNT_FEED_ACCESS, hasAccessToFeed, type FeedType } from '@/lib/account-access-control';
+import { getAccountCurrency } from '@/lib/currency-converter';
+import { convertToUsd } from '@/lib/currency-service';
 
 interface RevenueByStyleId {
   style_id: string;
@@ -35,11 +37,16 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { startDate, endDate, adsenseAccountId, customerId, accountIds, forceLive } = body;
+    const { startDate, endDate, adsenseAccountId, customerId, accountIds, forceLive, adsenseAccountType } = body;
+
+    // Determine feed type: 'carhp' for CARHP accounts, 'adsense' for AFS accounts
+    const requiredFeedType = adsenseAccountType === 'carhp' ? 'carhp' : 'adsense';
 
     console.log('[ADSENSE_REVENUE] ===== REQUEST START =====');
     console.log('[ADSENSE_REVENUE] Date range:', startDate, 'to', endDate);
     console.log('[ADSENSE_REVENUE] AdSense Account:', adsenseAccountId);
+    console.log('[ADSENSE_REVENUE] Account Type:', adsenseAccountType || 'afs (default)');
+    console.log('[ADSENSE_REVENUE] Required Feed Type:', requiredFeedType);
     console.log('[ADSENSE_REVENUE] Customer ID:', customerId);
     console.log('[ADSENSE_REVENUE] Account IDs:', accountIds);
     console.log('[ADSENSE_REVENUE] Force Live:', forceLive || false);
@@ -48,7 +55,7 @@ export async function POST(request: NextRequest) {
       console.log('[ADSENSE_REVENUE] FORCE LIVE MODE - ALL CACHES BYPASSED ');
     }
 
-   
+
     // AGGRESSIVE CACHING OPTIMIZATION: Dramatically increased TTLs to reduce API quota usage
     // AFS data doesn't change frequently - hourly refresh is sufficient for most use cases
     // Previous: 15 min = 96 potential refreshes/day × 140 API calls = 13,440 calls/day
@@ -114,7 +121,7 @@ export async function POST(request: NextRequest) {
       requestedAccountIds.push(...accountIds);
     }
 
-    // Check each requested account has 'adsense' feed access
+    // Check each requested account has required feed access ('adsense' or 'carhp')
     for (const accId of requestedAccountIds) {
       const normalizedAccId = accId.startsWith('CID_') ? accId : `CID_${accId}`;
 
@@ -127,8 +134,8 @@ export async function POST(request: NextRequest) {
         }, { status: 403 });
       }
 
-      // Verify account has 'adsense' feed permission
-      if (!hasAccessToFeed(normalizedAccId, 'adsense')) {
+      // Verify account has required feed permission ('adsense' or 'carhp')
+      if (!hasAccessToFeed(normalizedAccId, requiredFeedType)) {
         console.error(`[ADSENSE_REVENUE] Access denied: Account ${normalizedAccId} does not have adsense feed access`);
         return NextResponse.json({
           error: 'Access denied',
@@ -164,6 +171,32 @@ export async function POST(request: NextRequest) {
       console.log(`[ADSENSE_REVENUE] Admin access granted for ${requestedAccountIds.length} account(s)`);
     }
 
+    // Convert country name to 2-letter ISO code for flags
+    const getCountryCode = (countryName: string): string => {
+      if (!countryName || countryName === 'N/A') return '';
+
+      const lookup: Record<string, string> = {
+        'united states': 'us', 'usa': 'us', 'canada': 'ca', 'united kingdom': 'gb', 'uk': 'gb',
+        'australia': 'au', 'germany': 'de', 'france': 'fr', 'italy': 'it', 'spain': 'es',
+        'netherlands': 'nl', 'sweden': 'se', 'norway': 'no', 'denmark': 'dk', 'finland': 'fi',
+        'switzerland': 'ch', 'austria': 'at', 'belgium': 'be', 'ireland': 'ie', 'new zealand': 'nz',
+        'japan': 'jp', 'south korea': 'kr', 'singapore': 'sg', 'hong kong': 'hk', 'taiwan': 'tw',
+        'brazil': 'br', 'mexico': 'mx', 'argentina': 'ar', 'colombia': 'co', 'chile': 'cl',
+        'india': 'in', 'indonesia': 'id', 'thailand': 'th', 'vietnam': 'vn', 'philippines': 'ph',
+        'malaysia': 'my', 'south africa': 'za', 'nigeria': 'ng', 'kenya': 'ke', 'egypt': 'eg',
+        'united arab emirates': 'ae', 'uae': 'ae', 'saudi arabia': 'sa', 'israel': 'il', 'turkey': 'tr',
+        'poland': 'pl', 'romania': 'ro', 'czech republic': 'cz', 'hungary': 'hu', 'greece': 'gr',
+        'portugal': 'pt', 'russia': 'ru', 'ukraine': 'ua', 'pakistan': 'pk', 'bangladesh': 'bd'
+      };
+
+      // If it's already a 2-letter code from our regex fallback, just return it uppercase
+      if (countryName.trim().length === 2) {
+        return countryName.trim().toUpperCase();
+      }
+
+      return lookup[countryName.toLowerCase()] || countryName;
+    };
+
     // Helper function to get account-level cache key
     const getAccountCacheKey = (accountId: string) =>
       `adsense_cost_revenue:account:${accountId}:${adsenseAccountId}:${startDate}:${endDate}`;
@@ -187,7 +220,7 @@ export async function POST(request: NextRequest) {
 
         // Cache miss or stale
         if (cached.data) {
-          console.log(`[ADSENSE_COST_REVENUE] Cache STALE for account ${accountId}: Age ${Math.round(cached.age / 1000)}s (>${CACHE_TTL/1000}s TTL)`);
+          console.log(`[ADSENSE_COST_REVENUE] Cache STALE for account ${accountId}: Age ${Math.round(cached.age / 1000)}s (>${CACHE_TTL / 1000}s TTL)`);
         }
         return null;
       } catch (err) {
@@ -230,7 +263,7 @@ export async function POST(request: NextRequest) {
 
     // Fetch Google Ads data with account-level caching
     let googleAdsDataPromises;
-    let cachedAccountData: Map<string, any> = new Map(); 
+    let cachedAccountData: Map<string, any> = new Map();
 
     if (isMultiAccount) {
       console.log('[ADSENSE_COST_REVENUE] Fetching multiple accounts:', accountIds.length, 'accounts');
@@ -262,19 +295,18 @@ export async function POST(request: NextRequest) {
       }
 
       if (forceLive) {
-        console.log('[ADSENSE_COST_REVENUE] Force Live: bulletproofAPI allowStale=FALSE (fresh data)');
+        console.log('[ADSENSE_COST_REVENUE] Force Live: Fetching fresh data (with stale cache fallback for reliability)');
       }
 
       // STEP 2: Fetch only uncached accounts (OR all accounts if forceLive=true)
       if (uncachedAccountIds.length > 0) {
         console.log(`[ADSENSE_COST_REVENUE] Fetching ${uncachedAccountIds.length} uncached accounts: ${uncachedAccountIds.join(', ')}`);
 
-        // OPTIMIZATION: Increased batch size for faster multi-account fetching
-        // With 2 QPS rate limit, batches of 5 complete in ~2.5 seconds each
-        // Previous: 3 accounts/batch × 11 batches = 33 sec for 33 accounts
-        // New: 5 accounts/batch × 7 batches = ~17.5 sec for 35 accounts
-        const BATCH_SIZE = 5;
-        const MAX_RETRIES = 2; 
+        // Use smaller batch size for force refresh to avoid overwhelming rate limiter
+        // Normal fetch: batch of 5 (faster, using cache fallback)
+        // Force refresh: batch of 2 (slower but more reliable, ensures each account gets full API attention)
+        const BATCH_SIZE = forceLive ? 2 : 5;
+        const MAX_RETRIES = 3;
         const batches: string[][] = [];
         for (let i = 0; i < uncachedAccountIds.length; i += BATCH_SIZE) {
           batches.push(uncachedAccountIds.slice(i, i + BATCH_SIZE));
@@ -283,7 +315,7 @@ export async function POST(request: NextRequest) {
         console.log(`[ADSENSE_COST_REVENUE] Processing ${batches.length} batches of max ${BATCH_SIZE} accounts each`);
 
         // Process batches sequentially with results tracking
-        const allResults: Map<string, any> = new Map(); 
+        const allResults: Map<string, any> = new Map();
         let failedAccountIds: string[] = [];
 
         for (let i = 0; i < batches.length; i++) {
@@ -294,9 +326,12 @@ export async function POST(request: NextRequest) {
             batch.map(async (accId: string) => {
               const result = await bulletproofAPI.getData(startDate, endDate, accId, {
                 priority: isToday ? 9 : 8,
-                allowStale: !forceLive,
-                maxWait: 45000, 
-                feedType: 'adsense'
+                // CRITICAL: Always allow stale fallback to guarantee data completeness
+                // The forceRefresh flag in redisCacheManager already bypasses fresh cache
+                // allowStale=true just means: if API fails, return stale cache instead of null
+                allowStale: true,
+                maxWait: forceLive ? 60000 : 45000,
+                feedType: requiredFeedType as FeedType
               });
               return { accId, result };
             })
@@ -308,17 +343,15 @@ export async function POST(request: NextRequest) {
               allResults.set(accId, result);
             } else {
               failedAccountIds.push(accId);
-              console.warn(`[ADSENSE_COST_REVENUE] Account ${accId} failed in batch ${i + 1}`);
+              console.warn(`[ADSENSE_COST_REVENUE] Account ${accId} failed in batch ${i + 1}: ${result.message}`);
             }
           });
 
           console.log(`[ADSENSE_COST_REVENUE] Batch ${i + 1}/${batches.length}: ${allResults.size} total successes, ${failedAccountIds.length} failures`);
 
-          // OPTIMIZATION: Minimal delay between batches
-          // Rate limiter already enforces 2 QPS limit, so this is just a safety buffer
-          // Reduced from 300ms to 100ms to speed up multi-account fetches
+          // Add delay between batches: longer for force refresh to let API recover
           if (i < batches.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise(resolve => setTimeout(resolve, forceLive ? 500 : 100));
           }
         }
 
@@ -326,15 +359,16 @@ export async function POST(request: NextRequest) {
         for (let retry = 0; retry < MAX_RETRIES && failedAccountIds.length > 0; retry++) {
           console.log(`[ADSENSE_COST_REVENUE] Retry ${retry + 1}/${MAX_RETRIES}: Retrying ${failedAccountIds.length} failed accounts: ${failedAccountIds.join(', ')}`);
 
-          await new Promise(resolve => setTimeout(resolve, 2000)); // Wait before retry
+          // Increasing backoff: 3s, 5s, 8s
+          await new Promise(resolve => setTimeout(resolve, (retry + 1) * 2000 + 1000));
 
           const retryResults = await Promise.all(
             failedAccountIds.map(async (accId: string) => {
               const result = await bulletproofAPI.getData(startDate, endDate, accId, {
                 priority: 10, // Highest priority for retries
                 allowStale: true, // Accept any data on retry
-                maxWait: 60000, // Longer timeout for retries
-                feedType: 'adsense'
+                maxWait: 90000, // Very long timeout for retries
+                feedType: requiredFeedType as FeedType
               });
               return { accId, result };
             })
@@ -387,7 +421,7 @@ export async function POST(request: NextRequest) {
           priority: isToday ? 9 : 8,
           allowStale: !forceLive, // CRITICAL: Bypass cache when forceLive=true
           maxWait: 30000,
-          feedType: 'adsense'
+          feedType: requiredFeedType as FeedType
         });
       }
     } else {
@@ -396,7 +430,7 @@ export async function POST(request: NextRequest) {
 
     const promisesToSettle = [
       googleAdsDataPromises,
-      fetchAdSenseRevenueByStyleId(adsenseAccountId, startDate, endDate)
+      fetchAdSenseRevenueByStyleId(adsenseAccountId, startDate, endDate, customerId, adsenseAccountType)
     ];
 
     const results = await Promise.allSettled(promisesToSettle);
@@ -498,7 +532,7 @@ export async function POST(request: NextRequest) {
           }
           cachedCount++;
         }
-        
+
         let successCount = 0;
         let failedAccounts: string[] = [];
 
@@ -709,17 +743,17 @@ export async function POST(request: NextRequest) {
     const cleanCampaignName = (name: string): string => {
       if (!name) return name;
       let cleaned = name
-        .replace(/[-\s]?Ch\d+Xstyle\d+/gi, '')  
-        .replace(/[-\s]?style\d+/gi, '')         
-        .replace(/[-\s]+$/, '')                   
+        .replace(/[-\s]?Ch\d+Xstyle\d+/gi, '')
+        .replace(/[-\s]?style\d+/gi, '')
+        .replace(/[-\s]+$/, '')
         .trim();
 
-      return cleaned || name; 
+      return cleaned || name;
     };
 
     // Build campaign to ads mapping (URLs are in ads, not campaigns)
     // IMPORTANT: Process ALL ads to extract style_ids, regardless of campaign status
-    const campaignToStyleMap = new Map<string, { styleIds: Set<string>; domains: Set<string>; campaignName: string; accountId: string; campaignStatus: string }>();
+    const campaignToStyleMap = new Map<string, { styleIds: Set<string>; domains: Set<string>; campaignName: string; accountId: string; campaignStatus: string; country: string }>();
 
     // Track stats
     let totalAds = 0;
@@ -728,7 +762,7 @@ export async function POST(request: NextRequest) {
     // Extract style_id and domain from ALL ads
     for (const ad of googleAdsData.ads || []) {
       totalAds++;
-      const campaignId = String(ad.campaign_id);
+      const baseCampaignId = String(ad.campaign_id);
       const adCampaignStatus = String(ad.campaign_status || '').trim().toUpperCase();
 
       const finalUrls = ad.final_urls || [];
@@ -736,35 +770,70 @@ export async function POST(request: NextRequest) {
         adsWithUrls++;
       }
 
-      if (!campaignToStyleMap.has(campaignId)) {
-        // Get campaign name from campaigns data
-        const campaign = (googleAdsData.campaigns || []).find((c: any) => String(c.campaign_id) === campaignId);
-        let campaignName = campaign?.campaign_name || campaign?.name || `Campaign ${campaignId}`;
+      // CRITICAL: Extract account_id with proper fallback chain
+      // Priority: ad.account_id (we set this) > customer_id (from API) > customerId (request param)
+      const accountId = ad.account_id || ad.customer_id || customerId || 'unknown';
 
-        // CRITICAL: Extract account_id with proper fallback chain
-        // Priority: ad.account_id (we set this) > campaign.account_id (we set this) > customer_id (from API) > customerId (request param)
-        const accountId = ad.account_id || campaign?.account_id || ad.customer_id || campaign?.customer_id || customerId || 'unknown';
+      // CRITICAL FIX: Campaign IDs are NOT globally unique across accounts.
+      // Use composite key to prevent campaigns from one account overwriting campaigns from another.
+      const campaignKey = `${accountId}_${baseCampaignId}`;
+
+      if (!campaignToStyleMap.has(campaignKey)) {
+        // Get campaign name from campaigns data using either account-specific match or general match
+        const campaign = (googleAdsData.campaigns || []).find((c: any) =>
+          String(c.campaign_id) === baseCampaignId && (c.account_id === accountId || c.customer_id === accountId || (!c.account_id && !c.customer_id))
+        );
+        let campaignName = campaign?.campaign_name || campaign?.name || `Campaign ${baseCampaignId}`;
 
         // VALIDATION: Warn if account_id is unknown
         if (accountId === 'unknown') {
-          console.warn(`[ADSENSE_COST_REVENUE]  WARNING: Campaign ${campaignId} has unknown account_id! This will cause revenue misattribution.`);
+          console.warn(`[ADSENSE_COST_REVENUE]  WARNING: Campaign ${baseCampaignId} has unknown account_id! This will cause revenue misattribution.`);
         }
 
         const campaignStatus = campaign?.campaign_status || campaign?.status || adCampaignStatus || 'UNKNOWN';
 
+        // Extract geo-targeting country from campaign data
+        const geoTargets = campaign?.geo_targets as string[] | undefined;
+        let country = geoTargets && geoTargets.length > 0 ? geoTargets[0] : '';
+
+        // FALLBACK: Extract 2-letter country code or country name from the campaign name
+        if (!country || country.length < 2) {
+          // 1. Check for exact 2-letter suffix like " - US", " - TH", " - NG", " EG"
+          const countryMatch = campaignName.match(/(?:-|\s)\s*([A-Z]{2})(?:\s*#\d+)?$/i);
+          if (countryMatch) {
+            country = countryMatch[1].toUpperCase();
+            if (country === 'TU') country = 'TR'; // Handle "TU" for Turkey
+            if (country === 'UK') country = 'GB'; // Handle "UK" for Great Britain
+          } else {
+            // 2. Check for common country names or abbreviations in the string
+            const lowerName = campaignName.toLowerCase();
+            if (lowerName.includes('thai')) country = 'TH';
+            else if (lowerName.includes('mexico')) country = 'MX';
+            else if (lowerName.includes('viet') || lowerName.includes('vietnam')) country = 'VN';
+            else if (lowerName.includes('indo')) country = 'ID';
+            else if (lowerName.includes('india') || lowerName.match(/\b\s*in\s*(\b|#|$)/i)) country = 'IN';
+            else if (lowerName.includes('singapore')) country = 'SG';
+            else if (lowerName.includes('turk') || lowerName.includes('turkiye')) country = 'TR';
+            else if (lowerName.includes('brazil')) country = 'BR';
+            else if (lowerName.includes('egypt')) country = 'EG';
+            else if (lowerName.includes('pakistan')) country = 'PK';
+          }
+        }
+
         // CLEAN campaign name: Remove style_id patterns like "Ch64Xstyle1", "style123", etc.
         campaignName = cleanCampaignName(campaignName);
 
-        campaignToStyleMap.set(campaignId, {
+        campaignToStyleMap.set(campaignKey, {
           styleIds: new Set<string>(),
           domains: new Set<string>(),
           campaignName: campaignName,
           accountId: accountId,
-          campaignStatus: String(campaignStatus).trim().toUpperCase()
+          campaignStatus: String(campaignStatus).trim().toUpperCase(),
+          country: country
         });
       }
 
-      const mapping = campaignToStyleMap.get(campaignId)!;
+      const mapping = campaignToStyleMap.get(campaignKey)!;
 
       for (const url of finalUrls) {
         const styleId = extractStyleIdFromUrl(url);
@@ -807,7 +876,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Build style_id+domain to campaign name and account mapping from current account(s) only
-    const styleDomainToCampaignName = new Map<string, { campaignName: string; accountId: string }>();
+    const styleDomainToCampaignName = new Map<string, { campaignName: string; accountId: string; country: string }>();
 
     // CRITICAL: Track which style_ids belong to this account AND are unique to it
     const currentAccountStyleIds = new Set<string>();
@@ -821,7 +890,8 @@ export async function POST(request: NextRequest) {
           if (!styleDomainToCampaignName.has(key)) {
             styleDomainToCampaignName.set(key, {
               campaignName: data.campaignName,
-              accountId: data.accountId
+              accountId: data.accountId,
+              country: data.country
             });
           }
         }
@@ -851,6 +921,26 @@ export async function POST(request: NextRequest) {
     // Reason: A campaign might be PAUSED today but had costs yesterday - we need to count that historical cost
     const costByStyleDomain = new Map<string, { cost: number; clicks: number; impressions: number; conversions: number; cpa: number; campaignStatus: string }>();
 
+    // Pre-fetch currency conversion rates for all unique account IDs in this request
+    // This handles IDR accounts (CARHP, Predicto) so costs are stored in USD
+    const uniqueAccountIds = new Set<string>();
+    for (const [, data] of campaignToStyleMap.entries()) {
+      if (data.accountId && data.accountId !== 'unknown') {
+        uniqueAccountIds.add(data.accountId);
+      }
+    }
+    const conversionRates = new Map<string, number>(); // accountId → USD conversion factor
+    for (const accountId of uniqueAccountIds) {
+      const currency = getAccountCurrency(accountId);
+      if (currency !== 'USD') {
+        const rate = await convertToUsd(1, currency);
+        conversionRates.set(accountId, rate);
+        console.log(`[CURRENCY] Account ${accountId}: 1 ${currency} = $${rate} USD`);
+      } else {
+        conversionRates.set(accountId, 1);
+      }
+    }
+
     // DEBUG: Track which dates are in the campaign data
     const campaignDates = new Set<string>();
     const campaignRowsByDate = new Map<string, number>();
@@ -861,8 +951,13 @@ export async function POST(request: NextRequest) {
 
     for (const campaign of googleAdsData.campaigns || []) {
       totalCampaigns++;
-      const campaignId = String(campaign.campaign_id);
-      const urlData = campaignToStyleMap.get(campaignId);
+      const baseCampaignId = String(campaign.campaign_id);
+
+      // CRITICAL: Extract account_id using the exact same fallback chain as ad processing
+      const accountId = campaign.account_id || campaign.customer_id || customerId || 'unknown';
+      const campaignKey = `${accountId}_${baseCampaignId}`;
+
+      const urlData = campaignToStyleMap.get(campaignKey);
 
       // DEBUG: Track dates in the campaign data
       const segmentDate = campaign.segments?.date || campaign.date || 'no_date';
@@ -875,11 +970,15 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      const cost = campaign.metrics?.cost || 0;
+      const rawCost = campaign.metrics?.cost || 0;
       const clicks = campaign.metrics?.clicks || 0;
       const impressions = campaign.metrics?.impressions || 0;
       const conversions = campaign.metrics?.conversions || 0;
       const campaignStatus = String(campaign.campaign_status || campaign.status || 'UNKNOWN').trim().toUpperCase();
+
+      // Convert cost to USD if account uses non-USD currency (e.g. IDR for CARHP)
+      const conversionRate = conversionRates.get(accountId) ?? 1;
+      const cost = rawCost * conversionRate;
 
       // Include ALL campaigns that have cost data in the date range, regardless of status
       // Historical cost is historical - doesn't matter if campaign is now PAUSED
@@ -1019,12 +1118,16 @@ export async function POST(request: NextRequest) {
         const campaignName = mapping?.campaignName || `Style ${rev.style_id}`;
         const accountId = mapping?.accountId || 'unknown';
 
+        const countryName = mapping?.country || '';
+        const countryCode = getCountryCode(countryName);
+
         revenueByStyleDomain.set(key, {
           account_id: accountId,
           campaign_id: rev.style_id,
           campaign_name: campaignName,
           style_id: rev.style_id,
           domain: normalizedDomain,
+          country: countryCode, // Ensure 2-letter ISO code for flags
           article: 'N/A',
           cost: 0,
           revenue: 0,
@@ -1142,12 +1245,17 @@ export async function POST(request: NextRequest) {
         const campaignName = mapping?.campaignName || `Style ${styleId}`;
         const accountId = mapping?.accountId || 'unknown';
 
+        // Use the geo targeted country from the campaign if available, otherwise just keep empty string
+        // The frontend will render this as the flag
+        const countryName = mapping?.country || '';
+        const countryCode = getCountryCode(countryName);
+
         revenueByStyleDomain.set(key, {
           account_id: accountId,
-          campaign_id: styleId,
           campaign_name: campaignName,
           style_id: styleId,
           domain: domain,
+          country: countryCode, // Set the 2-letter code for the flag
           article: 'N/A',
           cost: costData.cost,
           revenue: 0,

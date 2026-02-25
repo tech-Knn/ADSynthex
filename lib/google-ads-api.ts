@@ -6,6 +6,7 @@ import * as utils from './google-ads-utils';
 import { ACCOUNT_FEED_ACCESS, FeedType } from './account-access-control';
 import { googleAdsRateLimiter } from './redis-rate-limiter';
 import { customer } from 'google-ads-api/build/src/protos/autogen/resourceNames';
+import { getMCCForAccount, getDefaultMCC, MCCCredentials } from './mcc-config';
 
 // Target accounts configuration
 const TARGET_ACCOUNTS = config.TARGET_ACCOUNTS;
@@ -77,10 +78,10 @@ function analyzeApiError(error: any): { shouldRetry: boolean; errorType: string;
       message: 'Daily API quota exceeded. Please try again tomorrow or contact support.'
     };
   }
-  
+
   // Authentication errors
-  if (errorMessage.includes('401') || errorMessage.includes('UNAUTHENTICATED') || 
-      errorMessage.includes('403') || errorMessage.includes('PERMISSION_DENIED')) {
+  if (errorMessage.includes('401') || errorMessage.includes('UNAUTHENTICATED') ||
+    errorMessage.includes('403') || errorMessage.includes('PERMISSION_DENIED')) {
     return {
       shouldRetry: false,
       errorType: 'AUTHENTICATION',
@@ -131,7 +132,7 @@ async function retryWithBackoff<T>(
       lastError = error;
 
       const errorAnalysis = analyzeApiError(error);
-      
+
       if (attempt < maxRetries && errorAnalysis.shouldRetry) {
         const delay = Math.min(
           baseDelay * Math.pow(RETRY_CONFIG.backoffMultiplier, attempt),
@@ -167,25 +168,33 @@ async function retryWithBackoff<T>(
   throw lastError!;
 }
 
-// Google Ads client initialization with better error handling
-export function initializeGoogleAdsClient() {
+// Google Ads client initialization with multi-MCC support
+export function initializeGoogleAdsClient(customerId?: string | null) {
   try {
+    let mccCreds: MCCCredentials;
+
+    if (customerId) {
+      const creds = getMCCForAccount(customerId);
+      mccCreds = creds || getDefaultMCC();
+    } else {
+      mccCreds = getDefaultMCC();
+    }
+
     const client = new GoogleAdsApi({
-      client_id: process.env.GOOGLE_ADS_CLIENT_ID || '',
-      client_secret: process.env.GOOGLE_ADS_CLIENT_SECRET || '',
-      developer_token: process.env.GOOGLE_ADS_DEVELOPER_TOKEN || ''
+      client_id: mccCreds.googleAds.clientId,
+      client_secret: mccCreds.googleAds.clientSecret,
+      developer_token: mccCreds.googleAds.developerToken,
     });
 
-    // Create an auth client with refresh token
     const customer = client.Customer({
-      customer_id: process.env.GOOGLE_ADS_MANAGER_ID || '',
-      refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN || '',
-      login_customer_id: process.env.GOOGLE_ADS_MANAGER_ID || ''
+      customer_id: mccCreds.mccId,
+      refresh_token: mccCreds.googleAds.refreshToken,
+      login_customer_id: mccCreds.mccId,
     });
 
     return { client, customer };
   } catch (error) {
-    console.error('Error initializing Google Ads API client:', error);
+    console.error('[Google Ads API] Client init failed:', error);
     throw error;
   }
 }
@@ -246,6 +255,50 @@ function buildClickViewQuery(startDate: string, endDate: string) {
     .replace('DATE_RANGE_END', endDate);
 }
 
+// Build campaign geo-targeting query
+function buildCampaignGeoTargetsQuery() {
+  return config.queries.campaignGeoTargetsQuery;
+}
+
+// Fetch geo-targeting data for campaigns
+async function fetchCampaignGeoTargets(
+  accountCustomer: any,
+  account: any
+): Promise<Map<string, string[]>> {
+  try {
+    const geoTargetsQuery = buildCampaignGeoTargetsQuery();
+    const response = await accountCustomer.query(geoTargetsQuery);
+
+    // Map campaign_id -> list of location names
+    const geoTargetMap = new Map<string, string[]>();
+
+    for (const row of response || []) {
+      const campaignId = row.campaign?.id || '';
+      const locationName = row.geo_target_constant?.name || '';
+
+      if (campaignId && locationName) {
+        if (!geoTargetMap.has(campaignId)) {
+          geoTargetMap.set(campaignId, []);
+        }
+
+        // Extract country name from location (e.g., "Vietnam" from "Vietnam (country)")
+        const countryMatch = locationName.match(/^([^(]+)/);
+        const country = countryMatch ? countryMatch[1].trim() : locationName;
+
+        if (!geoTargetMap.get(campaignId)!.includes(country)) {
+          geoTargetMap.get(campaignId)!.push(country);
+        }
+      }
+    }
+
+    console.log(`[GOOGLE_ADS_API] Fetched geo-targets for ${geoTargetMap.size} campaigns in account ${account.id}`);
+    return geoTargetMap;
+  } catch (error: any) {
+    console.warn(`[GOOGLE_ADS_API] Failed to fetch geo-targets for account ${account.id}:`, error.message);
+    return new Map();
+  }
+}
+
 export interface GoogleAdsCampaign {
   customer_id: string;
   customer_name: string;
@@ -257,6 +310,7 @@ export interface GoogleAdsCampaign {
   segments?: {   // Optional segments for date-segmented data
     date?: string;
   };
+  geo_targets?: string[]; // Location targeting (e.g., ["Vietnam", "Indonesia"])
   metrics: {
     impressions: number;
     clicks: number;
@@ -561,9 +615,8 @@ export async function fetchGoogleAdsData(
   endDate: string,
   specificAccountId?: string | null,
   feedType?: FeedType | null,
-  includeClickViews: boolean = false // Default FALSE to save quota
+  includeClickViews: boolean = false
 ): Promise<GoogleAdsData> {
-  const { client, customer } = initializeGoogleAdsClient();
   const data: GoogleAdsData = {
     campaigns: [],
     ads: [],
@@ -607,11 +660,15 @@ export async function fetchGoogleAdsData(
 
       console.log(`[GOOGLE_ADS_API] Processing account ${i + 1}/${accountsToProcess.length}: ${account.id} (${account.name})`);
 
-      // Create account-specific customer
+      // Get MCC credentials for this account
+      const { client, customer: mccCustomer } = initializeGoogleAdsClient(account.id);
+      const mccCreds = getMCCForAccount(account.id) || getDefaultMCC();
+
+      // Create account-specific customer with correct MCC credentials
       const accountCustomer = client.Customer({
         customer_id: account.id,
-        refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN || '',
-        login_customer_id: process.env.GOOGLE_ADS_MANAGER_ID || ''
+        refresh_token: mccCreds.googleAds.refreshToken,
+        login_customer_id: mccCreds.mccId,
       });
 
       // Helper function to make API calls with rate limiting protection
@@ -665,6 +722,24 @@ export async function fetchGoogleAdsData(
 
       if (activeCampaignResponse && activeCampaignResponse.length > 0) {
         const processedCampaigns = processCampaignData(activeCampaignResponse, account);
+
+        // Fetch geo-targeting data for campaigns
+        try {
+          console.log(`[GOOGLE_ADS_API] Fetching geo-targeting data for ${processedCampaigns.length} campaigns...`);
+          const geoTargetMap = await fetchCampaignGeoTargets(accountCustomer, account);
+
+          // Attach geo-targets to campaigns
+          for (const campaign of processedCampaigns) {
+            const geoTargets = geoTargetMap.get(campaign.campaign_id);
+            if (geoTargets && geoTargets.length > 0) {
+              campaign.geo_targets = geoTargets;
+              console.log(`[GOOGLE_ADS_API] Campaign ${campaign.campaign_id} (${campaign.campaign_name}): ${geoTargets.join(', ')}`);
+            }
+          }
+        } catch (error: any) {
+          console.warn(`[GOOGLE_ADS_API] Geo-targeting fetch failed (continuing):`, error.message);
+        }
+
         data.campaigns.push(...processedCampaigns);
       }
 
@@ -713,17 +788,19 @@ export async function fetchGoogleAdsData(
         console.log(`[GOOGLE_ADS_API] Skipping "All Campaigns" query for ${feedType} feed (quota optimization - saves 1 API call)`);
       }
 
-      // OPTIMIZATION: Only fetch active ads (removed duplicate "All Ads" query)
-      // This saves 1 API call per account = 86 calls per sync = ~2,000 calls/day
+      // CRITICAL: We MUST fetch ALL ads (including paused/removed), not just active ads.
+      // If a campaign is paused today but had cost yesterday, we need its ads to extract the
+      // style_id from the URLs. If we only fetch active ads, paused campaigns will have
+      // 0 ads and their cost will be dropped because it can't be mapped to a style_id.
       try {
-        const activeAdQuery = buildActiveAdGroupAdQuery(startDate, endDate);
-        const activeAdResponse = await makeApiCall(activeAdQuery, 'Active Ads');
-        if (activeAdResponse && activeAdResponse.length > 0) {
-          const processedAds = processAdData(activeAdResponse, account);
+        const allAdQuery = buildAllAdGroupAdQuery(startDate, endDate);
+        const allAdResponse = await makeApiCall(allAdQuery, 'All Ads');
+        if (allAdResponse && allAdResponse.length > 0) {
+          const processedAds = processAdData(allAdResponse, account);
           data.ads.push(...processedAds);
         }
       } catch (error) {
-        console.warn(`[GOOGLE_ADS_API] Active Ads query failed:`, error instanceof Error ? error.message : 'Unknown error');
+        console.warn(`[GOOGLE_ADS_API] All Ads query failed:`, error instanceof Error ? error.message : 'Unknown error');
       }
 
       // Fetch Performance Max asset groups (with error handling to not block click queries)
@@ -786,10 +863,10 @@ export async function fetchGoogleAdsData(
       // and has quota monitoring, cooldown, and circuit breaker protection.
       // This saves 20 seconds for 20 accounts (20 × 1s = 20s)
       // Rate limiter will auto-throttle if quota limits are approached
-      
+
     } catch (error) {
       console.error(`Error fetching data for account ${account.id}:`, error);
-      
+
       // Continue with other accounts even if one fails
       // This prevents one bad account from breaking the entire fetch
     }
