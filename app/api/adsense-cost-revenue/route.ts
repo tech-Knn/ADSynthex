@@ -394,8 +394,13 @@ export async function POST(request: NextRequest) {
 
         console.log(`[ADSENSE_COST_REVENUE] Final: ${allResults.size}/${uncachedAccountIds.length} accounts fetched successfully`);
 
-        // Convert map to array for processing
-        googleAdsDataPromises = Promise.resolve(Array.from(allResults.values()));
+        // Convert map to array for processing, ensuring accountId is attached
+        googleAdsDataPromises = Promise.resolve(
+          Array.from(allResults.entries()).map(([accountId, result]) => ({
+            accountId,
+            ...result
+          }))
+        );
       } else {
         console.log('[ADSENSE_COST_REVENUE] All accounts cached, no API fetching needed!');
         googleAdsDataPromises = Promise.resolve([]);
@@ -540,16 +545,18 @@ export async function POST(request: NextRequest) {
         // BUT we converted from Map values, so we need to extract account_id from the data itself
         accountsData.forEach((accountResultWrapper: any) => {
           // accountResultWrapper is the result object from bulletproofAPI.getData
-          const accData = accountResultWrapper.data;
+          // BUT if we attached accountId in the Promise.resolve step, it is at the top level
+          const accData = accountResultWrapper.data || accountResultWrapper.result?.data || accountResultWrapper;
 
-          // Try to extract account_id from the data itself
-          const accountId = accData?.campaigns?.[0]?.customer_id ||
+          // Try to extract account_id from the data itself, falling back to attached top-level ID
+          const accountId = accountResultWrapper.accountId ||
+            accData?.campaigns?.[0]?.customer_id ||
             accData?.ads?.[0]?.customer_id ||
             accData?.customer_id ||
             'unknown';
 
           if (accountId === 'unknown') {
-            console.warn(`[ADSENSE_COST_REVENUE] Could not determine account ID from result`);
+            console.warn(`[ADSENSE_COST_REVENUE] Could not determine account ID from result`, accountResultWrapper);
             return;
           }
 
