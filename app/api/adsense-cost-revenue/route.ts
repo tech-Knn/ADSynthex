@@ -64,11 +64,12 @@ export async function POST(request: NextRequest) {
     const ACCOUNT_CACHE_TTL = 60 * 60 * 1000; // 1 hour (3600 seconds) - individual accounts
     const AGGREGATED_CACHE_TTL = 2 * 60 * 60; // 2 hours (7200 seconds) - "All Accounts" view 
 
-    // Generate aggregated cache key
+    // Generate aggregated cache key with feed type isolation
     const accountsKey = accountIds?.length > 0
       ? accountIds.sort().join(',')
       : customerId || 'unknown';
-    const aggregatedCacheKey = `afs_aggregated:${accountsKey}:${adsenseAccountId}:${startDate}:${endDate}`;
+    const feedPrefix = requiredFeedType === 'carhp' ? 'carhp' : 'afs';
+    const aggregatedCacheKey = `${feedPrefix}_aggregated:${accountsKey}:${adsenseAccountId}:${startDate}:${endDate}`;
 
     // Check aggregated cache FIRST (unless force refresh)
     if (!forceLive) {
@@ -172,34 +173,38 @@ export async function POST(request: NextRequest) {
     }
 
     // Convert country name to 2-letter ISO code for flags
+    // IMPORTANT: Always returns UPPERCASE 2-letter ISO country code.
+    // All geo keys (cost side + revenue side) must use the same format to match correctly.
     const getCountryCode = (countryName: string): string => {
       if (!countryName || countryName === 'N/A') return '';
 
-      const lookup: Record<string, string> = {
-        'united states': 'us', 'usa': 'us', 'canada': 'ca', 'united kingdom': 'gb', 'uk': 'gb',
-        'australia': 'au', 'germany': 'de', 'france': 'fr', 'italy': 'it', 'spain': 'es',
-        'netherlands': 'nl', 'sweden': 'se', 'norway': 'no', 'denmark': 'dk', 'finland': 'fi',
-        'switzerland': 'ch', 'austria': 'at', 'belgium': 'be', 'ireland': 'ie', 'new zealand': 'nz',
-        'japan': 'jp', 'south korea': 'kr', 'singapore': 'sg', 'hong kong': 'hk', 'taiwan': 'tw',
-        'brazil': 'br', 'mexico': 'mx', 'argentina': 'ar', 'colombia': 'co', 'chile': 'cl',
-        'india': 'in', 'indonesia': 'id', 'thailand': 'th', 'vietnam': 'vn', 'philippines': 'ph',
-        'malaysia': 'my', 'south africa': 'za', 'nigeria': 'ng', 'kenya': 'ke', 'egypt': 'eg',
-        'united arab emirates': 'ae', 'uae': 'ae', 'saudi arabia': 'sa', 'israel': 'il', 'turkey': 'tr',
-        'poland': 'pl', 'romania': 'ro', 'czech republic': 'cz', 'hungary': 'hu', 'greece': 'gr',
-        'portugal': 'pt', 'russia': 'ru', 'ukraine': 'ua', 'pakistan': 'pk', 'bangladesh': 'bd'
-      };
-
-      // If it's already a 2-letter code from our regex fallback, just return it uppercase
-      if (countryName.trim().length === 2) {
-        return countryName.trim().toUpperCase();
+      // If it's already a 2-letter code, normalize to uppercase and return
+      const trimmed = countryName.trim();
+      if (trimmed.length === 2) {
+        return trimmed.toUpperCase();
       }
 
-      return lookup[countryName.toLowerCase()] || countryName;
+      // Full name lookup — all values are uppercase
+      const lookup: Record<string, string> = {
+        'united states': 'US', 'usa': 'US', 'canada': 'CA', 'united kingdom': 'GB', 'uk': 'GB',
+        'australia': 'AU', 'germany': 'DE', 'france': 'FR', 'italy': 'IT', 'spain': 'ES',
+        'netherlands': 'NL', 'sweden': 'SE', 'norway': 'NO', 'denmark': 'DK', 'finland': 'FI',
+        'switzerland': 'CH', 'austria': 'AT', 'belgium': 'BE', 'ireland': 'IE', 'new zealand': 'NZ',
+        'japan': 'JP', 'south korea': 'KR', 'singapore': 'SG', 'hong kong': 'HK', 'taiwan': 'TW',
+        'brazil': 'BR', 'mexico': 'MX', 'argentina': 'AR', 'colombia': 'CO', 'chile': 'CL',
+        'india': 'IN', 'indonesia': 'ID', 'thailand': 'TH', 'vietnam': 'VN', 'philippines': 'PH',
+        'malaysia': 'MY', 'south africa': 'ZA', 'nigeria': 'NG', 'kenya': 'KE', 'egypt': 'EG',
+        'united arab emirates': 'AE', 'uae': 'AE', 'saudi arabia': 'SA', 'israel': 'IL', 'turkey': 'TR',
+        'poland': 'PL', 'romania': 'RO', 'czech republic': 'CZ', 'hungary': 'HU', 'greece': 'GR',
+        'portugal': 'PT', 'russia': 'RU', 'ukraine': 'UA', 'pakistan': 'PK', 'bangladesh': 'BD'
+      };
+
+      return (lookup[trimmed.toLowerCase()] || trimmed).toUpperCase();
     };
 
-    // Helper function to get account-level cache key
+    // Helper function to get account-level cache key with feed type isolation
     const getAccountCacheKey = (accountId: string) =>
-      `adsense_cost_revenue:account:${accountId}:${adsenseAccountId}:${startDate}:${endDate}`;
+      `${feedPrefix}_cost_revenue:account:${accountId}:${adsenseAccountId}:${startDate}:${endDate}`;
 
     // Helper function to check cache for a single account
     const checkAccountCache = async (accountId: string) => {
@@ -326,10 +331,10 @@ export async function POST(request: NextRequest) {
             batch.map(async (accId: string) => {
               const result = await bulletproofAPI.getData(startDate, endDate, accId, {
                 priority: isToday ? 9 : 8,
-                // CRITICAL: Always allow stale fallback to guarantee data completeness
-                // The forceRefresh flag in redisCacheManager already bypasses fresh cache
-                // allowStale=true just means: if API fails, return stale cache instead of null
-                allowStale: true,
+                // CRITICAL FIX: Respect forceLive flag to bypass Google Ads cache
+                // When forceLive=true, allowStale=false forces fresh API fetch with geo_targets
+                // When forceLive=false, allowStale=true allows stale cache fallback for reliability
+                allowStale: !forceLive,
                 maxWait: forceLive ? 60000 : 45000,
                 feedType: requiredFeedType as FeedType
               });
@@ -445,15 +450,9 @@ export async function POST(request: NextRequest) {
     const fetchTime = Date.now() - fetchStartTime;
 
     // CRITICAL: Check for complete API failures BEFORE processing
-    // Do NOT continue with empty data - return error instead
+    // Relaxed for CARHP: If Google Ads fails, we still want to show AdSense Revenue
     if (googleAdsResult.status === 'rejected') {
-      console.error('[ADSENSE_COST_REVENUE]  CRITICAL: Google Ads API REJECTED:', googleAdsResult.reason);
-      return NextResponse.json({
-        error: 'Google Ads API failed',
-        message: 'Failed to fetch cost data from Google Ads API',
-        details: googleAdsResult.reason,
-        _loadTime: `${Date.now() - startTime}ms`
-      }, { status: 503 });
+      console.warn('[ADSENSE_COST_REVENUE] WARNING: Google Ads API REJECTED:', googleAdsResult.reason, '- Proceeding to fetch AdSense revenue only.');
     }
 
     if (adsenseRevenue.status === 'rejected') {
@@ -467,7 +466,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Handle Google Ads data
-    let googleAdsData: any;
+    let googleAdsData: any = { campaigns: [], ads: [] };
     let message = '';
 
     // DEBUG: Log what we're expecting
@@ -477,51 +476,33 @@ export async function POST(request: NextRequest) {
     console.log(`[ADSENSE_COST_REVENUE] Account IDs array: ${accountIds}`);
 
     // CRITICAL: Even if Promise resolved, check if bulletproofAPI returned null data
-    const googleAdsResultValue = googleAdsResult.value as any;
+    const googleAdsResultValue = googleAdsResult.status === 'fulfilled' ? (googleAdsResult.value as any) : undefined;
 
     if (isMultiAccount) {
       // For multi-account, value is array of results
-      const accountsData = googleAdsResultValue as any[];
+      const accountsData = googleAdsResultValue as any[] || [];
 
       // Check if we got empty results (all accounts failed)
       if (!accountsData || accountsData.length === 0) {
-        console.error('[ADSENSE_COST_REVENUE]  CRITICAL: All accounts returned empty data!');
-        return NextResponse.json({
-          error: 'No data available',
-          message: 'All Google Ads accounts failed to return data',
-          _loadTime: `${Date.now() - startTime}ms`
-        }, { status: 503 });
+        console.warn('[ADSENSE_COST_REVENUE] WARNING: All accounts returned empty Google Ads data! Proceeding with Revenue only.');
       }
     } else {
       // For single account, check if bulletproofAPI returned null data
       if (!googleAdsResultValue || googleAdsResultValue.data === null || googleAdsResultValue.data === undefined) {
-        console.error('[ADSENSE_COST_REVENUE]  CRITICAL: bulletproofAPI returned null/undefined data!');
-        console.error('[ADSENSE_COST_REVENUE] bulletproofAPI response:', googleAdsResultValue);
-        return NextResponse.json({
-          error: 'Google Ads API unavailable',
-          message: googleAdsResultValue?.message || 'Failed to fetch data from Google Ads API',
-          source: googleAdsResultValue?.source || 'unknown',
-          _loadTime: `${Date.now() - startTime}ms`
-        }, { status: 503 });
-      }
-
-      // Check if data structure is valid
-      const data = googleAdsResultValue.data;
-      if (!data || (!data.campaigns && !data.ads)) {
-        console.error('[ADSENSE_COST_REVENUE] CRITICAL: Invalid Google Ads data structure!');
-        console.error('[ADSENSE_COST_REVENUE] Data:', data);
-        return NextResponse.json({
-          error: 'Invalid data format',
-          message: 'Google Ads API returned invalid data structure',
-          _loadTime: `${Date.now() - startTime}ms`
-        }, { status: 503 });
+        console.warn('[ADSENSE_COST_REVENUE] WARNING: bulletproofAPI returned null/undefined data! Proceeding with Revenue only.');
+      } else {
+        // Check if data structure is valid
+        const data = googleAdsResultValue.data;
+        if (!data || (!data.campaigns && !data.ads)) {
+          console.warn('[ADSENSE_COST_REVENUE] WARNING: Invalid Google Ads data structure! Proceeding with Revenue only.');
+        }
       }
     }
 
-    // If we reach here, we have valid data
-    if (true) {
+    // If we reach here, we have valid data or fallback empty data
+    if (googleAdsResultValue) {
       if (isMultiAccount) {
-        const accountsData = googleAdsResult.value as any[];
+        const accountsData = (googleAdsResult.status === 'fulfilled' ? googleAdsResult.value : []) as any[];
         googleAdsData = { campaigns: [], ads: [] };
 
         // STEP 1: Add cached account data first
@@ -596,14 +577,7 @@ export async function POST(request: NextRequest) {
           // CRITICAL: If more than 50% of accounts failed, return error instead of partial data
           const failureRate = failedAccounts.length / accountIds.length;
           if (failureRate > 0.5) {
-            console.error(`[ADSENSE_COST_REVENUE]  CRITICAL: ${Math.round(failureRate * 100)}% of accounts failed! Returning error.`);
-            return NextResponse.json({
-              error: 'Too many account failures',
-              message: `${failedAccounts.length} out of ${accountIds.length} accounts failed to fetch data`,
-              failedAccounts: failedAccounts,
-              successfulAccounts: successCount + cachedCount,
-              _loadTime: `${Date.now() - startTime}ms`
-            }, { status: 503 });
+            console.warn(`[ADSENSE_COST_REVENUE] WARNING: ${Math.round(failureRate * 100)}% of accounts failed! Proceeding with Revenue only.`);
           }
 
           message += `⚠️ WARNING: ${failedAccounts.length}/${accountIds.length} accounts failed! Data incomplete. `;
@@ -639,8 +613,11 @@ export async function POST(request: NextRequest) {
           console.log(`[ADSENSE_COST_REVENUE] Single account ${customerId}: Using cached data with ${googleAdsData?.campaigns?.length || 0} campaigns, ${googleAdsData?.ads?.length || 0} ads (tagged)`);
         } else {
           // Use freshly fetched data
-          const singleResult = googleAdsResult.value as any;
-          googleAdsData = singleResult.data;
+          const singleResult = googleAdsResult.status === 'fulfilled' ? googleAdsResult.value as any : undefined;
+
+          if (singleResult && singleResult.data) {
+            googleAdsData = singleResult.data;
+          }
 
           // Tag all campaigns and ads with account_id
           if (googleAdsData?.campaigns) {
@@ -743,7 +720,15 @@ export async function POST(request: NextRequest) {
     const normalizeDomain = (domain: string): string => {
       if (!domain) return domain;
       // Remove common subdomains like "search.", "www.", "m."
-      return domain.replace(/^(search\.|www\.|m\.)/, '');
+      let normalized = domain.replace(/^(search\.|www\.|m\.)/, '');
+
+      // CRITICAL FIX: Treat all AFS domain variations as equivalent
+      // This allows revenue mapping to work during domain migration
+      if (normalized === 'termuxtools.com' || normalized === 'topresearchtopics.com') {
+        normalized = 'topreserchtopics.com';
+      }
+
+      return normalized;
     };
 
     // Helper function to clean campaign names
@@ -765,6 +750,7 @@ export async function POST(request: NextRequest) {
     // Track stats
     let totalAds = 0;
     let adsWithUrls = 0;
+    let debugCount = 0; // For debug logging
 
     // Extract style_id and domain from ALL ads
     for (const ad of googleAdsData.ads || []) {
@@ -802,9 +788,11 @@ export async function POST(request: NextRequest) {
         // Extract geo-targeting country from campaign data
         const geoTargets = campaign?.geo_targets as string[] | undefined;
         let country = geoTargets && geoTargets.length > 0 ? geoTargets[0] : '';
+        let countrySource = 'api'; // Track where country came from
 
         // FALLBACK: Extract 2-letter country code or country name from the campaign name
-        if (!country || country.length < 2) {
+        if (!country || country.length < 2 || !isNaN(Number(country))) {
+          countrySource = 'name';
           // 1. Check for exact 2-letter suffix like " - US", " - TH", " - NG", " EG"
           const countryMatch = campaignName.match(/(?:-|\s)\s*([A-Z]{2})(?:\s*#\d+)?$/i);
           if (countryMatch) {
@@ -829,6 +817,12 @@ export async function POST(request: NextRequest) {
 
         // CLEAN campaign name: Remove style_id patterns like "Ch64Xstyle1", "style123", etc.
         campaignName = cleanCampaignName(campaignName);
+
+        // DEBUG: Log country source for first few campaigns
+        if (debugCount < 5) {
+          console.log(`[ADSENSE_COST_REVENUE] Campaign ${baseCampaignId}: country="${country}" (source: ${countrySource}), geo_targets=${JSON.stringify(geoTargets)}`);
+          debugCount++;
+        }
 
         campaignToStyleMap.set(campaignKey, {
           styleIds: new Set<string>(),
@@ -874,15 +868,16 @@ export async function POST(request: NextRequest) {
     console.log(`[ADSENSE_COST_REVENUE] Campaign status distribution:`, Object.fromEntries(statusDistribution));
 
     // Debug: Show sample style_id extractions (now with normalized domains)
-    let debugCount = 0;
+    let styleDebugCount = 0;
     for (const [campaignId, data] of campaignToStyleMap.entries()) {
-      if (debugCount < 3 && data.styleIds.size > 0) {
+      if (styleDebugCount < 3 && data.styleIds.size > 0) {
         console.log(`[ADSENSE_COST_REVENUE] Campaign ${campaignId} (${data.campaignStatus}): styles=[${Array.from(data.styleIds).join(',')}], normalized_domains=[${Array.from(data.domains).join(',')}]`);
-        debugCount++;
+        styleDebugCount++;
       }
     }
 
-    // Build style_id+domain to campaign name and account mapping from current account(s) only
+    // Build style_id+domain+country to campaign name and account mapping from current account(s) only
+    // CRITICAL FOR CARHP: Include country in key to support geo-based campaigns with same style_id
     const styleDomainToCampaignName = new Map<string, { campaignName: string; accountId: string; country: string }>();
 
     // CRITICAL: Track which style_ids belong to this account AND are unique to it
@@ -892,8 +887,9 @@ export async function POST(request: NextRequest) {
       for (const styleId of data.styleIds) {
         currentAccountStyleIds.add(styleId);
         for (const domain of data.domains) {
-          const key = `${styleId}_${domain}`;
-          // If multiple campaigns use the same style_id+domain, keep the first one
+          // CARHP GEO FIX: Include country in key for geo-based campaigns
+          const key = `${styleId}_${domain}_${data.country || 'unknown'}`;
+          // If multiple campaigns use the same style_id+domain+country, keep the first one
           if (!styleDomainToCampaignName.has(key)) {
             styleDomainToCampaignName.set(key, {
               campaignName: data.campaignName,
@@ -905,7 +901,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log(`[ADSENSE_COST_REVENUE] Built style_id+domain to campaign name mapping for ${styleDomainToCampaignName.size} combinations`);
+    console.log(`[ADSENSE_COST_REVENUE] Built style_id+domain+country to campaign name mapping for ${styleDomainToCampaignName.size} combinations`);
     console.log(`[ADSENSE_COST_REVENUE] Current account uses ${currentAccountStyleIds.size} unique style_ids: ${Array.from(currentAccountStyleIds).slice(0, 5).join(', ')}${currentAccountStyleIds.size > 5 ? '...' : ''}`);
 
     // DEBUG: Show which accounts are in the style map
@@ -923,10 +919,11 @@ export async function POST(request: NextRequest) {
     const accountContext = isMultiAccount ? `${accountIds.length} accounts combined` : `single account ${customerId}`;
     console.log(`[ADSENSE_COST_REVENUE] Context: ${accountContext}`);
 
-    // Build cost lookup by style_id + domain from campaigns
+    // Build cost lookup by style_id + domain + country from campaigns
     // IMPORTANT: Include ALL campaigns with cost data, regardless of current status
     // Reason: A campaign might be PAUSED today but had costs yesterday - we need to count that historical cost
-    const costByStyleDomain = new Map<string, { cost: number; clicks: number; impressions: number; conversions: number; cpa: number; campaignStatus: string }>();
+    // CARHP GEO FIX: Include country in key to support geo-based campaigns
+    const costByStyleDomain = new Map<string, { cost: number; clicks: number; impressions: number; conversions: number; cpa: number; campaignStatus: string; country: string }>();
 
     // Pre-fetch currency conversion rates for all unique account IDs in this request
     // This handles IDR accounts (CARHP, Predicto) so costs are stored in USD
@@ -971,12 +968,6 @@ export async function POST(request: NextRequest) {
       campaignDates.add(segmentDate);
       campaignRowsByDate.set(segmentDate, (campaignRowsByDate.get(segmentDate) || 0) + 1);
 
-      // Skip campaigns without style_id mapping (no ads with URLs)
-      if (!urlData || urlData.styleIds.size === 0) {
-        campaignsWithoutStyleId++;
-        continue;
-      }
-
       const rawCost = campaign.metrics?.cost || 0;
       const clicks = campaign.metrics?.clicks || 0;
       const impressions = campaign.metrics?.impressions || 0;
@@ -987,18 +978,46 @@ export async function POST(request: NextRequest) {
       const conversionRate = conversionRates.get(accountId) ?? 1;
       const cost = rawCost * conversionRate;
 
+      // Skip campaigns without style_id mapping (no ads with URLs)
+      if (!urlData || urlData.styleIds.size === 0) {
+        campaignsWithoutStyleId++;
+        if (cost > 0 || clicks > 0 || impressions > 0 || conversions > 0) {
+          campaignsWithCost++;
+          // Track this cost under a special key so it's not lost
+          // Include account ID so it correctly attributes to Account-Level UI
+          const unmappedKey = `unmapped_${accountId}_${baseCampaignId}_N/A_unknown`;
+          if (!costByStyleDomain.has(unmappedKey)) {
+            costByStyleDomain.set(unmappedKey, { cost: 0, clicks: 0, impressions: 0, conversions: 0, cpa: 0, campaignStatus, country: 'unknown' });
+            styleDomainToCampaignName.set(unmappedKey, { campaignName: campaign.campaign_name || 'Unmapped Campaign', accountId, country: 'unknown' });
+          }
+          const existing = costByStyleDomain.get(unmappedKey)!;
+          existing.cost += cost;
+          existing.clicks += clicks;
+          existing.impressions += impressions;
+          existing.conversions += conversions;
+          existing.cpa = existing.conversions > 0 ? existing.cost / existing.conversions : 0;
+        }
+        continue;
+      }
+
       // Include ALL campaigns that have cost data in the date range, regardless of status
       // Historical cost is historical - doesn't matter if campaign is now PAUSED
       if (cost > 0 || clicks > 0 || impressions > 0 || conversions > 0) {
         campaignsWithCost++;
       }
 
-      // Add cost for each style_id + domain combination
+      // Add cost for each style_id + domain + country combination
+      // CARHP GEO FIX: Include country in key to track geo-based campaigns separately
       for (const styleId of urlData.styleIds) {
         for (const domain of urlData.domains) {
-          const key = `${styleId}_${domain}`;
+          // FILTER: Remove collegedunia from AFS (it belongs to CARHP)
+          if (requiredFeedType === 'adsense' && domain.toLowerCase().includes('collegedunia')) {
+            continue;
+          }
+          const country = urlData.country || 'unknown';
+          const key = `${styleId}_${domain}_${country}`;
           if (!costByStyleDomain.has(key)) {
-            costByStyleDomain.set(key, { cost: 0, clicks: 0, impressions: 0, conversions: 0, cpa: 0, campaignStatus: '' });
+            costByStyleDomain.set(key, { cost: 0, clicks: 0, impressions: 0, conversions: 0, cpa: 0, campaignStatus: '', country: country });
           }
           const existing = costByStyleDomain.get(key)!;
           existing.cost += cost;
@@ -1006,7 +1025,8 @@ export async function POST(request: NextRequest) {
           existing.impressions += impressions;
           existing.conversions += conversions;
           existing.campaignStatus = campaignStatus; // Track status for debugging
-          // Average CPA across multiple campaigns for the same style_id/domain
+          existing.country = country; // Track country
+          // Average CPA across multiple campaigns for the same style_id/domain/country
           existing.cpa = existing.conversions > 0 ? existing.cost / existing.conversions : 0;
         }
       }
@@ -1031,9 +1051,11 @@ export async function POST(request: NextRequest) {
     let costEntryCount = 0;
     for (const [key, data] of costByStyleDomain.entries()) {
       if (costEntryCount < 5) {
-        const [styleId, ...domainParts] = key.split('_');
-        const domain = domainParts.join('_');
-        console.log(`  ${costEntryCount + 1}. style_id="${styleId}", domain="${domain}", cost=$${data.cost.toFixed(2)}, clicks=${data.clicks}, conversions=${data.conversions}`);
+        const keyParts = key.split('_');
+        const country = keyParts[keyParts.length - 1]; // Last part is country
+        const styleId = keyParts[0]; // First part is style_id
+        const domain = keyParts.slice(1, -1).join('_'); // Middle parts are domain
+        console.log(`  ${costEntryCount + 1}. style_id="${styleId}", domain="${domain}", country="${country}", cost=$${data.cost.toFixed(2)}, clicks=${data.clicks}, conversions=${data.conversions}`);
         costEntryCount++;
       }
     }
@@ -1056,6 +1078,185 @@ export async function POST(request: NextRequest) {
     );
 
     console.log(`[ADSENSE_COST_REVENUE] Built cost lookup for ${costByStyleDomain.size} style_id/domain combinations from ALL campaigns`);
+
+    // ===== NEW GEOGRAPHIC_VIEW AGGREGATION LOGIC =====
+    // Build simplified campaign → {style_id, domain} mapping for geographic_view processing
+    // This enables O(n) single-pass aggregation by (domain + style_id + geo_id)
+    const campaignToStyleDomainMap = new Map<string, { styleId: string; domain: string; accountId: string; campaignName: string }>();
+
+    for (const [campaignKey, data] of campaignToStyleMap.entries()) {
+      const firstStyleId = Array.from(data.styleIds)[0];
+      const firstDomain = Array.from(data.domains)[0];
+
+      if (firstStyleId && firstDomain) {
+        campaignToStyleDomainMap.set(campaignKey, {
+          styleId: firstStyleId,
+          domain: firstDomain,
+          accountId: data.accountId,
+          campaignName: data.campaignName
+        });
+      }
+    }
+
+    console.log(`[ADSENSE_COST_REVENUE] Built campaign → style_id/domain map for ${campaignToStyleDomainMap.size} campaigns`);
+
+    // FEATURE FLAG: Enable/disable geographic_view approach
+    // Set to false until conversion values are configured in Google Ads
+    const ENABLE_GEOGRAPHIC_VIEW = false;
+
+    // Process geographic_view data if available (NEW APPROACH)
+    // CRITICAL: Only use if we have actual revenue data (conversions_value > 0)
+    let totalGeoViewRevenue = 0;
+    if (googleAdsData.geographic_views && googleAdsData.geographic_views.length > 0) {
+      totalGeoViewRevenue = googleAdsData.geographic_views.reduce((sum, gv) => sum + (gv.metrics?.conversions_value || 0), 0);
+    }
+
+    const useGeographicView = ENABLE_GEOGRAPHIC_VIEW &&
+      googleAdsData.geographic_views &&
+      googleAdsData.geographic_views.length > 0 &&
+      totalGeoViewRevenue > 0;
+
+    console.log(`[ADSENSE_COST_REVENUE] Geographic view check: ${googleAdsData.geographic_views?.length || 0} records, $${totalGeoViewRevenue.toFixed(2)} total revenue, enabled=${ENABLE_GEOGRAPHIC_VIEW}`);
+
+    if (useGeographicView) {
+      console.log(`[ADSENSE_COST_REVENUE] ===== USING GEOGRAPHIC_VIEW DATA (NEW APPROACH) =====`);
+      console.log(`[ADSENSE_COST_REVENUE] Geographic view records: ${googleAdsData.geographic_views!.length}`);
+
+      // Single-pass aggregation by (domain + style_id + geo_id)
+      const revenueByDomainStyleGeo = new Map<string, {
+        domain: string;
+        style_id: string;
+        geo_id: number;
+        revenue: number;
+        conversions: number;
+        clicks: number;
+        impressions: number;
+        cost: number;
+        account_id: string;
+        campaign_name: string;
+      }>();
+
+      let processedRecords = 0;
+      let skippedRecords = 0;
+
+      for (const geoView of googleAdsData.geographic_views!) {
+        const campaignId = geoView.campaign_id;
+        const accountId = geoView.customer_id;
+        const campaignKey = `${accountId}_${campaignId}`;
+
+        // Lookup campaign to get style_id and domain
+        const mapping = campaignToStyleDomainMap.get(campaignKey);
+
+        if (!mapping) {
+          skippedRecords++;
+          if (skippedRecords <= 10) {
+            console.log(`[ADSENSE_COST_REVENUE] SKIP GEO_VIEW: campaign ${campaignId} not found in mapping`);
+          }
+          continue;
+        }
+
+        const { styleId, domain, campaignName } = mapping;
+        const geoId = geoView.geo_id;
+        const revenue = geoView.metrics.conversions_value;
+
+        // Aggregate by (domain + style_id + geo_id)
+        const key = `${domain}_${styleId}_${geoId}`;
+
+        if (!revenueByDomainStyleGeo.has(key)) {
+          revenueByDomainStyleGeo.set(key, {
+            domain: domain,
+            style_id: styleId,
+            geo_id: geoId,
+            revenue: 0,
+            conversions: 0,
+            clicks: 0,
+            impressions: 0,
+            cost: 0,
+            account_id: accountId,
+            campaign_name: campaignName
+          });
+        }
+
+        const entry = revenueByDomainStyleGeo.get(key)!;
+        entry.revenue += revenue;
+        entry.conversions += geoView.metrics.conversions;
+        entry.clicks += geoView.metrics.clicks;
+        entry.impressions += geoView.metrics.impressions;
+        entry.cost += geoView.metrics.cost;
+
+        processedRecords++;
+      }
+
+      console.log(`[ADSENSE_COST_REVENUE] Geo view processing: ${processedRecords} processed, ${skippedRecords} skipped`);
+      console.log(`[ADSENSE_COST_REVENUE] Created ${revenueByDomainStyleGeo.size} unique (domain + style_id + geo_id) aggregations`);
+
+      // Convert to output format
+      const campaign_aggregated = Array.from(revenueByDomainStyleGeo.values()).map(entry => ({
+        account_id: entry.account_id,
+        campaign_id: entry.style_id,
+        campaign_name: entry.campaign_name,
+        style_id: entry.style_id,
+        domain: entry.domain,
+        country: `GEO_${entry.geo_id}`, // Geo ID instead of country code
+        article: 'N/A',
+        cost: entry.cost,
+        revenue: entry.revenue,
+        profit: entry.revenue - entry.cost,
+        clicks: entry.clicks,
+        impressions: entry.impressions,
+        conversions: entry.conversions,
+        costClicks: entry.clicks,
+        cpa: entry.conversions > 0 ? entry.cost / entry.conversions : 0,
+        rpc: entry.clicks > 0 ? entry.revenue / entry.clicks : 0,
+        roi: entry.cost > 0 ? ((entry.revenue - entry.cost) / entry.cost) * 100 : 0,
+        roas: entry.cost > 0 ? entry.revenue / entry.cost : 0
+      })).sort((a, b) => b.revenue - a.revenue);
+
+      console.log(`[ADSENSE_COST_REVENUE] Sample geo view results (first 3):`);
+      campaign_aggregated.slice(0, 3).forEach((entry, idx) => {
+        console.log(`  ${idx + 1}. Domain: ${entry.domain}, Style: ${entry.style_id}, Geo: ${entry.country}, Revenue: $${entry.revenue.toFixed(2)}, Cost: $${entry.cost.toFixed(2)}`);
+      });
+
+      // Return early with geographic_view results
+      const totalRevenue = campaign_aggregated.reduce((sum, c) => sum + c.revenue, 0);
+      const totalCost = campaign_aggregated.reduce((sum, c) => sum + c.cost, 0);
+      const totalProfit = totalRevenue - totalCost;
+
+      const responseData = {
+        campaign_aggregated,
+        account_level_aggregated: [],
+        summary: {
+          totalCost,
+          totalRevenue,
+          totalProfit,
+          totalConversions: campaign_aggregated.reduce((sum, c) => sum + c.conversions, 0),
+          roi: totalCost > 0 ? ((totalProfit / totalCost) * 100) : 0,
+          roas: totalCost > 0 ? (totalRevenue / totalCost) : 0,
+          overallCpa: campaign_aggregated.reduce((sum, c) => sum + c.conversions, 0) > 0
+            ? totalCost / campaign_aggregated.reduce((sum, c) => sum + c.conversions, 0)
+            : 0
+        },
+        _loadTime: `${Date.now() - startTime}ms`,
+        _source: 'geographic_view',
+        _message: 'Using new geographic_view aggregation (domain + style_id + geo_id)'
+      };
+
+      // Cache the result
+      try {
+        await redisCacheManager.set(aggregatedCacheKey, responseData, {
+          dataType: 'unified',
+          ttl: AGGREGATED_CACHE_TTL
+        });
+        console.log(`[ADSENSE_COST_REVENUE] Cached geographic_view results to: ${aggregatedCacheKey}`);
+      } catch (err) {
+        console.warn('[ADSENSE_COST_REVENUE] Failed to cache geographic_view results:', err);
+      }
+
+      return NextResponse.json(responseData);
+    }
+
+    // ===== FALLBACK TO ADSENSE DATA (OLD APPROACH) =====
+    console.log(`[ADSENSE_COST_REVENUE] Geographic view data not available, falling back to AdSense data`);
 
     // Helper function to extract article from URL
     const extractArticleFromUrl = (url: string): string => {
@@ -1089,24 +1290,69 @@ export async function POST(request: NextRequest) {
       totalRevenueValue += rev.earnings;
 
       const normalizedDomain = rev.domain_name ? normalizeDomain(rev.domain_name) : 'N/A';
-      const key = `${rev.style_id}_${normalizedDomain}`;
 
-      // CRITICAL FIX: Use STRICT style_id + domain matching
-      // This prevents duplicate revenue allocation across accounts
+      // FILTER: Remove collegedunia from AFS (it belongs to CARHP)
+      if (requiredFeedType === 'adsense' && normalizedDomain.toLowerCase().includes('collegedunia')) {
+        skippedRevenueItems++;
+        skippedRevenueValue += rev.earnings;
+        continue;
+      }
+
+      // CRITICAL FIX: Normalize AdSense country name to 2-letter code to match cost side
+      // Cost side uses geo_targets from Google Ads API which are 2-letter codes (US, CA, GB)
+      // Revenue side uses country_name from AdSense API which are full names (United States, Canada, United Kingdom)
+      const adsenseCountryRaw = rev.country_name || 'unknown';
+      const adsenseCountry = adsenseCountryRaw !== 'unknown' ? getCountryCode(adsenseCountryRaw) : 'unknown';
+
+      // CARHP GEO FIX: Try to match with country first, fallback to 'unknown' if no exact match
+      const keyWithCountry = `${rev.style_id}_${normalizedDomain}_${adsenseCountry}`;
+      const keyWithUnknown = `${rev.style_id}_${normalizedDomain}_unknown`;
+
+      let key = keyWithCountry;
       let shouldAllocate = styleDomainToCampaignName.has(key);
       let matchedKey = key;
 
+      // Fallback: If no exact country match, try 'unknown' country
       if (!shouldAllocate) {
-        // This revenue belongs to a different account's style_id, skip it
+        key = keyWithUnknown;
+        shouldAllocate = styleDomainToCampaignName.has(key);
+        matchedKey = key;
+      }
+
+      // CRITICAL FIX FOR CARHP REVENUE ONLY MODE: 
+      // If we don't have a strict match but still want to render the revenue,
+      // create a fallback 'unknown' mapping just to get it displayed.
+      if (!shouldAllocate) {
         skippedRevenueItems++;
         skippedRevenueValue += rev.earnings;
 
-        // Log first 20 skipped items for debugging (increased from 10)
+        // Still push it into the display map so the UI shows revenue
+        revenueByStyleDomain.set(keyWithUnknown, {
+          account_id: 'unknown',
+          campaign_id: rev.style_id,
+          campaign_name: `Unmapped Revenue (${rev.style_id})`,
+          style_id: rev.style_id,
+          domain: normalizedDomain,
+          country: adsenseCountry !== 'unknown' ? adsenseCountry : '',
+          article: 'N/A',
+          cost: 0,
+          revenue: rev.earnings,
+          profit: rev.earnings,
+          clicks: rev.clicks,
+          impressions: 0,
+          conversions: 0,
+          costClicks: 0,
+          cpa: 0,
+          rpc: rev.clicks > 0 ? rev.earnings / rev.clicks : 0,
+          roi: 0,
+          roas: 0
+        });
+
         if (skippedRevenueItems <= 20) {
           const hasStyleId = currentAccountStyleIds.has(rev.style_id);
-          const hasCost = costByStyleDomain.has(key);
-          const reason = hasStyleId ? 'domain mismatch' : 'style_id not in account';
-          console.log(`[ADSENSE_COST_REVENUE]  SKIPPED #${skippedRevenueItems}: style=${rev.style_id}, domain=${normalizedDomain}, earnings=$${rev.earnings.toFixed(2)}, reason=${reason}, hasCost=${hasCost}, key="${key}"`);
+          const hasCost = costByStyleDomain.has(keyWithCountry) || costByStyleDomain.has(keyWithUnknown);
+          const reason = hasStyleId ? 'domain/country mismatch' : 'style_id not in account';
+          console.log(`[ADSENSE_COST_REVENUE] UNMAPPED OVERRIDE #${skippedRevenueItems}: style=${rev.style_id}, domain_raw="${rev.domain_name}", domain_normalized="${normalizedDomain}", country_raw="${adsenseCountryRaw}", country_code="${adsenseCountry}", earnings=$${rev.earnings.toFixed(2)}, reason=${reason}, hasCost=${hasCost}, keyTried="${keyWithCountry}"`);
         }
         continue;
       }
@@ -1116,7 +1362,7 @@ export async function POST(request: NextRequest) {
 
       // Log first 5 allocated items for debugging
       if (allocatedRevenueItems <= 5) {
-        console.log(`[ADSENSE_COST_REVENUE] ALLOCATED #${allocatedRevenueItems}: style=${rev.style_id}, domain=${normalizedDomain}, country=${rev.country_name || 'N/A'}, earnings=$${rev.earnings.toFixed(2)} (exact match)`);
+        console.log(`[ADSENSE_COST_REVENUE] ALLOCATED #${allocatedRevenueItems}: style=${rev.style_id}, domain=${normalizedDomain}, country=${adsenseCountry}, earnings=$${rev.earnings.toFixed(2)} (matched key: ${matchedKey})`);
       }
 
       if (!revenueByStyleDomain.has(key)) {
@@ -1125,7 +1371,7 @@ export async function POST(request: NextRequest) {
         const campaignName = mapping?.campaignName || `Style ${rev.style_id}`;
         const accountId = mapping?.accountId || 'unknown';
 
-        const countryName = mapping?.country || '';
+        const countryName = mapping?.country || adsenseCountry || '';
         const countryCode = getCountryCode(countryName);
 
         revenueByStyleDomain.set(key, {
@@ -1152,15 +1398,51 @@ export async function POST(request: NextRequest) {
 
       const existing = revenueByStyleDomain.get(key)!;
 
-      // Direct revenue allocation - Exact match on style_id + domain
+      // Direct revenue allocation - Exact match on style_id + domain + country
       existing.revenue += rev.earnings;
       existing.clicks += rev.clicks;
       // Note: conversions will be populated from Google Ads data, not AdSense clicks
     }
 
-    console.log(`[ADSENSE_COST_REVENUE]  Revenue allocation: ${allocatedRevenueItems} items / $${allocatedRevenueValue.toFixed(2)} allocated to this account (exact match)`);
-    console.log(`[ADSENSE_COST_REVENUE] Revenue skipped: ${skippedRevenueItems} items / $${skippedRevenueValue.toFixed(2)} (belongs to other accounts)`);
-    console.log(`[ADSENSE_COST_REVENUE] Revenue total: ${totalRevenueItems} items / $${totalRevenueValue.toFixed(2)}`);
+    console.log(`[ADSENSE_COST_REVENUE] ===== REVENUE ALLOCATION SUMMARY =====`);
+    console.log(`[ADSENSE_COST_REVENUE] Total Revenue: ${totalRevenueItems} items, $${totalRevenueValue.toFixed(2)}`);
+    console.log(`[ADSENSE_COST_REVENUE] Allocated: ${allocatedRevenueItems} items, $${allocatedRevenueValue.toFixed(2)} (${(allocatedRevenueValue / totalRevenueValue * 100).toFixed(1)}%)`);
+    console.log(`[ADSENSE_COST_REVENUE] Skipped: ${skippedRevenueItems} items, $${skippedRevenueValue.toFixed(2)} (${(skippedRevenueValue / totalRevenueValue * 100).toFixed(1)}%)`);
+    if (skippedRevenueValue > 5) {
+      console.warn(`[ADSENSE_COST_REVENUE] WARNING: $${skippedRevenueValue.toFixed(2)} revenue not mapped`);
+    }
+
+    // Diagnostic: Find target domain revenue that is not being mapped
+    const targetDomain = 'topreserchtopics.com';
+    let skippedTargetDomainRevenue = 0;
+    const skippedTargetDomainStyleIds = new Map<string, number>();
+
+    for (const rev of adsenseData) {
+      const normalizedDomain = rev.domain_name ? normalizeDomain(rev.domain_name) : 'N/A';
+      if (normalizedDomain === targetDomain) {
+        const adsenseCountryRaw = rev.country_name || 'unknown';
+        const adsenseCountry = adsenseCountryRaw !== 'unknown' ? getCountryCode(adsenseCountryRaw) : 'unknown';
+        const keyWithCountry = `${rev.style_id}_${normalizedDomain}_${adsenseCountry}`;
+        const keyWithUnknown = `${rev.style_id}_${normalizedDomain}_unknown`;
+
+        if (!styleDomainToCampaignName.has(keyWithCountry) && !styleDomainToCampaignName.has(keyWithUnknown)) {
+          skippedTargetDomainRevenue += rev.earnings;
+          skippedTargetDomainStyleIds.set(rev.style_id, (skippedTargetDomainStyleIds.get(rev.style_id) || 0) + rev.earnings);
+        }
+      }
+    }
+
+    if (skippedTargetDomainRevenue > 0) {
+      console.error(`[ADSENSE_COST_REVENUE] CRITICAL: $${skippedTargetDomainRevenue.toFixed(2)} revenue from ${targetDomain} is NOT MAPPED`);
+      console.error(`[ADSENSE_COST_REVENUE] Missing style_ids on ${targetDomain}:`);
+      const sortedMissing = Array.from(skippedTargetDomainStyleIds.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 20);
+      sortedMissing.forEach(([styleId, earnings]) => {
+        console.error(`[ADSENSE_COST_REVENUE]   style_id=${styleId}: $${earnings.toFixed(2)} (no campaigns using this style_id)`);
+      });
+      console.error(`[ADSENSE_COST_REVENUE] SOLUTION: These campaigns may exist without ads/URLs, or may be inactive`);
+    }
     console.log(`[ADSENSE_COST_REVENUE] Processing revenue for ${revenueByStyleDomain.size} style_id/domain combinations`);
 
     // DEBUG: Show first 5 revenue entries that were allocated
@@ -1181,9 +1463,11 @@ export async function POST(request: NextRequest) {
       const revenueData = revenueByStyleDomain.get(key);
       if (!revenueData || revenueData.revenue === 0) {
         if (noRevenueCount < 10) {
-          const [styleId, ...domainParts] = key.split('_');
-          const domain = domainParts.join('_');
-          console.log(`  ${noRevenueCount + 1}. style_id="${styleId}", domain="${domain}", cost=$${costData.cost.toFixed(2)} - NO REVENUE`);
+          const keyParts = key.split('_');
+          const country = keyParts[keyParts.length - 1]; // Last part is country
+          const styleId = keyParts[0]; // First part is style_id
+          const domain = keyParts.slice(1, -1).join('_'); // Middle parts are domain
+          console.log(`  ${noRevenueCount + 1}. style_id="${styleId}", domain="${domain}", country="${country}", cost=$${costData.cost.toFixed(2)} - NO REVENUE`);
         }
         noRevenueCount++;
         noRevenueTotalCost += costData.cost;
@@ -1245,6 +1529,8 @@ export async function POST(request: NextRequest) {
         // Cost exists but no revenue - create entry
         const parts = key.split('_');
         const styleId = parts[0];
+        // The country is the last element
+        const countryPart = parts.pop() || '';
         const domain = parts.slice(1).join('_'); // Handle domains with underscores
 
         // Get the campaign name and account ID from our mapping

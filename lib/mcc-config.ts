@@ -64,13 +64,10 @@ export const ACCOUNT_TO_MCC: Record<string, keyof typeof MCC_CONFIGS> = {
   '4714948356': 'primary', // Predicto EST-25 (IDR)
 
   // CarHp Accounts (use PRIMARY MCC for Google Ads cost)
-  '5771818790': 'primary',
-  '5928432468': 'primary',
-  '4116426800': 'primary',
-  '3638704299': 'primary',
-  '3944625172': 'primary',
   '5079394847': 'primary',  // CarHp New 02
   '8536037999': 'primary',  // CarHp New 01
+  '1161525078': 'primary',  // CAR-HP-01
+  '9345796923': 'primary',  // CAR-HP-02
 };
 
 export function getMCCForAccount(customerId: string): MCCCredentials | null {

@@ -31,8 +31,16 @@ export const DISABLED_FEEDS: FeedType[] = ['adscom', 'compado', 'inuvo'];
  * - 'predicto': Predicto cost-revenue mapping (ACTIVE - 10 accounts)
  */
 export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
-  // AFS - TRT Accounts (ACTIVE - search.topresearchtopics.com)
+  // AFS - TRT Accounts (ACTIVE - search.topreserchtopics.com)
   'CID_9249163427': ['adsense'], // TRT-AFS 01
+  'CID_7072817229': ['adsense'], // AFS-IST-01
+  'CID_8077371478': ['adsense'], // AFS-IST-07
+  'CID_3851198549': ['adsense'], // AFS-IST-10
+  'CID_9841818774': ['adsense'], // AFS-IST-11
+  'CID_5351234641': ['adsense'], // AFS-IST-12
+  'CID_7918808672': ['adsense'], // AFS-IST-13
+  'CID_5136436733': ['adsense'], // AFS-IST-14
+  'CID_7142427325': ['adsense'], // AFS-IST-17
   'CID_1209239435': ['adsense'], // AFS-TRT-IST-01 (formerly AFS-IST-31)
   'CID_8804029676': ['adsense'], // AFS-TRT-IST-02 (formerly AFS-IST-32)
   'CID_7993255100': ['adsense'], // AFS-TRT-IST-03 (formerly AFS-IST-33)
@@ -73,7 +81,7 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   // 'CID_8804029676': ['adsense'], // AFS-IST-32
   // 'CID_7993255100': ['adsense'], // AFS-IST-33
 
-  // AFS - TRT Accounts (search.topresearchtopics.com)
+  // AFS - TRT Accounts (search.topreserchtopics.com)
   // TRT-IST-04 (CID_1910623888) and TRT-IST-05 (CID_3516620995) are listed above
   'CID_3723100505': ['adsense'], // AFS-TRT-IST-06
   'CID_7667229570': ['adsense'], // AFS-TRT-IST-07
@@ -87,13 +95,10 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_8739175417': ['adsense'], // AFS-TRT-IST-15
 
   // CarHp Accounts (search.carhp.com - GEO-based campaigns) - dedicated /carhp page
-  'CID_5771818790': ['carhp'], // CarHp-IST-01
-  'CID_5928432468': ['carhp'], // CarHp-IST-02
-  'CID_4116426800': ['carhp'], // CarHp-IST-03
-  'CID_3638704299': ['carhp'], // CarHp-IST-04
-  'CID_3944625172': ['carhp'], // CarHp-IST-05
   'CID_5079394847': ['carhp'], // CarHp New 02
   'CID_8536037999': ['carhp'], // CarHp New 01
+  'CID_1161525078': ['carhp'], // CAR-HP-01
+  'CID_9345796923': ['carhp'], // CAR-HP-02
 
   // EMERGENCY FIX 2026-02-07: Compado accounts DISABLED (not in use, wasting quota)
   // 'CID_5416418019': ['compado'],
