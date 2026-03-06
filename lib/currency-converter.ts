@@ -15,14 +15,15 @@ export const ACCOUNT_CURRENCIES: Record<string, string> = {
   '8775212280': 'IDR', // Predicto EST-24
   '4714948356': 'IDR', // Predicto EST-25
 
-  // CarHp IDR accounts (Indonesian Rupiah)
-  '5771818790': 'IDR', // CarHp - IST - 01
-  '5928432468': 'IDR', // CarHp - IST - 02
-  '4116426800': 'IDR', // CarHp - IST - 03
-  '3638704299': 'IDR', // CarHp - IST - 04
-  '3944625172': 'IDR', // CarHp - IST - 05
-  '5079394847': 'IDR', // CarHp New 02
-  '8536037999': 'IDR', // CarHp New 01
+  // CarHp accounts - ALL USE USD (default)
+  // Removed incorrect IDR mappings - these accounts use USD natively
+  // '5079394847': CarHp New 02 - USD
+  // '8536037999': CarHp New 01 - USD
+  // '1161525078': CAR-HP-01 - USD
+  // '9345796923': CAR-HP-02 - USD
+  // '1558940550': CarHp New 03 - USD
+  // '1791919543': CarHp New 04 - USD
+  // '7839557944': CarHp New 05 - USD
 
   // Future: Add other non-USD accounts here as needed
   // Example:

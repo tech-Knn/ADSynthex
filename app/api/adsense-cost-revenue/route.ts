@@ -172,6 +172,74 @@ export async function POST(request: NextRequest) {
       console.log(`[ADSENSE_REVENUE] Admin access granted for ${requestedAccountIds.length} account(s)`);
     }
 
+    // Track unmapped geo IDs for logging (helps identify missing mappings)
+    const unmappedGeoIds = new Set<string>();
+
+    // Convert Google Ads geo target criterion ID to 2-letter ISO country code
+    // ROBUST APPROACH: Uses comprehensive mapping + intelligent fallbacks
+    // Source: https://developers.google.com/google-ads/api/data/geotargets
+    const getCountryCodeFromGeoId = (geoId: string | number, campaignName?: string): string => {
+      if (!geoId) return '';
+
+      const geoIdStr = String(geoId).trim();
+
+      // STEP 1: Check if it's already a 2-letter country code
+      if (geoIdStr.length === 2 && /^[A-Z]{2}$/i.test(geoIdStr)) {
+        return geoIdStr.toUpperCase();
+      }
+
+      // STEP 2: Comprehensive geo target ID to country code mapping (most common countries)
+      const geoIdToCountry: Record<string, string> = {
+        // North America
+        '2840': 'US', '2124': 'CA', '2484': 'MX',
+        // South America
+        '2076': 'BR', '2032': 'AR', '2152': 'CL', '2170': 'CO', '2604': 'PE', '2862': 'VE', '2218': 'EC', '2858': 'UY', '2600': 'PY', '2068': 'BO',
+        // Europe
+        '2826': 'GB', '2276': 'DE', '2250': 'FR', '2380': 'IT', '2724': 'ES', '2528': 'NL', '2752': 'SE', '2578': 'NO', '2208': 'DK', '2246': 'FI',
+        '2756': 'CH', '2040': 'AT', '2056': 'BE', '2372': 'IE', '2616': 'PL', '2642': 'RO', '2203': 'CZ', '2348': 'HU', '2300': 'GR', '2620': 'PT',
+        '2643': 'RU', '2804': 'UA', '2100': 'BG', '2191': 'HR', '2703': 'SK', '2705': 'SI', '2440': 'LT', '2428': 'LV', '2233': 'EE', '2498': 'MD',
+        // Asia-Pacific
+        '2356': 'IN', '2360': 'ID', '2764': 'TH', '2704': 'VN', '2608': 'PH', '2458': 'MY', '2702': 'SG', '2392': 'JP', '2410': 'KR', '2344': 'HK',
+        '2158': 'TW', '2554': 'NZ', '2036': 'AU', '2586': 'PK', '2050': 'BD', '2144': 'LK', '2104': 'MM', '2116': 'KH', '2418': 'KW', '2512': 'OM',
+        '2634': 'QA', '2048': 'BH', '2096': 'BN', '2462': 'MV', '2524': 'NP', '2156': 'CN', '2446': 'MO', '2496': 'MN',
+        // Middle East & Africa
+        '2784': 'AE', '2682': 'SA', '2376': 'IL', '2792': 'TR', '2818': 'EG', '2710': 'ZA', '2566': 'NG', '2404': 'KE', '2504': 'MA', '2012': 'DZ',
+        '2788': 'TN', '2434': 'LY', '2288': 'GH', '2854': 'TZ', '2800': 'UG', '2748': 'SZ', '2120': 'CM', '2174': 'CD', '2178': 'CG', '2466': 'ML',
+        '2768': 'TG', '2384': 'CI', '2729': 'SD', '2231': 'ET', '2508': 'MZ', '2894': 'ZM', '2716': 'ZW', '2072': 'BW', '2478': 'MR', '2454': 'MW',
+        // Central America & Caribbean
+        '2188': 'CR', '2630': 'PA', '2320': 'GT', '2340': 'HN', '2558': 'NI', '2222': 'SV', '2214': 'DO', '2192': 'CU', '2388': 'JM', '2780': 'TT',
+      };
+
+      const countryCode = geoIdToCountry[geoIdStr];
+      if (countryCode) {
+        return countryCode;
+      }
+
+      // STEP 3: FALLBACK - Try to extract from campaign name if provided
+      if (campaignName) {
+        // Check for 2-letter country code in campaign name (e.g., " - US", " - TH")
+        const countryMatch = campaignName.match(/(?:-|\s)\s*([A-Z]{2})(?:\s*#\d+)?$/i);
+        if (countryMatch) {
+          const extracted = countryMatch[1].toUpperCase();
+          // Validate it's likely a country code (not random 2 letters)
+          if (['US', 'CA', 'GB', 'AU', 'TH', 'IN', 'ID', 'VN', 'PH', 'MY', 'SG', 'JP', 'KR', 'CN', 'BR', 'MX', 'FR', 'DE', 'IT', 'ES', 'NL', 'SE', 'NO', 'DK', 'FI', 'PL', 'TR', 'EG', 'ZA', 'NG', 'KE'].includes(extracted)) {
+            console.log(`[GEO_MAPPING] Geo ID ${geoIdStr} not in map, extracted "${extracted}" from campaign name: ${campaignName}`);
+            return extracted;
+          }
+        }
+      }
+
+      // STEP 4: Log unmapped geo IDs for future addition to the mapping
+      if (!unmappedGeoIds.has(geoIdStr)) {
+        unmappedGeoIds.add(geoIdStr);
+        console.warn(`[GEO_MAPPING] ⚠️ Unknown geo target ID: ${geoIdStr}${campaignName ? ` (campaign: ${campaignName})` : ''} - Please add to mapping or check campaign name format`);
+      }
+
+      // STEP 5: Return empty string for unknown geo IDs
+      // This will trigger fallback to campaign name extraction in the calling code
+      return '';
+    };
+
     // Convert country name to 2-letter ISO code for flags
     // IMPORTANT: Always returns UPPERCASE 2-letter ISO country code.
     // All geo keys (cost side + revenue side) must use the same format to match correctly.
@@ -196,7 +264,9 @@ export async function POST(request: NextRequest) {
         'malaysia': 'MY', 'south africa': 'ZA', 'nigeria': 'NG', 'kenya': 'KE', 'egypt': 'EG',
         'united arab emirates': 'AE', 'uae': 'AE', 'saudi arabia': 'SA', 'israel': 'IL', 'turkey': 'TR',
         'poland': 'PL', 'romania': 'RO', 'czech republic': 'CZ', 'hungary': 'HU', 'greece': 'GR',
-        'portugal': 'PT', 'russia': 'RU', 'ukraine': 'UA', 'pakistan': 'PK', 'bangladesh': 'BD'
+        'portugal': 'PT', 'russia': 'RU', 'ukraine': 'UA', 'pakistan': 'PK', 'bangladesh': 'BD',
+        'sri lanka': 'LK', 'nepal': 'NP', 'laos': 'LA', 'cambodia': 'KH', 'myanmar': 'MM',
+        'somalia': 'SO', 'nicaragua': 'NI', 'dominican republic': 'DO', 'saudi': 'SA'
       };
 
       return (lookup[trimmed.toLowerCase()] || trimmed).toUpperCase();
@@ -787,11 +857,20 @@ export async function POST(request: NextRequest) {
 
         // Extract geo-targeting country from campaign data
         const geoTargets = campaign?.geo_targets as string[] | undefined;
-        let country = geoTargets && geoTargets.length > 0 ? geoTargets[0] : '';
-        let countrySource = 'api'; // Track where country came from
+        let country = '';
+        let countrySource = 'none'; // Track where country came from
 
-        // FALLBACK: Extract 2-letter country code or country name from the campaign name
-        if (!country || country.length < 2 || !isNaN(Number(country))) {
+        // STEP 1: Try to get country from geo_targets (most accurate)
+        if (geoTargets && geoTargets.length > 0) {
+          const geoId = geoTargets[0];
+          country = getCountryCodeFromGeoId(geoId, campaignName);
+          if (country) {
+            countrySource = 'geo_id';
+          }
+        }
+
+        // STEP 2: FALLBACK - Extract 2-letter country code from campaign name
+        if (!country) {
           countrySource = 'name';
           // 1. Check for exact 2-letter suffix like " - US", " - TH", " - NG", " EG"
           const countryMatch = campaignName.match(/(?:-|\s)\s*([A-Z]{2})(?:\s*#\d+)?$/i);
@@ -812,6 +891,9 @@ export async function POST(request: NextRequest) {
             else if (lowerName.includes('brazil')) country = 'BR';
             else if (lowerName.includes('egypt')) country = 'EG';
             else if (lowerName.includes('pakistan')) country = 'PK';
+            else if (lowerName.includes('canada')) country = 'CA';
+            else if (lowerName.includes('australia')) country = 'AU';
+            else if (lowerName.includes('united states')) country = 'US';
           }
         }
 
@@ -876,37 +958,33 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Build style_id+domain+country to campaign name and account mapping from current account(s) only
-    // CRITICAL FOR CARHP: Include country in key to support geo-based campaigns with same style_id
-    const styleDomainToCampaignName = new Map<string, { campaignName: string; accountId: string; country: string }>();
+    // Build style_id to campaign name and account mapping (SIMPLE AFS-STYLE MAPPING)
+    // CRITICAL CHANGE: Team now uses UNIQUE style_ids per campaign - no more geo/domain complexity
+    const styleToCampaignName = new Map<string, { campaignName: string; accountId: string }>();
 
-    // CRITICAL: Track which style_ids belong to this account AND are unique to it
+    // Track which style_ids belong to this account
     const currentAccountStyleIds = new Set<string>();
 
     for (const [_campaignId, data] of campaignToStyleMap.entries()) {
       for (const styleId of data.styleIds) {
         currentAccountStyleIds.add(styleId);
-        for (const domain of data.domains) {
-          // CARHP GEO FIX: Include country in key for geo-based campaigns
-          const key = `${styleId}_${domain}_${data.country || 'unknown'}`;
-          // If multiple campaigns use the same style_id+domain+country, keep the first one
-          if (!styleDomainToCampaignName.has(key)) {
-            styleDomainToCampaignName.set(key, {
-              campaignName: data.campaignName,
-              accountId: data.accountId,
-              country: data.country
-            });
-          }
+        // Simple style_id-only mapping (no domain, no country)
+        // If multiple campaigns use the same style_id, keep the first one
+        if (!styleToCampaignName.has(styleId)) {
+          styleToCampaignName.set(styleId, {
+            campaignName: data.campaignName,
+            accountId: data.accountId
+          });
         }
       }
     }
 
-    console.log(`[ADSENSE_COST_REVENUE] Built style_id+domain+country to campaign name mapping for ${styleDomainToCampaignName.size} combinations`);
+    console.log(`[ADSENSE_COST_REVENUE] Built style_id to campaign name mapping for ${styleToCampaignName.size} unique style_ids`);
     console.log(`[ADSENSE_COST_REVENUE] Current account uses ${currentAccountStyleIds.size} unique style_ids: ${Array.from(currentAccountStyleIds).slice(0, 5).join(', ')}${currentAccountStyleIds.size > 5 ? '...' : ''}`);
 
     // DEBUG: Show which accounts are in the style map
     const styleMapAccountIds = new Set<string>();
-    for (const [, data] of styleDomainToCampaignName.entries()) {
+    for (const [, data] of styleToCampaignName.entries()) {
       styleMapAccountIds.add(data.accountId);
     }
     console.log(`[ADSENSE_COST_REVENUE] Style map covers ${styleMapAccountIds.size} account(s): ${Array.from(styleMapAccountIds).join(', ')}`);
@@ -919,11 +997,10 @@ export async function POST(request: NextRequest) {
     const accountContext = isMultiAccount ? `${accountIds.length} accounts combined` : `single account ${customerId}`;
     console.log(`[ADSENSE_COST_REVENUE] Context: ${accountContext}`);
 
-    // Build cost lookup by style_id + domain + country from campaigns
+    // Build cost lookup by style_id ONLY (SIMPLE AFS-STYLE MAPPING)
     // IMPORTANT: Include ALL campaigns with cost data, regardless of current status
     // Reason: A campaign might be PAUSED today but had costs yesterday - we need to count that historical cost
-    // CARHP GEO FIX: Include country in key to support geo-based campaigns
-    const costByStyleDomain = new Map<string, { cost: number; clicks: number; impressions: number; conversions: number; cpa: number; campaignStatus: string; country: string }>();
+    const costByStyleId = new Map<string, { cost: number; clicks: number; impressions: number; conversions: number; cpa: number; campaignStatus: string }>();
 
     // Pre-fetch currency conversion rates for all unique account IDs in this request
     // This handles IDR accounts (CARHP, Predicto) so costs are stored in USD
@@ -983,14 +1060,13 @@ export async function POST(request: NextRequest) {
         campaignsWithoutStyleId++;
         if (cost > 0 || clicks > 0 || impressions > 0 || conversions > 0) {
           campaignsWithCost++;
-          // Track this cost under a special key so it's not lost
-          // Include account ID so it correctly attributes to Account-Level UI
-          const unmappedKey = `unmapped_${accountId}_${baseCampaignId}_N/A_unknown`;
-          if (!costByStyleDomain.has(unmappedKey)) {
-            costByStyleDomain.set(unmappedKey, { cost: 0, clicks: 0, impressions: 0, conversions: 0, cpa: 0, campaignStatus, country: 'unknown' });
-            styleDomainToCampaignName.set(unmappedKey, { campaignName: campaign.campaign_name || 'Unmapped Campaign', accountId, country: 'unknown' });
+          // Track unmapped cost under special style_id so it's not lost
+          const unmappedStyleId = `unmapped_${accountId}_${baseCampaignId}`;
+          if (!costByStyleId.has(unmappedStyleId)) {
+            costByStyleId.set(unmappedStyleId, { cost: 0, clicks: 0, impressions: 0, conversions: 0, cpa: 0, campaignStatus });
+            styleToCampaignName.set(unmappedStyleId, { campaignName: campaign.campaign_name || 'Unmapped Campaign', accountId });
           }
-          const existing = costByStyleDomain.get(unmappedKey)!;
+          const existing = costByStyleId.get(unmappedStyleId)!;
           existing.cost += cost;
           existing.clicks += clicks;
           existing.impressions += impressions;
@@ -1001,38 +1077,35 @@ export async function POST(request: NextRequest) {
       }
 
       // Include ALL campaigns that have cost data in the date range, regardless of status
-      // Historical cost is historical - doesn't matter if campaign is now PAUSED
       if (cost > 0 || clicks > 0 || impressions > 0 || conversions > 0) {
         campaignsWithCost++;
       }
 
-      // Add cost for each style_id + domain + country combination
-      // CARHP GEO FIX: Include country in key to track geo-based campaigns separately
+      // Add cost for each style_id (SIMPLE mapping - no domain, no country)
       for (const styleId of urlData.styleIds) {
-        for (const domain of urlData.domains) {
-          // FILTER: Remove collegedunia from AFS (it belongs to CARHP)
-          if (requiredFeedType === 'adsense' && domain.toLowerCase().includes('collegedunia')) {
-            continue;
-          }
-          const country = urlData.country || 'unknown';
-          const key = `${styleId}_${domain}_${country}`;
-          if (!costByStyleDomain.has(key)) {
-            costByStyleDomain.set(key, { cost: 0, clicks: 0, impressions: 0, conversions: 0, cpa: 0, campaignStatus: '', country: country });
-          }
-          const existing = costByStyleDomain.get(key)!;
-          existing.cost += cost;
-          existing.clicks += clicks;
-          existing.impressions += impressions;
-          existing.conversions += conversions;
-          existing.campaignStatus = campaignStatus; // Track status for debugging
-          existing.country = country; // Track country
-          // Average CPA across multiple campaigns for the same style_id/domain/country
-          existing.cpa = existing.conversions > 0 ? existing.cost / existing.conversions : 0;
+        if (!costByStyleId.has(styleId)) {
+          costByStyleId.set(styleId, { cost: 0, clicks: 0, impressions: 0, conversions: 0, cpa: 0, campaignStatus: '' });
         }
+        const existing = costByStyleId.get(styleId)!;
+        existing.cost += cost;
+        existing.clicks += clicks;
+        existing.impressions += impressions;
+        existing.conversions += conversions;
+        existing.campaignStatus = campaignStatus; // Track status for debugging
+        // Average CPA across multiple campaigns for the same style_id
+        existing.cpa = existing.conversions > 0 ? existing.cost / existing.conversions : 0;
       }
     }
 
     console.log(`[ADSENSE_COST_REVENUE] Campaign cost processing: ${campaignsWithCost} campaigns with cost / ${totalCampaigns} total (${campaignsWithoutStyleId} without style_id)`);
+
+    // Report unmapped geo IDs (helps identify missing mappings)
+    if (unmappedGeoIds.size > 0) {
+      console.warn(`[GEO_MAPPING]  ${unmappedGeoIds.size} unmapped geo target IDs encountered: ${Array.from(unmappedGeoIds).join(', ')}`);
+      console.warn(`[GEO_MAPPING] These geo IDs should be added to the mapping or campaigns should include country codes in their names.`);
+    } else {
+      console.log(`[GEO_MAPPING] ✓ All geo target IDs successfully mapped to country codes`);
+    }
 
     // DEBUG: Show date distribution
     console.log(`[ADSENSE_COST_REVENUE] Campaign data covers ${campaignDates.size} unique dates: ${Array.from(campaignDates).sort().join(', ')}`);
@@ -1042,27 +1115,23 @@ export async function POST(request: NextRequest) {
     console.log(`[ADSENSE_COST_REVENUE] Expected date range: ${startDate} to ${endDate}`);
 
     // Calculate total conversions from Google Ads
-    const totalGoogleAdsConversions = Array.from(costByStyleDomain.values()).reduce((sum, data) => sum + data.conversions, 0);
-    const totalGoogleAdsCost = Array.from(costByStyleDomain.values()).reduce((sum, data) => sum + data.cost, 0);
+    const totalGoogleAdsConversions = Array.from(costByStyleId.values()).reduce((sum, data) => sum + data.conversions, 0);
+    const totalGoogleAdsCost = Array.from(costByStyleId.values()).reduce((sum, data) => sum + data.cost, 0);
     console.log(`[ADSENSE_COST_REVENUE] Total Google Ads cost: $${totalGoogleAdsCost.toFixed(2)}, conversions: ${totalGoogleAdsConversions.toFixed(2)}`);
 
     // DEBUG: Show first 5 cost entries
     console.log(`[ADSENSE_COST_REVENUE] First 5 COST entries:`);
     let costEntryCount = 0;
-    for (const [key, data] of costByStyleDomain.entries()) {
+    for (const [styleId, data] of costByStyleId.entries()) {
       if (costEntryCount < 5) {
-        const keyParts = key.split('_');
-        const country = keyParts[keyParts.length - 1]; // Last part is country
-        const styleId = keyParts[0]; // First part is style_id
-        const domain = keyParts.slice(1, -1).join('_'); // Middle parts are domain
-        console.log(`  ${costEntryCount + 1}. style_id="${styleId}", domain="${domain}", country="${country}", cost=$${data.cost.toFixed(2)}, clicks=${data.clicks}, conversions=${data.conversions}`);
+        console.log(`  ${costEntryCount + 1}. style_id="${styleId}", cost=$${data.cost.toFixed(2)}, clicks=${data.clicks}, conversions=${data.conversions}`);
         costEntryCount++;
       }
     }
 
     // Debug: Show cost distribution by campaign status
     const costByStatus = new Map<string, { count: number; totalCost: number }>();
-    for (const [, data] of costByStyleDomain.entries()) {
+    for (const [, data] of costByStyleId.entries()) {
       const status = data.campaignStatus || 'UNKNOWN';
       if (!costByStatus.has(status)) {
         costByStatus.set(status, { count: 0, totalCost: 0 });
@@ -1077,7 +1146,7 @@ export async function POST(request: NextRequest) {
       ))
     );
 
-    console.log(`[ADSENSE_COST_REVENUE] Built cost lookup for ${costByStyleDomain.size} style_id/domain combinations from ALL campaigns`);
+    console.log(`[ADSENSE_COST_REVENUE] Built cost lookup for ${costByStyleId.size} unique style_ids from ALL campaigns`);
 
     // ===== NEW GEOGRAPHIC_VIEW AGGREGATION LOGIC =====
     // Build simplified campaign → {style_id, domain} mapping for geographic_view processing
@@ -1108,7 +1177,7 @@ export async function POST(request: NextRequest) {
     // CRITICAL: Only use if we have actual revenue data (conversions_value > 0)
     let totalGeoViewRevenue = 0;
     if (googleAdsData.geographic_views && googleAdsData.geographic_views.length > 0) {
-      totalGeoViewRevenue = googleAdsData.geographic_views.reduce((sum, gv) => sum + (gv.metrics?.conversions_value || 0), 0);
+      totalGeoViewRevenue = googleAdsData.geographic_views.reduce((sum: number, gv: any) => sum + (gv.metrics?.conversions_value || 0), 0);
     }
 
     const useGeographicView = ENABLE_GEOGRAPHIC_VIEW &&
@@ -1160,7 +1229,7 @@ export async function POST(request: NextRequest) {
         const revenue = geoView.metrics.conversions_value;
 
         // Aggregate by (domain + style_id + geo_id)
-        const key = `${domain}_${styleId}_${geoId}`;
+        const key = `${styleId}_${geoId}`;
 
         if (!revenueByDomainStyleGeo.has(key)) {
           revenueByDomainStyleGeo.set(key, {
@@ -1289,70 +1358,18 @@ export async function POST(request: NextRequest) {
       totalRevenueItems++;
       totalRevenueValue += rev.earnings;
 
-      const normalizedDomain = rev.domain_name ? normalizeDomain(rev.domain_name) : 'N/A';
+      // SIMPLE AFS-STYLE MATCHING: Check if style_id exists in our campaign mapping
+      const styleId = rev.style_id;
+      const shouldAllocate = styleToCampaignName.has(styleId) || currentAccountStyleIds.has(styleId);
 
-      // FILTER: Remove collegedunia from AFS (it belongs to CARHP)
-      if (requiredFeedType === 'adsense' && normalizedDomain.toLowerCase().includes('collegedunia')) {
-        skippedRevenueItems++;
-        skippedRevenueValue += rev.earnings;
-        continue;
-      }
-
-      // CRITICAL FIX: Normalize AdSense country name to 2-letter code to match cost side
-      // Cost side uses geo_targets from Google Ads API which are 2-letter codes (US, CA, GB)
-      // Revenue side uses country_name from AdSense API which are full names (United States, Canada, United Kingdom)
-      const adsenseCountryRaw = rev.country_name || 'unknown';
-      const adsenseCountry = adsenseCountryRaw !== 'unknown' ? getCountryCode(adsenseCountryRaw) : 'unknown';
-
-      // CARHP GEO FIX: Try to match with country first, fallback to 'unknown' if no exact match
-      const keyWithCountry = `${rev.style_id}_${normalizedDomain}_${adsenseCountry}`;
-      const keyWithUnknown = `${rev.style_id}_${normalizedDomain}_unknown`;
-
-      let key = keyWithCountry;
-      let shouldAllocate = styleDomainToCampaignName.has(key);
-      let matchedKey = key;
-
-      // Fallback: If no exact country match, try 'unknown' country
-      if (!shouldAllocate) {
-        key = keyWithUnknown;
-        shouldAllocate = styleDomainToCampaignName.has(key);
-        matchedKey = key;
-      }
-
-      // CRITICAL FIX FOR CARHP REVENUE ONLY MODE: 
-      // If we don't have a strict match but still want to render the revenue,
-      // create a fallback 'unknown' mapping just to get it displayed.
+      // If style_id doesn't belong to current account, skip it
       if (!shouldAllocate) {
         skippedRevenueItems++;
         skippedRevenueValue += rev.earnings;
 
-        // Still push it into the display map so the UI shows revenue
-        revenueByStyleDomain.set(keyWithUnknown, {
-          account_id: 'unknown',
-          campaign_id: rev.style_id,
-          campaign_name: `Unmapped Revenue (${rev.style_id})`,
-          style_id: rev.style_id,
-          domain: normalizedDomain,
-          country: adsenseCountry !== 'unknown' ? adsenseCountry : '',
-          article: 'N/A',
-          cost: 0,
-          revenue: rev.earnings,
-          profit: rev.earnings,
-          clicks: rev.clicks,
-          impressions: 0,
-          conversions: 0,
-          costClicks: 0,
-          cpa: 0,
-          rpc: rev.clicks > 0 ? rev.earnings / rev.clicks : 0,
-          roi: 0,
-          roas: 0
-        });
-
+        // Log first 20 skipped items for debugging
         if (skippedRevenueItems <= 20) {
-          const hasStyleId = currentAccountStyleIds.has(rev.style_id);
-          const hasCost = costByStyleDomain.has(keyWithCountry) || costByStyleDomain.has(keyWithUnknown);
-          const reason = hasStyleId ? 'domain/country mismatch' : 'style_id not in account';
-          console.log(`[ADSENSE_COST_REVENUE] UNMAPPED OVERRIDE #${skippedRevenueItems}: style=${rev.style_id}, domain_raw="${rev.domain_name}", domain_normalized="${normalizedDomain}", country_raw="${adsenseCountryRaw}", country_code="${adsenseCountry}", earnings=$${rev.earnings.toFixed(2)}, reason=${reason}, hasCost=${hasCost}, keyTried="${keyWithCountry}"`);
+          console.log(`[ADSENSE_COST_REVENUE] SKIPPED #${skippedRevenueItems}: style=${styleId}, earnings=$${rev.earnings.toFixed(2)}, reason=style_id not in account`);
         }
         continue;
       }
@@ -1362,32 +1379,33 @@ export async function POST(request: NextRequest) {
 
       // Log first 5 allocated items for debugging
       if (allocatedRevenueItems <= 5) {
-        console.log(`[ADSENSE_COST_REVENUE] ALLOCATED #${allocatedRevenueItems}: style=${rev.style_id}, domain=${normalizedDomain}, country=${adsenseCountry}, earnings=$${rev.earnings.toFixed(2)} (matched key: ${matchedKey})`);
+        console.log(`[ADSENSE_COST_REVENUE] ALLOCATED #${allocatedRevenueItems}: style=${styleId}, earnings=$${rev.earnings.toFixed(2)}`);
       }
 
-      if (!revenueByStyleDomain.has(key)) {
-        // Get the campaign name and account ID from our mapping (use matchedKey for better matching)
-        const mapping = styleDomainToCampaignName.get(matchedKey) || styleDomainToCampaignName.get(key);
-        const campaignName = mapping?.campaignName || `Style ${rev.style_id}`;
+      if (!revenueByStyleDomain.has(styleId)) {
+        // Get the campaign name and account ID from our mapping
+        const mapping = styleToCampaignName.get(styleId);
+        const campaignName = mapping?.campaignName || `Style ${styleId}`;
         const accountId = mapping?.accountId || 'unknown';
 
-        const countryName = mapping?.country || adsenseCountry || '';
-        const countryCode = getCountryCode(countryName);
+        // Get country from AdSense data for display purposes only (not used in matching)
+        const adsenseCountryRaw = rev.country_name || 'unknown';
+        const countryCode = adsenseCountryRaw !== 'unknown' ? getCountryCode(adsenseCountryRaw) : '';
 
-        revenueByStyleDomain.set(key, {
+        revenueByStyleDomain.set(styleId, {
           account_id: accountId,
-          campaign_id: rev.style_id,
+          campaign_id: styleId,
           campaign_name: campaignName,
-          style_id: rev.style_id,
-          domain: normalizedDomain,
-          country: countryCode, // Ensure 2-letter ISO code for flags
+          style_id: styleId,
+          domain: rev.domain_name || 'N/A',
+          country: countryCode, // For display purposes only
           article: 'N/A',
           cost: 0,
           revenue: 0,
           profit: 0,
           clicks: 0,
           impressions: 0,
-          conversions: 0, // Actual number of conversions from Google Ads
+          conversions: 0, // Will be populated from Google Ads data
           costClicks: 0,
           cpa: 0, // Cost per conversion (cost / conversions)
           rpc: 0,
@@ -1396,9 +1414,9 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      const existing = revenueByStyleDomain.get(key)!;
+      const existing = revenueByStyleDomain.get(styleId)!;
 
-      // Direct revenue allocation - Exact match on style_id + domain + country
+      // Direct revenue allocation - Simple style_id match
       existing.revenue += rev.earnings;
       existing.clicks += rev.clicks;
       // Note: conversions will be populated from Google Ads data, not AdSense clicks
@@ -1409,46 +1427,37 @@ export async function POST(request: NextRequest) {
     console.log(`[ADSENSE_COST_REVENUE] Allocated: ${allocatedRevenueItems} items, $${allocatedRevenueValue.toFixed(2)} (${(allocatedRevenueValue / totalRevenueValue * 100).toFixed(1)}%)`);
     console.log(`[ADSENSE_COST_REVENUE] Skipped: ${skippedRevenueItems} items, $${skippedRevenueValue.toFixed(2)} (${(skippedRevenueValue / totalRevenueValue * 100).toFixed(1)}%)`);
     if (skippedRevenueValue > 5) {
-      console.warn(`[ADSENSE_COST_REVENUE] WARNING: $${skippedRevenueValue.toFixed(2)} revenue not mapped`);
+      console.warn(`[ADSENSE_COST_REVENUE] ⚠️ WARNING: $${skippedRevenueValue.toFixed(2)} revenue not mapped (likely from other accounts' style_ids)`);
+    } else {
+      console.log(`[ADSENSE_COST_REVENUE] ✓ Revenue allocation successful - less than $5 unmapped`);
     }
 
-    // Diagnostic: Find target domain revenue that is not being mapped
-    const targetDomain = 'topreserchtopics.com';
-    let skippedTargetDomainRevenue = 0;
-    const skippedTargetDomainStyleIds = new Map<string, number>();
-
+    // Diagnostic: Find unmapped style_ids (simplified for style_id-only matching)
+    const unmappedStyleIds = new Map<string, number>();
     for (const rev of adsenseData) {
-      const normalizedDomain = rev.domain_name ? normalizeDomain(rev.domain_name) : 'N/A';
-      if (normalizedDomain === targetDomain) {
-        const adsenseCountryRaw = rev.country_name || 'unknown';
-        const adsenseCountry = adsenseCountryRaw !== 'unknown' ? getCountryCode(adsenseCountryRaw) : 'unknown';
-        const keyWithCountry = `${rev.style_id}_${normalizedDomain}_${adsenseCountry}`;
-        const keyWithUnknown = `${rev.style_id}_${normalizedDomain}_unknown`;
-
-        if (!styleDomainToCampaignName.has(keyWithCountry) && !styleDomainToCampaignName.has(keyWithUnknown)) {
-          skippedTargetDomainRevenue += rev.earnings;
-          skippedTargetDomainStyleIds.set(rev.style_id, (skippedTargetDomainStyleIds.get(rev.style_id) || 0) + rev.earnings);
-        }
+      if (!styleToCampaignName.has(rev.style_id) && !currentAccountStyleIds.has(rev.style_id)) {
+        unmappedStyleIds.set(rev.style_id, (unmappedStyleIds.get(rev.style_id) || 0) + rev.earnings);
       }
     }
 
-    if (skippedTargetDomainRevenue > 0) {
-      console.error(`[ADSENSE_COST_REVENUE] CRITICAL: $${skippedTargetDomainRevenue.toFixed(2)} revenue from ${targetDomain} is NOT MAPPED`);
-      console.error(`[ADSENSE_COST_REVENUE] Missing style_ids on ${targetDomain}:`);
-      const sortedMissing = Array.from(skippedTargetDomainStyleIds.entries())
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 20);
-      sortedMissing.forEach(([styleId, earnings]) => {
-        console.error(`[ADSENSE_COST_REVENUE]   style_id=${styleId}: $${earnings.toFixed(2)} (no campaigns using this style_id)`);
-      });
-      console.error(`[ADSENSE_COST_REVENUE] SOLUTION: These campaigns may exist without ads/URLs, or may be inactive`);
+    if (unmappedStyleIds.size > 0) {
+      const totalUnmapped = Array.from(unmappedStyleIds.values()).reduce((sum, val) => sum + val, 0);
+      if (totalUnmapped > 5) {
+        console.warn(`[ADSENSE_COST_REVENUE] ⚠️ $${totalUnmapped.toFixed(2)} revenue from ${unmappedStyleIds.size} unmapped style_ids`);
+        const sortedMissing = Array.from(unmappedStyleIds.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 10);
+        sortedMissing.forEach(([styleId, earnings]) => {
+          console.log(`[ADSENSE_COST_REVENUE]   style_id=${styleId}: $${earnings.toFixed(2)}`);
+        });
+      }
     }
-    console.log(`[ADSENSE_COST_REVENUE] Processing revenue for ${revenueByStyleDomain.size} style_id/domain combinations`);
+    console.log(`[ADSENSE_COST_REVENUE] Processing revenue for ${revenueByStyleDomain.size} unique style_ids`);
 
     // DEBUG: Show first 5 revenue entries that were allocated
     console.log(`[ADSENSE_COST_REVENUE] First 5 REVENUE entries (allocated):`);
     let revenueEntryCount = 0;
-    for (const [key, data] of revenueByStyleDomain.entries()) {
+    for (const [_key, data] of revenueByStyleDomain.entries()) {
       if (revenueEntryCount < 5) {
         console.log(`  ${revenueEntryCount + 1}. style_id="${data.style_id}", domain="${data.domain}", revenue=$${data.revenue.toFixed(2)}, clicks=${data.clicks}`);
         revenueEntryCount++;
@@ -1459,15 +1468,11 @@ export async function POST(request: NextRequest) {
     console.log(`[ADSENSE_COST_REVENUE]  Checking for COST entries with NO revenue:`);
     let noRevenueCount = 0;
     let noRevenueTotalCost = 0;
-    for (const [key, costData] of costByStyleDomain.entries()) {
-      const revenueData = revenueByStyleDomain.get(key);
+    for (const [styleId, costData] of costByStyleId.entries()) {
+      const revenueData = revenueByStyleDomain.get(styleId);
       if (!revenueData || revenueData.revenue === 0) {
         if (noRevenueCount < 10) {
-          const keyParts = key.split('_');
-          const country = keyParts[keyParts.length - 1]; // Last part is country
-          const styleId = keyParts[0]; // First part is style_id
-          const domain = keyParts.slice(1, -1).join('_'); // Middle parts are domain
-          console.log(`  ${noRevenueCount + 1}. style_id="${styleId}", domain="${domain}", country="${country}", cost=$${costData.cost.toFixed(2)} - NO REVENUE`);
+          console.log(`  ${noRevenueCount + 1}. style_id="${styleId}", cost=$${costData.cost.toFixed(2)} - NO REVENUE`);
         }
         noRevenueCount++;
         noRevenueTotalCost += costData.cost;
@@ -1482,18 +1487,14 @@ export async function POST(request: NextRequest) {
 
       for (const url of finalUrls) {
         const styleId = extractStyleIdFromUrl(url);
-        let domain = extractDomainFromUrl(url);
-        if (domain) domain = normalizeDomain(domain);
         const article = extractArticleFromUrl(url);
 
-        if (styleId && domain) {
-          const key = `${styleId}_${domain}`;
-          const existing = revenueByStyleDomain.get(key);
+        if (styleId) {
+          const existing = revenueByStyleDomain.get(styleId);
           if (existing && article !== 'N/A') {
             // Set article if not already set or if this is a better match
             if (existing.article === 'N/A') {
               existing.article = article;
-              console.log(`[ADSENSE_COST_REVENUE] Set article for ${key}: ${article}`);
             }
           }
         }
@@ -1504,9 +1505,9 @@ export async function POST(request: NextRequest) {
     let matchedCost = 0;
     let unmatchedCost = 0;
 
-    for (const [key, costData] of costByStyleDomain.entries()) {
-      if (revenueByStyleDomain.has(key)) {
-        const existing = revenueByStyleDomain.get(key)!;
+    for (const [styleId, costData] of costByStyleId.entries()) {
+      if (revenueByStyleDomain.has(styleId)) {
+        const existing = revenueByStyleDomain.get(styleId)!;
         existing.cost = costData.cost;
         existing.costClicks = costData.clicks; // Google Ads clicks
         existing.impressions = costData.impressions;
@@ -1526,29 +1527,19 @@ export async function POST(request: NextRequest) {
 
         matchedCost++;
       } else {
-        // Cost exists but no revenue - create entry
-        const parts = key.split('_');
-        const styleId = parts[0];
-        // The country is the last element
-        const countryPart = parts.pop() || '';
-        const domain = parts.slice(1).join('_'); // Handle domains with underscores
+        // Cost exists but no revenue - create entry with cost-only data
 
         // Get the campaign name and account ID from our mapping
-        const mapping = styleDomainToCampaignName.get(key);
+        const mapping = styleToCampaignName.get(styleId);
         const campaignName = mapping?.campaignName || `Style ${styleId}`;
         const accountId = mapping?.accountId || 'unknown';
 
-        // Use the geo targeted country from the campaign if available, otherwise just keep empty string
-        // The frontend will render this as the flag
-        const countryName = mapping?.country || '';
-        const countryCode = getCountryCode(countryName);
-
-        revenueByStyleDomain.set(key, {
+        revenueByStyleDomain.set(styleId, {
           account_id: accountId,
           campaign_name: campaignName,
           style_id: styleId,
-          domain: domain,
-          country: countryCode, // Set the 2-letter code for the flag
+          domain: 'N/A',
+          country: '', // Will be populated from campaign data if available
           article: 'N/A',
           cost: costData.cost,
           revenue: 0,
@@ -1632,6 +1623,12 @@ export async function POST(request: NextRequest) {
       accountData.impressions += entry.impressions;
       accountData.conversions += entry.conversions;
       accountData.campaignCount++;
+    }
+
+    // DIAGNOSTIC: Show account-level cost breakdown
+    console.log(`[ACCOUNT_AGGREGATION] Account-level breakdown:`);
+    for (const [accountId, data] of accountAggregationMap.entries()) {
+      console.log(`  Account ${accountId}: $${data.cost.toFixed(2)} cost, $${data.revenue.toFixed(2)} revenue, ${data.conversions} conversions, ${data.campaignCount} campaigns`);
     }
 
     // Convert to array and calculate derived metrics
