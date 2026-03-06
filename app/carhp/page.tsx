@@ -14,11 +14,16 @@ const { RangePicker } = DatePicker;
 const { Option } = Select;
 
 // CarHp hardcoded accounts (Google Ads accounts under primary MCC)
+// Accounts use different timezones: IST (Indian Standard Time) or PST (Pacific Standard Time)
+// Ordered sequentially: New 01-05, then legacy 01-02
 const CARHP_ACCOUNTS = [
-    { id: '5079394847', name: 'CarHp New 02', descriptiveName: 'CarHp New 02' },
-    { id: '8536037999', name: 'CarHp New 01', descriptiveName: 'CarHp New 01' },
-    { id: '1161525078', name: 'CAR-HP-01', descriptiveName: 'CAR-HP-01' },
-    { id: '9345796923', name: 'CAR-HP-02', descriptiveName: 'CAR-HP-02' },
+    { id: '8536037999', name: 'CarHp New 01', descriptiveName: 'CarHp New 01 (IST)' },
+    { id: '5079394847', name: 'CarHp New 02', descriptiveName: 'CarHp New 02 (IST)' },
+    { id: '1558940550', name: 'CarHp New 03', descriptiveName: 'CarHp New 03 (IST)' },
+    { id: '1791919543', name: 'CarHp New 04', descriptiveName: 'CarHp New 04 (IST)' },
+    { id: '7839557944', name: 'CarHp New 05', descriptiveName: 'CarHp New 05 (IST)' },
+    { id: '1161525078', name: 'CAR-HP-01', descriptiveName: 'CAR-HP-01 (PST)' },
+    { id: '9345796923', name: 'CAR-HP-02', descriptiveName: 'CAR-HP-02 (PST)' },
 ];
 
 const CARHP_PUBLISHER_ID = 'accounts/pub-4304762948491681';
