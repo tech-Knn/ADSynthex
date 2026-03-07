@@ -264,20 +264,6 @@ export default function CarHpPage() {
                         </Col>
                     </Row>
 
-                    {/* User Account Restriction Notice */}
-                    {!isAdmin && userAccountId && (
-                        <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-                            <Col span={24}>
-                                <Alert
-                                    message="Account Restricted Access"
-                                    description={`You are viewing data for account ${CARHP_ACCOUNTS.find(a => a.id === userAccountId)?.descriptiveName || userAccountId} only. Contact admin for access to other accounts.`}
-                                    type="info"
-                                    showIcon
-                                />
-                            </Col>
-                        </Row>
-                    )}
-
                     {/* Controls */}
                     <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
                         <Col xs={24} md={8}>
