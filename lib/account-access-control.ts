@@ -99,6 +99,9 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_8536037999': ['carhp'], // CarHp New 01
   'CID_1161525078': ['carhp'], // CAR-HP-01
   'CID_9345796923': ['carhp'], // CAR-HP-02
+  'CID_1558940550': ['carhp'], // CarHp New 03 (IST)
+  'CID_1791919543': ['carhp'], // CarHp New 04 (IST)
+  'CID_7839557944': ['carhp'], // CarHp New 05 (IST)
 
   // EMERGENCY FIX 2026-02-07: Compado accounts DISABLED (not in use, wasting quota)
   // 'CID_5416418019': ['compado'],
