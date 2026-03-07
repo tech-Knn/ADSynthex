@@ -104,12 +104,13 @@ export class BulletproofGoogleAdsAPI {
     console.log(`[BULLETPROOF_API] Redis-powered request: ${startDate} to ${endDate}, customer: ${customerId || 'all'}${feedType ? `, feed: ${feedType}` : ''}`);
 
     // Step 1: Try Redis cache first (memory → Redis → null)
-    const cached = await redisCacheManager.get(cacheKey, {
+    // CRITICAL: If allowStale=false (forceLive mode), skip cache entirely to get fresh geo_targets
+    const cached = !allowStale ? { data: null, isStale: true, source: 'none', age: 0 } : await redisCacheManager.get(cacheKey, {
       dataType: 'google-ads',
-      forceRefresh: !allowStale
+      forceRefresh: false // Always false here since we handle forceRefresh above
     });
 
-    if (cached.data && !cached.isStale) {
+    if (cached.data && !cached.isStale && allowStale) {
       const quotaStatus = await googleAdsRateLimiter.getQuotaStatus();
 
       // CRITICAL FIX: Invalidate cache if it has campaigns but NO ads
@@ -128,6 +129,8 @@ export class BulletproofGoogleAdsAPI {
           quotaStatus
         };
       }
+    } else if (!allowStale) {
+      console.log(`[BULLETPROOF_API] Force refresh mode - bypassing cache entirely`);
     }
 
     // Step 2: Check Redis-based rate limiter (persistent across restarts!)
@@ -136,8 +139,20 @@ export class BulletproofGoogleAdsAPI {
     if (!rateLimitCheck.allowed) {
       console.warn(`[BULLETPROOF_API] Rate limit blocked: ${rateLimitCheck.reason}`);
 
-      // Try to serve stale cache as fallback
-      if (cached.data && allowStale) {
+      // CRITICAL FIX: In Force Refresh mode (allowStale=false), do NOT serve stale cache
+      // Instead, wait for rate limiter and retry
+      if (!allowStale) {
+        console.warn(`[BULLETPROOF_API] Force Refresh mode - waiting ${rateLimitCheck.waitTime || 1000}ms for rate limiter to reset`);
+        await new Promise(resolve => setTimeout(resolve, rateLimitCheck.waitTime || 1000));
+
+        // Retry once after waiting
+        const retryCheck = await googleAdsRateLimiter.canMakeRequest(customerId || undefined);
+        if (!retryCheck.allowed) {
+          throw new Error(`Rate limit still active after waiting. Please try again in ${Math.ceil((retryCheck.waitTime || 1000) / 1000)}s`);
+        }
+        // If allowed after waiting, continue to Step 3 below
+      } else if (cached.data && allowStale) {
+        // Only serve stale cache if allowStale=true (normal mode)
         const quotaStatus = await googleAdsRateLimiter.getQuotaStatus();
 
         console.log(`[BULLETPROOF_API] Serving stale cache due to rate limit, age: ${Math.round(cached.age / 1000)}s`);

@@ -117,7 +117,7 @@ export class RedisCacheManager {
         let entry: CacheEntry;
 
         // Handle compressed data (starts with "GZIP:")
-        if (redisData.startsWith('GZIP:')) {
+        if (typeof redisData === 'string' && redisData.startsWith('GZIP:')) {
           try {
             const base64Data = redisData.substring(5); // Remove "GZIP:" prefix
             const buffer = Buffer.from(base64Data, 'base64');
@@ -128,12 +128,22 @@ export class RedisCacheManager {
             this.stats.originalBytes += decompressed.length;
             this.stats.bytesSaved += (decompressed.length - redisData.length);
           } catch (err) {
-            console.error(`[REDIS_CACHE] Decompression failed for ${key}:`, err);
+            console.error(`[REDIS_CACHE] Decompression or Parse failed for ${key}:`, err);
             return { data: null, source: null, age: 0, isStale: false };
           }
         } else {
           // Legacy uncompressed data
-          entry = JSON.parse(redisData);
+          try {
+            entry = typeof redisData === 'string' ? JSON.parse(redisData) : redisData;
+          } catch (err) {
+            console.error(`[REDIS_CACHE] JSON.parse failed for uncompressed legacy data ${key}:`, err);
+            return { data: null, source: null, age: 0, isStale: false };
+          }
+        }
+
+        if (!entry || typeof entry !== 'object' || !entry.timestamp) {
+          console.warn(`[REDIS_CACHE] Invalid cache entry format for ${key}`);
+          return { data: null, source: null, age: 0, isStale: false };
         }
 
         const age = Date.now() - entry.timestamp;

@@ -271,7 +271,8 @@ export class SmartDataFetcher {
             revenueData = await fetchAdSenseRevenueByStyleId(
               adsenseAccountId,
               startDate,
-              endDate
+              endDate,
+              accountId || undefined
             );
             console.log(`[SMART_FETCH] Fetched ${revenueData.length} revenue records from AdSense`);
           }

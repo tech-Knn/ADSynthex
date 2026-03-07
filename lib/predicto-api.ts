@@ -99,32 +99,96 @@ export class PredictoApiClient {
       : '***';
     console.log('[PREDICTO_API] Auth token (masked):', maskedToken);
 
-    let response;
-    try {
-      const fetchStartTime = Date.now();
-      response = await fetch(apiUrl, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
-        },
-      });
-      const fetchTime = Date.now() - fetchStartTime;
-      console.log(`[PREDICTO_API] HTTP Response: ${response.status} ${response.statusText} (${fetchTime}ms)`);
-    } catch (fetchError) {
-      console.error('[PREDICTO_API] Fetch error:', fetchError);
-      throw new Error(`Failed to connect to Predicto API: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`);
+    // Retry configuration for transient errors (502, 503, 429)
+    const MAX_RETRIES = 3;
+    const BASE_DELAY_MS = 2000;
+    const TRANSIENT_STATUS_CODES = [502, 503, 429];
+    const PREDICTO_TIMEOUT_MS = 30000;
+
+    let response: Response | null = null;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (attempt > 0) {
+        const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1); // 2s, 4s, 8s
+        console.log(`[PREDICTO_API] Retry ${attempt}/${MAX_RETRIES} after ${delay}ms delay...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+
+      try {
+        const fetchStartTime = Date.now();
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), PREDICTO_TIMEOUT_MS);
+
+        try {
+          response = await fetch(apiUrl, {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+              'Content-Type': 'application/json',
+            },
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+        } catch (fetchErr: any) {
+          clearTimeout(timeoutId);
+          if (fetchErr.name === 'AbortError') {
+            lastError = new Error(`Predicto API timeout after ${PREDICTO_TIMEOUT_MS / 1000}s - server may be overloaded or down`);
+            console.warn(`[PREDICTO_API] Attempt ${attempt + 1}/${MAX_RETRIES + 1}: Timeout after ${PREDICTO_TIMEOUT_MS / 1000}s`);
+            continue; // Retry on timeout
+          }
+          lastError = fetchErr;
+          console.warn(`[PREDICTO_API] Attempt ${attempt + 1}/${MAX_RETRIES + 1}: Network error: ${fetchErr.message}`);
+          continue; // Retry on network error
+        }
+
+        const fetchTime = Date.now() - fetchStartTime;
+        console.log(`[PREDICTO_API] HTTP Response: ${response.status} ${response.statusText} (${fetchTime}ms)`);
+
+        // Check if response is a transient error that should be retried
+        if (TRANSIENT_STATUS_CODES.includes(response.status)) {
+          let errorBody = '';
+          try { errorBody = await response.text(); } catch { /* ignore */ }
+          lastError = new Error(`Predicto API error: ${response.status} ${response.statusText}`);
+          console.warn(`[PREDICTO_API] Attempt ${attempt + 1}/${MAX_RETRIES + 1}: Transient error ${response.status} - will ${attempt < MAX_RETRIES ? 'retry' : 'give up'}`);
+          if (attempt < MAX_RETRIES) {
+            response = null; // Reset so we retry
+            continue;
+          }
+          // Last attempt failed — log the body and throw
+          if (errorBody) console.error('[PREDICTO_API] Error response body:', errorBody);
+          throw new Error(`Predicto API error: ${response.status} ${response.statusText}${errorBody ? ` - ${errorBody}` : ''}`);
+        }
+
+        // Non-transient error — fail immediately (400, 401, 403, etc.)
+        if (!response.ok) {
+          let errorBody = '';
+          try {
+            errorBody = await response.text();
+            console.error('[PREDICTO_API] Error response body:', errorBody);
+          } catch {
+            console.error('[PREDICTO_API] Could not read error response body');
+          }
+          throw new Error(`Predicto API error: ${response.status} ${response.statusText}${errorBody ? ` - ${errorBody}` : ''}`);
+        }
+
+        // Success — break out of retry loop
+        break;
+      } catch (fetchError) {
+        // If it's already our formatted error, re-throw it
+        if (fetchError instanceof Error && fetchError.message.startsWith('Predicto API error:')) {
+          throw fetchError;
+        }
+        lastError = fetchError instanceof Error ? fetchError : new Error(String(fetchError));
+        console.error(`[PREDICTO_API] Attempt ${attempt + 1}/${MAX_RETRIES + 1} error:`, lastError.message);
+        if (attempt === MAX_RETRIES) {
+          throw new Error(`Failed to connect to Predicto API after ${MAX_RETRIES + 1} attempts: ${lastError.message}`);
+        }
+      }
     }
 
-    if (!response.ok) {
-      let errorBody = '';
-      try {
-        errorBody = await response.text();
-        console.error('[PREDICTO_API] Error response body:', errorBody);
-      } catch {
-        console.error('[PREDICTO_API] Could not read error response body');
-      }
-      throw new Error(`Predicto API error: ${response.status} ${response.statusText}${errorBody ? ` - ${errorBody}` : ''}`);
+    if (!response || !response.ok) {
+      throw lastError || new Error('Predicto API failed after all retry attempts');
     }
 
     let data: PredictoApiResponse;

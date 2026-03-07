@@ -260,6 +260,22 @@ function buildCampaignGeoTargetsQuery() {
   return config.queries.campaignGeoTargetsQuery;
 }
 
+// Build geographic view query for revenue by geo
+function buildGeographicViewQuery(startDate: string, endDate: string) {
+  const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+  if (!datePattern.test(startDate) || !datePattern.test(endDate)) {
+    throw new Error(`Invalid date format. Expected YYYY-MM-DD, got: start="${startDate}", end="${endDate}"`);
+  }
+
+  if (endDate < startDate) {
+    throw new Error(`Invalid date range: end date (${endDate}) is before start date (${startDate})`);
+  }
+
+  return config.queries.geographicViewQuery
+    .replace('DATE_RANGE_START', startDate)
+    .replace('DATE_RANGE_END', endDate);
+}
+
 // Fetch geo-targeting data for campaigns
 async function fetchCampaignGeoTargets(
   accountCustomer: any,
@@ -269,24 +285,35 @@ async function fetchCampaignGeoTargets(
     const geoTargetsQuery = buildCampaignGeoTargetsQuery();
     const response = await accountCustomer.query(geoTargetsQuery);
 
-    // Map campaign_id -> list of location names
+    // Map campaign_id -> list of geo criterion IDs
     const geoTargetMap = new Map<string, string[]>();
 
     for (const row of response || []) {
       const campaignId = row.campaign?.id || '';
-      const locationName = row.geo_target_constant?.name || '';
 
-      if (campaignId && locationName) {
+      // Use criterion_id which is the geo target constant ID
+      const criterionId = row.campaign_criterion?.criterion_id || '';
+
+      // Extract geo target constant resource name if available
+      const geoResourceName = row.campaign_criterion?.location?.geo_target_constant || '';
+
+      // Parse geo ID from resource name (format: "geoTargetConstants/12345")
+      let geoId = criterionId;
+      if (!geoId && geoResourceName) {
+        const match = geoResourceName.match(/geoTargetConstants\/(\d+)/);
+        if (match) {
+          geoId = match[1];
+        }
+      }
+
+      if (campaignId && geoId) {
         if (!geoTargetMap.has(campaignId)) {
           geoTargetMap.set(campaignId, []);
         }
 
-        // Extract country name from location (e.g., "Vietnam" from "Vietnam (country)")
-        const countryMatch = locationName.match(/^([^(]+)/);
-        const country = countryMatch ? countryMatch[1].trim() : locationName;
-
-        if (!geoTargetMap.get(campaignId)!.includes(country)) {
-          geoTargetMap.get(campaignId)!.push(country);
+        const geoIdStr = String(geoId);
+        if (!geoTargetMap.get(campaignId)!.includes(geoIdStr)) {
+          geoTargetMap.get(campaignId)!.push(geoIdStr);
         }
       }
     }
@@ -294,8 +321,84 @@ async function fetchCampaignGeoTargets(
     console.log(`[GOOGLE_ADS_API] Fetched geo-targets for ${geoTargetMap.size} campaigns in account ${account.id}`);
     return geoTargetMap;
   } catch (error: any) {
-    console.warn(`[GOOGLE_ADS_API] Failed to fetch geo-targets for account ${account.id}:`, error.message);
+    // Google Ads API errors have an 'errors' array with the actual error details
+    const errorArray = error?.errors || [];
+    const firstError = errorArray[0] || {};
+    const errorMessage = firstError?.message || firstError?.error_code?.request_error || 'Unknown error';
+
+    console.warn(`[GOOGLE_ADS_API] Failed to fetch geo-targets for account ${account.id}:`, errorMessage);
+    if (errorArray.length > 0) {
+      console.warn(`  Full error details:`, JSON.stringify(firstError, null, 2));
+    }
     return new Map();
+  }
+}
+
+// Fetch geographic view data (revenue by campaign and geo location)
+async function fetchGeographicViewData(
+  accountCustomer: any,
+  account: any,
+  startDate: string,
+  endDate: string
+): Promise<GoogleAdsGeographicView[]> {
+  try {
+    const geoViewQuery = buildGeographicViewQuery(startDate, endDate);
+    const response = await accountCustomer.query(geoViewQuery);
+
+    const geoViewData: GoogleAdsGeographicView[] = [];
+
+    for (const row of response || []) {
+      try {
+        const campaignId = row.campaign?.id || 'unknown';
+        const campaignName = row.campaign?.name || 'Unknown Campaign';
+        const campaignStatus = row.campaign?.status || 'UNKNOWN';
+        const geoId = Number(row.geographic_view?.country_criterion_id || 0);
+        const date = row.segments?.date || '';
+
+        // Extract metrics
+        const conversionsValue = Number(row.metrics?.conversions_value || 0);
+        const conversions = Number(row.metrics?.conversions || 0);
+        const clicks = Number(row.metrics?.clicks || 0);
+        const impressions = Number(row.metrics?.impressions || 0);
+        const costMicros = Number(row.metrics?.cost_micros || 0);
+        const cost = costMicros / 1000000;
+
+        if (geoId > 0) {
+          geoViewData.push({
+            customer_id: account.id,
+            customer_name: account.name,
+            campaign_id: campaignId,
+            campaign_name: campaignName,
+            campaign_status: campaignStatus,
+            geo_id: geoId,
+            date: date,
+            metrics: {
+              conversions_value: conversionsValue,
+              conversions: conversions,
+              clicks: clicks,
+              impressions: impressions,
+              cost: cost,
+              cost_micros: costMicros
+            }
+          });
+        }
+      } catch (error) {
+        console.error('[GOOGLE_ADS_API] Error processing geographic view row:', error);
+      }
+    }
+
+    console.log(`[GOOGLE_ADS_API] Fetched ${geoViewData.length} geographic view records for account ${account.id}`);
+    return geoViewData;
+  } catch (error: any) {
+    const errorArray = error?.errors || [];
+    const firstError = errorArray[0] || {};
+    const errorMessage = firstError?.message || firstError?.error_code?.request_error || 'Unknown error';
+
+    console.warn(`[GOOGLE_ADS_API] Failed to fetch geographic view data for account ${account.id}:`, errorMessage);
+    if (errorArray.length > 0) {
+      console.warn(`  Full error details:`, JSON.stringify(firstError, null, 2));
+    }
+    return [];
   }
 }
 
@@ -365,10 +468,29 @@ export interface GoogleAdsClick {
   click_type: string;
 }
 
+export interface GoogleAdsGeographicView {
+  customer_id: string;
+  customer_name: string;
+  campaign_id: string;
+  campaign_name: string;
+  campaign_status: string;
+  geo_id: number;
+  date: string;
+  metrics: {
+    conversions_value: number;
+    conversions: number;
+    clicks: number;
+    impressions: number;
+    cost: number;
+    cost_micros: number;
+  };
+}
+
 export interface GoogleAdsData {
   campaigns: GoogleAdsCampaign[];
   ads: GoogleAdsAd[];
   clicks?: GoogleAdsClick[];
+  geographic_views?: GoogleAdsGeographicView[];
   total_cost?: number;
 }
 
@@ -620,7 +742,8 @@ export async function fetchGoogleAdsData(
   const data: GoogleAdsData = {
     campaigns: [],
     ads: [],
-    clicks: []
+    clicks: [],
+    geographic_views: []
   };
 
   console.log(`[GOOGLE_ADS_API] Fetching data for date range: ${startDate} to ${endDate}${feedType ? ` (feed: ${feedType})` : ''}`);
@@ -738,6 +861,18 @@ export async function fetchGoogleAdsData(
           }
         } catch (error: any) {
           console.warn(`[GOOGLE_ADS_API] Geo-targeting fetch failed (continuing):`, error.message);
+        }
+
+        // Fetch geographic view data (revenue by campaign + geo)
+        try {
+          console.log(`[GOOGLE_ADS_API] Fetching geographic view data for revenue by geo...`);
+          const geoViewData = await fetchGeographicViewData(accountCustomer, account, startDate, endDate);
+          if (geoViewData && geoViewData.length > 0) {
+            data.geographic_views!.push(...geoViewData);
+            console.log(`[GOOGLE_ADS_API] Added ${geoViewData.length} geographic view records`);
+          }
+        } catch (error: any) {
+          console.warn(`[GOOGLE_ADS_API] Geographic view fetch failed (continuing):`, error.message);
         }
 
         data.campaigns.push(...processedCampaigns);
