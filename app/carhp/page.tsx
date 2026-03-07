@@ -49,6 +49,7 @@ export default function CarHpPage() {
     const [error, setError] = useState<string | null>(null);
     const [selectedGoogleAdsAccount, setSelectedGoogleAdsAccount] = useState<string>('all');
     const [isAdmin, setIsAdmin] = useState(false);
+    const [userAccountId, setUserAccountId] = useState<string | null>(null);
     const [isFromCache, setIsFromCache] = useState(false);
     const [cacheAge, setCacheAge] = useState<number | null>(null);
     const [isRefreshing, setIsRefreshing] = useState(false);
@@ -101,7 +102,27 @@ export default function CarHpPage() {
     // Initial mount check for admin and load cached data
     useEffect(() => {
         const authType = getCookie('auth_type');
-        setIsAdmin(authType === 'admin');
+        const accountIdCookie = getCookie('account_id');
+        const isAdminUser = authType === 'admin';
+
+        setIsAdmin(isAdminUser);
+
+        // For non-admin users, extract their account ID and set it as selected
+        if (!isAdminUser && accountIdCookie) {
+            // Extract numeric ID from CID_ format (e.g., "CID_1558940550" -> "1558940550")
+            const numericAccountId = accountIdCookie.replace('CID_', '');
+            setUserAccountId(numericAccountId);
+
+            // Verify the account is a valid CarHp account
+            const isValidCarHpAccount = CARHP_ACCOUNTS.some(acc => acc.id === numericAccountId);
+            if (isValidCarHpAccount) {
+                setSelectedGoogleAdsAccount(numericAccountId);
+                console.log(`[CARHP] Non-admin user restricted to account: ${numericAccountId}`);
+            } else {
+                setError(`Invalid account ID: ${numericAccountId} is not a CarHp account`);
+                console.error(`[CARHP] User account ${numericAccountId} is not in CARHP_ACCOUNTS list`);
+            }
+        }
 
         // Auto-fetch on mount
         const cached = loadCachedData(selectedGoogleAdsAccount, dateRange);
@@ -242,6 +263,20 @@ export default function CarHpPage() {
                             </div>
                         </Col>
                     </Row>
+
+                    {/* User Account Restriction Notice */}
+                    {!isAdmin && userAccountId && (
+                        <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+                            <Col span={24}>
+                                <Alert
+                                    message="Account Restricted Access"
+                                    description={`You are viewing data for account ${CARHP_ACCOUNTS.find(a => a.id === userAccountId)?.descriptiveName || userAccountId} only. Contact admin for access to other accounts.`}
+                                    type="info"
+                                    showIcon
+                                />
+                            </Col>
+                        </Row>
+                    )}
 
                     {/* Controls */}
                     <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
