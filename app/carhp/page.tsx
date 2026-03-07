@@ -49,7 +49,6 @@ export default function CarHpPage() {
     const [error, setError] = useState<string | null>(null);
     const [selectedGoogleAdsAccount, setSelectedGoogleAdsAccount] = useState<string>('all');
     const [isAdmin, setIsAdmin] = useState(false);
-    const [userAccountId, setUserAccountId] = useState<string | null>(null);
     const [isFromCache, setIsFromCache] = useState(false);
     const [cacheAge, setCacheAge] = useState<number | null>(null);
     const [isRefreshing, setIsRefreshing] = useState(false);
@@ -111,7 +110,6 @@ export default function CarHpPage() {
         if (!isAdminUser && accountIdCookie) {
             // Extract numeric ID from CID_ format (e.g., "CID_1558940550" -> "1558940550")
             const numericAccountId = accountIdCookie.replace('CID_', '');
-            setUserAccountId(numericAccountId);
 
             // Verify the account is a valid CarHp account
             const isValidCarHpAccount = CARHP_ACCOUNTS.some(acc => acc.id === numericAccountId);
