@@ -131,6 +131,41 @@ const CUSTOMER_ACCOUNTS = [
     value: '2563438099'
   },
   {
+    id: 'CID_5079394847',
+    name: 'CarHp New 02',
+    value: '5079394847'
+  },
+  {
+    id: 'CID_8536037999',
+    name: 'CarHp New 01',
+    value: '8536037999'
+  },
+  {
+    id: 'CID_1558940550',
+    name: 'CarHp New 03',
+    value: '1558940550'
+  },
+  {
+    id: 'CID_1791919543',
+    name: 'CarHp New 04',
+    value: '1791919543'
+  },
+  {
+    id: 'CID_7839557944',
+    name: 'CarHp New 05',
+    value: '7839557944'
+  },
+  {
+    id: 'CID_1161525078',
+    name: 'CAR-HP-01',
+    value: '1161525078'
+  },
+  {
+    id: 'CID_9345796923',
+    name: 'CAR-HP-02',
+    value: '9345796923'
+  },
+  {
     id: 'CID_5416418019',
     name: 'Compado - UTC - 01',
     value: '5416418019'
