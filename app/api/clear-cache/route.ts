@@ -48,6 +48,8 @@ export async function POST(request: NextRequest) {
 
       if (targetFeed === 'all' || targetFeed === 'afs') {
         patterns.push('afs_aggregated:*', 'afs_cost_revenue:*');
+        // Also clear old format cache keys (before feed isolation fix)
+        patterns.push('adsense_cost_revenue:*');
       }
 
       if (targetFeed === 'all' || targetFeed === 'carhp') {

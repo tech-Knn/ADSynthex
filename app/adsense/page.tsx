@@ -52,8 +52,8 @@ export default function AdSensePage() {
 
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>([dayjs(), dayjs()]);
 
-  // Domain filter - default to topresearchtopics.com (termuxtools.com temporarily down)
-  const [filterDomain, setFilterDomain] = useState<string>('topresearchtopics.com');
+  // Domain filter - default to 'topreserchtopics.com' as per new requirements
+  const [filterDomain, setFilterDomain] = useState<string>('topreserchtopics.com');
 
   // Metric filters
   const [searchStyleId, setSearchStyleId] = useState<string>('');
@@ -107,7 +107,7 @@ export default function AdSensePage() {
   }, []);
 
   // Auto-select domain when data loads
-  // Priority: termuxtools.com > topresearchtopics.com > first available
+  // Priority: termuxtools.com > topreserchtopics.com > first available
   useEffect(() => {
     if (data?.campaign_aggregated) {
       const domains = new Set(
@@ -116,12 +116,13 @@ export default function AdSensePage() {
           .filter((d: string) => d && d !== 'N/A')
       );
 
-      if (domains.has('termuxtools.com')) {
+      // Default to topreserchtopics.com if it exists, otherwise 'all'
+      if (domains.has('topreserchtopics.com')) {
+        setFilterDomain('topreserchtopics.com');
+      } else if (domains.has('termuxtools.com')) {
         setFilterDomain('termuxtools.com');
-      } else if (domains.has('topresearchtopics.com')) {
-        setFilterDomain('topresearchtopics.com');
-      } else if (domains.size > 0) {
-        setFilterDomain(Array.from(domains)[0] as string);
+      } else {
+        setFilterDomain('all');
       }
     }
   }, [data]);
@@ -343,11 +344,16 @@ export default function AdSensePage() {
     return words.slice(0, 4).join(' ') + '...';
   };
 
-  // Filter campaigns by domain (only termuxtools.com) with search and sorting
+  // Filter campaigns by domain with search and sorting
   const getFilteredCampaigns = () => {
     if (!data?.campaign_aggregated) return [];
 
-    let filtered = data.campaign_aggregated.filter((campaign: any) => campaign.domain === filterDomain);
+    let filtered = data.campaign_aggregated;
+
+    // Apply domain filter
+    if (filterDomain !== 'all') {
+      filtered = filtered.filter((campaign: any) => campaign.domain === filterDomain);
+    }
 
     // Apply style ID search filter
     if (searchStyleId) {
@@ -710,10 +716,27 @@ export default function AdSensePage() {
 
                     {/* Metric Filters */}
                     <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-                      <Col xs={24} md={8}>
+                      <Col xs={24} md={6}>
+                        <Text strong>Filter Domain</Text>
+                        <Select
+                          style={{ width: '100%', marginTop: 8 }}
+                          value={filterDomain}
+                          onChange={setFilterDomain}
+                        >
+                          <Option value="all">All Domains (Includes Unmapped)</Option>
+                          {(() => {
+                            if (!data?.campaign_aggregated) return null;
+                            const domains = Array.from(new Set(data.campaign_aggregated.map((c: any) => c.domain).filter(Boolean)));
+                            return domains.map(domain => (
+                              <Option key={domain} value={domain}>{domain}</Option>
+                            ));
+                          })()}
+                        </Select>
+                      </Col>
+                      <Col xs={24} md={6}>
                         <Text strong>Search Campaign or Style ID</Text>
                         <Input
-                          placeholder="Search by Campaign Name or Style ID"
+                          placeholder="Search by ID/Name"
                           value={searchStyleId}
                           onChange={(e) => setSearchStyleId(e.target.value)}
                           prefix={<SearchOutlined />}
@@ -721,7 +744,7 @@ export default function AdSensePage() {
                           style={{ marginTop: 8 }}
                         />
                       </Col>
-                      <Col xs={24} md={8}>
+                      <Col xs={24} md={6}>
                         <Text strong>Sort By</Text>
                         <Select
                           style={{ width: '100%', marginTop: 8 }}
@@ -738,7 +761,7 @@ export default function AdSensePage() {
                           <Option value="conversions">Conversions</Option>
                         </Select>
                       </Col>
-                      <Col xs={24} md={8}>
+                      <Col xs={24} md={6}>
                         <Text strong>Sort Order</Text>
                         <Select
                           style={{ width: '100%', marginTop: 8 }}
@@ -754,7 +777,7 @@ export default function AdSensePage() {
                     {filteredCampaigns.length === 0 ? (
                       <Alert
                         message="No Data"
-                        description="No data found for termuxtools.com"
+                        description={`No data found for the selected filters`}
                         type="info"
                         showIcon
                       />

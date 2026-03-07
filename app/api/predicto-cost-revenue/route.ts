@@ -411,8 +411,8 @@ export async function POST(request: NextRequest) {
 
         // ENHANCED LOGGING FOR EST-09 (5777354952)
         const accountCustomerId = actualData?.campaigns?.[0]?.customer_id ||
-                                   actualData?.ads?.[0]?.customer_id ||
-                                   (isMultiAccount ? finalAccountIds[index] : finalCustomerId);
+          actualData?.ads?.[0]?.customer_id ||
+          (isMultiAccount ? finalAccountIds[index] : finalCustomerId);
 
         if (accountCustomerId === '5777354952') {
           console.log(`[EST-09 DEBUG] ===== ENHANCED LOGGING FOR EST-09 =====`);
@@ -688,7 +688,40 @@ export async function POST(request: NextRequest) {
           console.log(`[PREDICTO_COST_REVENUE] ✓ Total Predicto revenue: $${totalRevenue.toFixed(2)}`);
         }
       } catch (predictoError) {
-        console.error('[PREDICTO_COST_REVENUE] 🚨 CRITICAL: Predicto API request FAILED:', predictoError);
+        console.error('[PREDICTO_COST_REVENUE] CRITICAL: Predicto API request FAILED:', predictoError);
+
+        // CACHE FALLBACK: Try to serve stale cached data when Predicto is down
+        console.log('[PREDICTO_COST_REVENUE] Attempting cache fallback for Predicto outage...');
+        try {
+          const cachedFallback = await redisCacheManager.get(aggregatedCacheKey, { dataType: 'predicto' });
+
+          if (cachedFallback.data) {
+            const cacheAgeMinutes = Math.round(cachedFallback.age / 60000);
+            console.log(`[PREDICTO_COST_REVENUE] Cache fallback found (${cacheAgeMinutes} min old) - serving stale data`);
+
+            const { aggregateByAccount } = await import('@/lib/predicto-cost-revenue');
+            const cachedAccountSummaries = aggregateByAccount(cachedFallback.data.campaign_aggregated || []);
+
+            return NextResponse.json({
+              ...cachedFallback.data,
+              account_summaries: cachedAccountSummaries,
+              _source: 'predicto-outage-cache-fallback',
+              _timestamp: new Date().toISOString(),
+              _message: `Predicto API is currently unavailable. Showing cached data (${cacheAgeMinutes} min old). Revenue data may not be current.`,
+              _dataFreshness: {
+                source: 'redis-fallback',
+                ageMinutes: cacheAgeMinutes,
+                isFresh: false,
+                message: `Predicto API down - cached data (${cacheAgeMinutes} min old)`,
+              },
+            });
+          }
+
+          console.warn('[PREDICTO_COST_REVENUE] No cached data available for fallback');
+        } catch (cacheErr) {
+          console.warn('[PREDICTO_COST_REVENUE] Cache fallback check failed:', cacheErr);
+        }
+
         return NextResponse.json({
           error: 'Predicto API failed',
           message: predictoError instanceof Error ? predictoError.message : 'Failed to fetch revenue data from Predicto API',
@@ -812,22 +845,22 @@ export async function POST(request: NextRequest) {
 
           // Validate channels found in campaign URLs
           if (accountChannelIds.size > 0) {
-          const validation = validateChannelOwnership(finalCustomerId, Array.from(accountChannelIds));
+            const validation = validateChannelOwnership(finalCustomerId, Array.from(accountChannelIds));
 
-          if (validation.invalid.length > 0) {
-            console.warn(`[PREDICTO_COST_REVENUE]     INVALID channels in campaign URLs (don't belong to this account):`);
-            console.warn(`[PREDICTO_COST_REVENUE]       ${validation.invalid.join(', ')}`);
-            console.warn(`[PREDICTO_COST_REVENUE]       These channels need to be removed/corrected in Google Ads!`);
-          }
+            if (validation.invalid.length > 0) {
+              console.warn(`[PREDICTO_COST_REVENUE]     INVALID channels in campaign URLs (don't belong to this account):`);
+              console.warn(`[PREDICTO_COST_REVENUE]       ${validation.invalid.join(', ')}`);
+              console.warn(`[PREDICTO_COST_REVENUE]       These channels need to be removed/corrected in Google Ads!`);
+            }
 
-          if (validation.missing.length > 0) {
-            console.warn(`[PREDICTO_COST_REVENUE]    ℹ️  Missing channels (owned but not in URLs):`);
-            console.warn(`[PREDICTO_COST_REVENUE]       ${validation.missing.join(', ')}`);
-          }
+            if (validation.missing.length > 0) {
+              console.warn(`[PREDICTO_COST_REVENUE]    ℹ️  Missing channels (owned but not in URLs):`);
+              console.warn(`[PREDICTO_COST_REVENUE]       ${validation.missing.join(', ')}`);
+            }
 
-          if (validation.valid.length > 0) {
-            console.log(`[PREDICTO_COST_REVENUE]    ✓ Valid channels: ${validation.valid.length} channels correctly configured`);
-          }
+            if (validation.valid.length > 0) {
+              console.log(`[PREDICTO_COST_REVENUE]    ✓ Valid channels: ${validation.valid.length} channels correctly configured`);
+            }
           }
 
           const beforeFilter = combined.length;

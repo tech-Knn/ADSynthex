@@ -20,8 +20,9 @@ export async function POST(request: NextRequest) {
     console.log('[DEBUG] Date range:', startDate, 'to', endDate);
     console.log('[DEBUG] AdSense Account:', adsenseAccountId);
 
-    // Fetch AdSense revenue
-    const adsenseRevenue = await fetchAdSenseRevenueByStyleId(adsenseAccountId, startDate, endDate);
+    // Fetch AdSense revenue (use first account ID for MCC routing)
+    const customerId = accountIds && accountIds.length > 0 ? accountIds[0] : undefined;
+    const adsenseRevenue = await fetchAdSenseRevenueByStyleId(adsenseAccountId, startDate, endDate, customerId);
 
     // Extract unique style_ids and domains from AdSense
     const adsenseStyleIds = new Set<string>();

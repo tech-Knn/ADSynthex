@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
 
     const [googleAdsResults, adsenseRevenueData] = await Promise.all([
       googleAdsDataPromises,
-      fetchAdSenseRevenueByStyleId(adsenseAccountId, startDate, endDate)
+      fetchAdSenseRevenueByStyleId(adsenseAccountId, startDate, endDate, customerId)
     ]);
 
     console.log('[AFS_UNMAPPED_REVENUE] Data fetched successfully');

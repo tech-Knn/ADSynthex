@@ -1110,11 +1110,11 @@ export async function POST(request: NextRequest) {
     // DEBUG: Show date distribution
     console.log(`[ADSENSE_COST_REVENUE] Campaign data covers ${campaignDates.size} unique dates: ${Array.from(campaignDates).sort().join(', ')}`);
     console.log(`[ADSENSE_COST_REVENUE] Rows per date:`, Object.fromEntries(
-      Array.from(campaignRowsByDate.entries()).sort((a, b) => a[0].localeCompare(b[0]))
+      Array.from(campaignRowsByDate.entries()).sort((a, b) => a[0].localeCompare(b[0])) 
     ));
-    console.log(`[ADSENSE_COST_REVENUE] Expected date range: ${startDate} to ${endDate}`);
+    console.log(`[ADSENSE_COST_REVENUE] Expected date range: ${startDate} to ${endDate}`); 
 
-    // Calculate total conversions from Google Ads
+    // Calculate total conversions from Google Ads 
     const totalGoogleAdsConversions = Array.from(costByStyleId.values()).reduce((sum, data) => sum + data.conversions, 0);
     const totalGoogleAdsCost = Array.from(costByStyleId.values()).reduce((sum, data) => sum + data.cost, 0);
     console.log(`[ADSENSE_COST_REVENUE] Total Google Ads cost: $${totalGoogleAdsCost.toFixed(2)}, conversions: ${totalGoogleAdsConversions.toFixed(2)}`);
