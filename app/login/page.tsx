@@ -80,6 +80,8 @@ export default function LoginPage() {
             router.push('/adsense');
           } else if (firstFeed === 'predicto') {
             router.push('/predicto');
+          } else if (firstFeed === 'carhp') {
+            router.push('/carhp');
           } else {
             // Fallback
             router.push('/dashboard');
