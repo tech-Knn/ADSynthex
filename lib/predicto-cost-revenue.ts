@@ -704,16 +704,21 @@ function getAccountName(customerId: string): string {
     '4517107811': 'Predicto - EST - 18',
     '4272056005': 'Predicto - EST - 19',
     '2563438099': 'Predicto - EST - 20',
-    '815308036': 'Predicto - EST - 21 (IDR)',
-    '5230757999': 'Predicto - EST - 22 (IDR)',
-    '3146472862': 'Predicto - EST - 23 (IDR)',
-    '8775212280': 'Predicto - EST - 24 (IDR)',
-    '4714948356': 'Predicto - EST - 25 (IDR)',
+    '6731595092': 'Predicto - EST - 21',
+    '8656375545': 'Predicto - EST - 22',
+    '5802421650': 'Predicto - EST - 23',
+    '1213532895': 'Predicto - EST - 24',
+    '7273310309': 'Predicto - EST - 25',
+    '3318899588': 'Predicto - EST - 26',
+    '8997459454': 'Predicto - EST - 27',
+    '5556851600': 'Predicto - EST - 28',
+    '3907817554': 'Predicto - EST - 29',
+    '7505004095': 'Predicto - EST - 30',
   };
   return accountNames[customerId] || `Account ${customerId}`;
 }
 
-// List of all Predicto accounts (EST-01 through EST-25)
+// List of all Predicto accounts (EST-01 through EST-30)
 const ALL_PREDICTO_ACCOUNTS = [
   '2382992113', // EST-01
   '1640518611', // EST-02
@@ -735,17 +740,22 @@ const ALL_PREDICTO_ACCOUNTS = [
   '4517107811', // EST-18
   '4272056005', // EST-19
   '2563438099', // EST-20
-  '815308036',  // EST-21
-  '5230757999', // EST-22 (IDR currency)
-  '3146472862', // EST-23
-  '8775212280', // EST-24
-  '4714948356', // EST-25
+  '6731595092', // EST-21
+  '8656375545', // EST-22
+  '5802421650', // EST-23
+  '1213532895', // EST-24
+  '7273310309', // EST-25
+  '3318899588', // EST-26
+  '8997459454', // EST-27
+  '5556851600', // EST-28
+  '3907817554', // EST-29
+  '7505004095', // EST-30
 ];
 
 /**
  * Aggregate cost/revenue data by account (customer_id)
  * Provides account-level breakdown of performance
- * Shows all 20 Predicto accounts, even if they have no data
+ * Shows all 30 Predicto accounts, even if they have no data
  */
 export function aggregateByAccount(
   mappings: PredictoCostRevenueMapping[]
@@ -755,7 +765,7 @@ export function aggregateByAccount(
     campaigns: PredictoCostRevenueMapping[];
   }>();
 
-  // Initialize all 20 Predicto accounts with empty campaign arrays
+  // Initialize all 30 Predicto accounts with empty campaign arrays
   ALL_PREDICTO_ACCOUNTS.forEach(customerId => {
     accountMap.set(customerId, {
       customer_id: customerId,

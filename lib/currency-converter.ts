@@ -8,14 +8,8 @@ import { convertToUsd } from './currency-service';
  * All unlisted accounts automatically default to USD
  */
 export const ACCOUNT_CURRENCIES: Record<string, string> = {
-  // Predicto IDR accounts (Indonesian Rupiah)
-  '815308036': 'IDR',  // Predicto EST-21
-  '5230757999': 'IDR', // Predicto EST-22
-  '3146472862': 'IDR', // Predicto EST-23
-  '8775212280': 'IDR', // Predicto EST-24
-  '4714948356': 'IDR', // Predicto EST-25
-
-  // CarHp accounts - ALL USE USD (default)
+  // All Predicto accounts use USD (default)
+  // All CarHp accounts use USD (default)
   // Removed incorrect IDR mappings - these accounts use USD natively
   // '5079394847': CarHp New 02 - USD
   // '8536037999': CarHp New 01 - USD

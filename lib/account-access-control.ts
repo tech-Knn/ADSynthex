@@ -152,11 +152,16 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_4517107811': ['predicto'], // Predicto - EST - 18
   'CID_4272056005': ['predicto'], // Predicto - EST - 19
   'CID_2563438099': ['predicto'], // Predicto - EST - 20
-  'CID_815308036': ['predicto'],  // Predicto - EST - 21 (IDR)
-  'CID_5230757999': ['predicto'], // Predicto - EST - 22 (IDR)
-  'CID_3146472862': ['predicto'], // Predicto - EST - 23 (IDR)
-  'CID_8775212280': ['predicto'], // Predicto - EST - 24 (IDR)
-  'CID_4714948356': ['predicto'], // Predicto - EST - 25 (IDR)
+  'CID_6731595092': ['predicto'], // Predicto - EST - 21
+  'CID_8656375545': ['predicto'], // Predicto - EST - 22
+  'CID_5802421650': ['predicto'], // Predicto - EST - 23
+  'CID_1213532895': ['predicto'], // Predicto - EST - 24
+  'CID_7273310309': ['predicto'], // Predicto - EST - 25
+  'CID_3318899588': ['predicto'], // Predicto - EST - 26
+  'CID_8997459454': ['predicto'], // Predicto - EST - 27
+  'CID_5556851600': ['predicto'], // Predicto - EST - 28
+  'CID_3907817554': ['predicto'], // Predicto - EST - 29
+  'CID_7505004095': ['predicto'], // Predicto - EST - 30
 
   // EMERGENCY FIX 2026-02-07: Ads.com accounts DISABLED (not in use, wasting quota)
   // These accounts were consuming click_view queries (1 per account per fetch!)
@@ -347,20 +352,35 @@ export const ACCOUNT_CHANNEL_ACCESS: Record<string, string[]> = {
   // Predicto - EST - 20: No channels assigned
   'CID_2563438099': [],
 
-  // Predicto - EST - 21: No channels assigned (IDR)
-  'CID_815308036': [],
+  // Predicto - EST - 21: No channels assigned
+  'CID_6731595092': [],
 
-  // Predicto - EST - 22: No channels assigned (IDR)
-  'CID_5230757999': [],
+  // Predicto - EST - 22: No channels assigned
+  'CID_8656375545': [],
 
-  // Predicto - EST - 23: No channels assigned (IDR)
-  'CID_3146472862': [],
+  // Predicto - EST - 23: No channels assigned
+  'CID_5802421650': [],
 
-  // Predicto - EST - 24: No channels assigned (IDR)
-  'CID_8775212280': [],
+  // Predicto - EST - 24: No channels assigned
+  'CID_1213532895': [],
 
-  // Predicto - EST - 25: No channels assigned (IDR)
-  'CID_4714948356': [],
+  // Predicto - EST - 25: No channels assigned
+  'CID_7273310309': [],
+
+  // Predicto - EST - 26: No channels assigned
+  'CID_3318899588': [],
+
+  // Predicto - EST - 27: No channels assigned
+  'CID_8997459454': [],
+
+  // Predicto - EST - 28: No channels assigned
+  'CID_5556851600': [],
+
+  // Predicto - EST - 29: No channels assigned
+  'CID_3907817554': [],
+
+  // Predicto - EST - 30: No channels assigned
+  'CID_7505004095': [],
 };
 
 /**
