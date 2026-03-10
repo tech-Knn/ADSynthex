@@ -74,6 +74,7 @@ export const ACCOUNT_TO_MCC: Record<string, keyof typeof MCC_CONFIGS> = {
   '1558940550': 'primary',  // CarHp New 03 (IST)
   '1791919543': 'primary',  // CarHp New 04 (IST)
   '7839557944': 'primary',  // CarHp New 05 (IST)
+  '2324382023': 'primary',  // CarHp New 06 (IST)
   '1161525078': 'primary',  // CAR-HP-01 (PST)
   '9345796923': 'primary',  // CAR-HP-02 (PST)
 };

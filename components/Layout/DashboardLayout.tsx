@@ -156,6 +156,11 @@ const CUSTOMER_ACCOUNTS = [
     value: '7839557944'
   },
   {
+    id: 'CID_2324382023',
+    name: 'CarHp New 06',
+    value: '2324382023'
+  },
+  {
     id: 'CID_1161525078',
     name: 'CAR-HP-01',
     value: '1161525078'
