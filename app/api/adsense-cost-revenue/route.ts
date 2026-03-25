@@ -54,8 +54,6 @@ export async function POST(request: NextRequest) {
     if (forceLive) {
       console.log('[ADSENSE_REVENUE] FORCE LIVE MODE - ALL CACHES BYPASSED ');
     }
-
-
     // AGGRESSIVE CACHING OPTIMIZATION: Dramatically increased TTLs to reduce API quota usage
     // AFS data doesn't change frequently - hourly refresh is sufficient for most use cases
     // Previous: 15 min = 96 potential refreshes/day × 140 API calls = 13,440 calls/day
@@ -738,7 +736,7 @@ export async function POST(request: NextRequest) {
 
     // CRITICAL: Validate AdSense data is not empty
     if (!adsenseData || !Array.isArray(adsenseData)) {
-      console.error('[ADSENSE_COST_REVENUE] 🚨 CRITICAL: AdSense data is invalid!');
+      console.error('[ADSENSE_COST_REVENUE]  CRITICAL: AdSense data is invalid!');
       return NextResponse.json({
         error: 'Invalid AdSense data',
         message: 'AdSense API returned invalid data format',
@@ -1619,7 +1617,7 @@ export async function POST(request: NextRequest) {
       accountData.cost += entry.cost;
       accountData.revenue += entry.revenue;
       accountData.profit += entry.profit;
-      accountData.clicks += entry.clicks;
+      accountData.clicks += entry.clicks;         
       accountData.impressions += entry.impressions;
       accountData.conversions += entry.conversions;
       accountData.campaignCount++;

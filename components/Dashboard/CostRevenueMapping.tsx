@@ -165,7 +165,7 @@ export default function CostRevenueMapping({
                 borderRadius: '4px',
                 fontFamily: 'monospace'
               }}>
-                TKID: {record.TKID}
+                ID: {record.TKID}
               </Text>
             </div>
           ),
@@ -451,92 +451,6 @@ export default function CostRevenueMapping({
     }
   ];
 
-  // Chart data for cost vs revenue
-  const chartData = {
-    labels: sortedData.slice(0, 10).map(item => 
-      item.campaign_name?.substring(0, 20) + (item.campaign_name && item.campaign_name.length > 20 ? '...' : '') || 'Unknown'
-    ),
-    datasets: [
-      {
-        label: 'Cost',
-        data: sortedData.slice(0, 10).map(item => item.cost),
-        backgroundColor: 'rgba(255, 77, 79, 0.6)',
-        borderColor: 'rgba(255, 77, 79, 1)',
-        borderWidth: 2,
-      },
-      {
-        label: 'Revenue',
-        data: sortedData.slice(0, 10).map(item => item.revenue),
-        backgroundColor: 'rgba(82, 196, 26, 0.6)',
-        borderColor: 'rgba(82, 196, 26, 1)',
-        borderWidth: 2,
-      }
-    ]
-  };
-
-  const chartOptions = {
-    responsive: true,
-    plugins: {
-      legend: {
-        position: 'top' as const,
-      },
-      title: {
-        display: true,
-        text: 'Top 10 Campaigns: Cost vs Revenue'
-      }
-    },
-    scales: {
-      y: {
-        beginAtZero: true,
-        ticks: {
-          callback: function(value: any) {
-            return '$' + value.toFixed(2);
-          }
-        }
-      }
-    }
-  };
-
-  // ROI trend chart
-  const roiChartData = {
-    labels: sortedData.slice(0, 10).map(item => 
-      item.campaign_name?.substring(0, 15) + '...' || 'Unknown'
-    ),
-    datasets: [
-      {
-        label: 'ROI %',
-        data: sortedData.slice(0, 10).map(item => item.roi),
-        fill: false,
-        borderColor: 'rgb(75, 192, 192)',
-        backgroundColor: sortedData.slice(0, 10).map(item => 
-          item.roi >= 0 ? 'rgba(82, 196, 26, 0.8)' : 'rgba(255, 77, 79, 0.8)'
-        ),
-        tension: 0.1
-      }
-    ]
-  };
-
-  const roiChartOptions = {
-    responsive: true,
-    plugins: {
-      legend: {
-        position: 'top' as const,
-      },
-      title: {
-        display: true,
-        text: 'ROI Performance by Campaign'
-      }
-    },
-    scales: {
-      y: {
-        ticks: {
-          callback: function(value: any) {
-            return value + '%';
-          }
-        }
-      }
-    }
-  };
 
   return (
     <div>
@@ -615,15 +529,13 @@ export default function CostRevenueMapping({
         </Col>
       </Row>
 
-      {/* Profitability Overview */}
-      <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-        <Col span={24}>
-          <Card>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <Title level={4} style={{ margin: 0 }}>
-                <TrophyOutlined style={{ color: '#faad14', marginRight: '8px' }} />
-                Campaign Profitability Overview
-              </Title>
+
+      {/* Detailed Table */}
+      {data.length > 0 && (
+        <Card 
+          title={
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>Campaign Details ({data.length} campaigns)</span>
               <Space>
                 <Switch 
                   checkedChildren="Detailed" 
@@ -633,73 +545,8 @@ export default function CostRevenueMapping({
                 />
               </Space>
             </div>
-            
-            <Row gutter={[16, 16]} style={{ marginBottom: '16px' }}>
-              <Col xs={24} sm={8}>
-                <div style={{ textAlign: 'center' }}>
-                  <Badge count={summary.profitableCampaigns} style={{ backgroundColor: '#52c41a' }}>
-                    <div style={{ padding: '12px', background: '#f6ffed', borderRadius: '8px', minWidth: '60px' }}>
-                      <Text strong style={{ color: '#52c41a' }}>Profitable</Text>
-                    </div>
-                  </Badge>
-                </div>
-              </Col>
-              
-              <Col xs={24} sm={8}>
-                <div style={{ textAlign: 'center' }}>
-                  <Badge count={summary.totalCampaigns - summary.profitableCampaigns} style={{ backgroundColor: '#ff4d4f' }}>
-                    <div style={{ padding: '12px', background: '#fff2f0', borderRadius: '8px', minWidth: '60px' }}>
-                      <Text strong style={{ color: '#ff4d4f' }}>Loss-Making</Text>
-                    </div>
-                  </Badge>
-                </div>
-              </Col>
-              
-              <Col xs={24} sm={8}>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ padding: '12px', background: '#f0f2f5', borderRadius: '8px' }}>
-                    <Text strong>{summary.profitabilityRate}%</Text>
-                    <br />
-                    <Text type="secondary">Success Rate</Text>
-                  </div>
-                </div>
-              </Col>
-            </Row>
-
-            {summary.totalCampaigns === 0 && (
-              <Alert
-                message="No data available"
-                description="No cost/revenue mappings found. Check TKID mapping between Google Ads and Inuvo data."
-                type="info"
-                showIcon
-                style={{ marginTop: '16px' }}
-              />
-            )}
-          </Card>
-        </Col>
-      </Row>
-
-      {/* Charts */}
-      {data.length > 0 && (
-        <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-          <Col xs={24} lg={12}>
-            <Card title="Cost vs Revenue Comparison">
-              <Bar data={chartData} options={chartOptions} />
-            </Card>
-          </Col>
-          
-          <Col xs={24} lg={12}>
-            <Card title="ROI Performance">
-              <Bar data={roiChartData} options={roiChartOptions} />
-            </Card>
-          </Col>
-        </Row>
-      )}
-
-      {/* Detailed Table */}
-      {detailedView && data.length > 0 && (
-        <Card 
-          title={`Campaign Details (${data.length} campaigns)`}
+          }
+          style={{ display: detailedView ? 'block' : 'none' }}
         >
           <Table
             columns={columns}

@@ -54,7 +54,7 @@ export default function InuvoDashboard() {
     dayjs(), // Today's start
     dayjs()  // Today's end (for today's live data)
   ]);
-  const [selectedAccount, setSelectedAccount] = useState<string>('7195529443');
+  const [selectedAccount, setSelectedAccount] = useState<string>('9532228491');
   const [dataType, setDataType] = useState<'realtime' | 'daily'>('realtime');
 
   // Check authentication and set user's account
@@ -159,14 +159,7 @@ export default function InuvoDashboard() {
   };
 
   const accounts = [
-    { id: '7195529443', name: 'Inuvo - Account - 02 - GMT' },
-    { id: '7616718892', name: 'Inuvo - Account 2 - PST (GMT -8:00)' },
-    { id: '9833281050', name: 'Inuvo - Account 3 - PST (GMT -8:00)' },
-    { id: '9790364217', name: 'Inuvo - Account - 03 - GMT' },
-    { id: '9835231086', name: 'Inuvo - Account - 04 - GMT' },
-    { id: '2420687578', name: 'Inuvo - Account - 05 - GMT' },
-    { id: '8277852439', name: 'Inuvo - Account 4 - PST (GMT -8:00)' },
-    { id: '3882415196', name: 'Inuvo - Account 6 - PST (GMT -8:00)' }
+    { id: '9532228491', name: 'kaptinklunk - Inuvo - PST' }
   ];
 
   return (
@@ -187,7 +180,7 @@ export default function InuvoDashboard() {
                     Inuvo Cost/Revenue Analysis
                   </Title>
                   <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'block', marginTop: '2px' }}>
-                    TKID-based mapping between Google Ads cost and Inuvo revenue
+                    Mapping between Google Ads cost and Inuvo revenue
                   </Text>
                 </div>
               </div>

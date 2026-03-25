@@ -57,6 +57,26 @@ export const ACCOUNT_TO_MCC: Record<string, keyof typeof MCC_CONFIGS> = {
   '4518158484': 'primary',
   '1056018921': 'primary',
   '8739175417': 'primary',
+  '2382992113': 'primary', // Predicto EST-01
+  '1640518611': 'primary', // Predicto EST-02
+  '8091270364': 'primary', // Predicto EST-03
+  '8846129452': 'primary', // Predicto EST-04
+  '6474140466': 'primary', // Predicto EST-05
+  '4920639194': 'primary', // Predicto EST-06
+  '7282297343': 'primary', // Predicto EST-07
+  '1298005744': 'primary', // Predicto EST-08
+  '5777354952': 'primary', // Predicto EST-09
+  '1449565595': 'primary', // Predicto EST-10
+  '3485355192': 'primary', // Predicto EST-11
+  '8395624186': 'primary', // Predicto EST-12
+  '2866937044': 'primary', // Predicto EST-13
+  '8474169341': 'primary', // Predicto EST-14
+  '4690287335': 'primary', // Predicto EST-15
+  '9352426268': 'primary', // Predicto EST-16
+  '9084810037': 'primary', // Predicto EST-17
+  '4517107811': 'primary', // Predicto EST-18
+  '4272056005': 'primary', // Predicto EST-19
+  '2563438099': 'primary', // Predicto EST-20
   '6731595092': 'primary', // Predicto EST-21
   '8656375545': 'primary', // Predicto EST-22
   '5802421650': 'primary', // Predicto EST-23

@@ -160,7 +160,7 @@ export function extractDomainFromUrl(url: string): string | null {
   } catch {
     return null;
   }
-}
+} 
 
 export async function getAdSenseAccounts(customerId?: string, adsenseAccountType?: AdSenseAccountType): Promise<any[]> {
   try {

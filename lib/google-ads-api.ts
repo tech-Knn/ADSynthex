@@ -25,7 +25,7 @@ function filterAccountsByFeed(feedType?: FeedType | null): typeof TARGET_ACCOUNT
 
   // EMERGENCY FIX: Check if feed is globally disabled (ads.com, compado, inuvo not in use)
   if (ACCOUNT_FEED_ACCESS && typeof ACCOUNT_FEED_ACCESS === 'object') {
-    const disabledFeeds: FeedType[] = ['adscom', 'compado', 'inuvo'];
+    const disabledFeeds: FeedType[] = ['adscom', 'compado'];
     if (disabledFeeds.includes(feedType)) {
       console.log(`[GOOGLE_ADS_API] ⚠️  Feed ${feedType} is DISABLED (not in use - saving quota)`);
       console.log(`[GOOGLE_ADS_API] Returning 0 accounts for ${feedType} feed (quota saving measure)`);

@@ -10,7 +10,7 @@ export interface AggregateMetrics {
   totalRevenue: number;
   totalProfit: number;
   averageROI: number;
-  averageRO AS: number;
+  averageROAS: number;
   totalImpressions: number;
   totalClicks: number;
   totalConversions: number;

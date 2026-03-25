@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Clear cache for new Inuvo accounts or if forceRefresh (and not in cooldown)
-      const newInuvoAccounts = ['8277852439', '3882415196'];
+      const newInuvoAccounts = ['9532228491'];
       const shouldClearCache = actualForceRefresh || (customerId && newInuvoAccounts.includes(customerId));
 
       if (shouldClearCache && customerId) {
@@ -115,7 +115,6 @@ export async function POST(request: NextRequest) {
 
       // Fetch Inuvo revenue data
       console.log('[INUVO_ENDPOINT] Fetching Inuvo revenue data...');
-1
       if (useMockData || !process.env.INUVO_ACCESS_TOKEN) {
         console.log('[INUVO_ENDPOINT] Using mock Inuvo data');
         inuvoData = getMockInuvoData(startDate, endDate);
@@ -246,14 +245,7 @@ export async function GET(request: NextRequest) {
         tkid_mapping: 'enabled' 
       },
       accounts: [
-        { id: '7195529443', name: 'Inuvo - Account - 02 - GMT' },
-        { id: '7616718892', name: 'Inuvo - Account 2 - PST (GMT -8:00)' },
-        { id: '9833281050', name: 'Inuvo - Account 3 - PST (GMT -8:00)' },
-        { id: '9790364217', name: 'Inuvo - Account - 03 - GMT' },
-        { id: '9835231086', name: 'Inuvo - Account - 04 - GMT' },
-        { id: '2420687578', name: 'Inuvo - Account - 05 - GMT' },
-        { id: '8277852439', name: 'Inuvo - Account 4 - PST (GMT -8:00)' },
-        { id: '3882415196', name: 'Inuvo - Account 6 - PST (GMT -8:00)' }
+        { id: '9532228491', name: 'kaptinklunk - Inuvo - PST' }
       ],
       endpoints: {
         realtime: '/api/inuvo (POST with dataType: "realtime")',

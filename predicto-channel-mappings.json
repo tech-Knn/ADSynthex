@@ -1,0 +1,208 @@
+{
+  "generatedAt": "2026-03-10T12:10:01.122Z",
+  "accountsProcessed": 25,
+  "accountsWithChannels": 0,
+  "accountsWithoutChannels": 25,
+  "mappings": [
+    {
+      "customerId": "6474140466",
+      "accountName": "Predicto - EST - 05",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    },
+    {
+      "customerId": "4920639194",
+      "accountName": "Predicto - EST - 06",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    },
+    {
+      "customerId": "1298005744",
+      "accountName": "Predicto - EST - 08",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    },
+    {
+      "customerId": "5777354952",
+      "accountName": "Predicto - EST - 09",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    },
+    {
+      "customerId": "1449565595",
+      "accountName": "Predicto - EST - 10",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    },
+    {
+      "customerId": "3485355192",
+      "accountName": "Predicto - EST - 11",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    },
+    {
+      "customerId": "8395624186",
+      "accountName": "Predicto - EST - 12",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    },
+    {
+      "customerId": "2866937044",
+      "accountName": "Predicto - EST - 13",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    },
+    {
+      "customerId": "8474169341",
+      "accountName": "Predicto - EST - 14",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    },
+    {
+      "customerId": "4690287335",
+      "accountName": "Predicto - EST - 15",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    },
+    {
+      "customerId": "9352426268",
+      "accountName": "Predicto - EST - 16",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    },
+    {
+      "customerId": "9084810037",
+      "accountName": "Predicto - EST - 17",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    },
+    {
+      "customerId": "4517107811",
+      "accountName": "Predicto - EST - 18",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    },
+    {
+      "customerId": "4272056005",
+      "accountName": "Predicto - EST - 19",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    },
+    {
+      "customerId": "2563438099",
+      "accountName": "Predicto - EST - 20",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    },
+    {
+      "customerId": "6731595092",
+      "accountName": "Predicto - EST - 21",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    },
+    {
+      "customerId": "8656375545",
+      "accountName": "Predicto - EST - 22",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    },
+    {
+      "customerId": "5802421650",
+      "accountName": "Predicto - EST - 23",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    },
+    {
+      "customerId": "1213532895",
+      "accountName": "Predicto - EST - 24",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    },
+    {
+      "customerId": "7273310309",
+      "accountName": "Predicto - EST - 25",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    },
+    {
+      "customerId": "3318899588",
+      "accountName": "Predicto - EST - 26",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    },
+    {
+      "customerId": "8997459454",
+      "accountName": "Predicto - EST - 27",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    },
+    {
+      "customerId": "5556851600",
+      "accountName": "Predicto - EST - 28",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    },
+    {
+      "customerId": "3907817554",
+      "accountName": "Predicto - EST - 29",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    },
+    {
+      "customerId": "7505004095",
+      "accountName": "Predicto - EST - 30",
+      "channels": [],
+      "campaignCount": 0,
+      "adCount": 0,
+      "sources": {}
+    }
+  ]
+}

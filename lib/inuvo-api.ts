@@ -17,6 +17,7 @@ export interface InuvoAccount {
 
 export interface InuvoRealtimeData {
   TKID: string;
+  CAMP_ID?: number;
   AGID: string;
   PLATFORM_TYPE_CODE: string;
   ESTIMATED_EARNINGS: number;
@@ -74,44 +75,9 @@ const INUVO_CONFIG: InuvoApiConfig = {
   baseUrl: 'https://partners.inuvo.com/analytics',
   accounts: [
     {
-      id: '7195529443',
-      name: 'Inuvo - Account - 02 - GMT',
-      timezone: 'GMT' // This account runs in PST but Inuvo API expects GMT
-    },
-    {
-      id: '7616718892',
-      name: 'Inuvo - Account 2 - PST (GMT -8:00)',
-      timezone: 'GMT'
-    },
-    {
-      id: '9833281050',
-      name: 'Inuvo - Account 3 - PST (GMT -8:00)',
-      timezone: 'GMT'
-    },
-    {
-      id: '9790364217',
-      name: 'Inuvo - Account - 03 - GMT',
-      timezone: 'GMT'
-    },
-    {
-      id: '9835231086',
-      name: 'Inuvo - Account - 04 - GMT',
-      timezone: 'GMT'
-    },
-    {
-      id: '2420687578',
-      name: 'Inuvo - Account - 05 - GMT',
-      timezone: 'GMT'
-    },
-    {
-      id: '8277852439',
-      name: 'Inuvo - Account 4 - PST (GMT -8:00)',
-      timezone: 'GMT'
-    },
-    {
-      id: '3882415196',
-      name: 'Inuvo - Account 6 - PST (GMT -8:00)',
-      timezone: 'GMT'
+      id: '9532228491',
+      name: 'kaptinklunk - Inuvo - PST',
+      timezone: 'PST'
     }
   ]
 };
@@ -131,88 +97,68 @@ export async function fetchInuvoRealtimeData(
   }
 
   try {
-    const accounts = accountId
-      ? INUVO_CONFIG.accounts.filter(acc => acc.id === accountId)
-      : INUVO_CONFIG.accounts;
+    const realtimeUrl = `${INUVO_CONFIG.baseUrl}/GetAdsenseLegacyByGeoRealtime`;
+    const params = new URLSearchParams({
+      accessToken: INUVO_CONFIG.accessToken,
+      startDate: formatDateForInuvo(startDate),
+      endDate: formatDateForInuvo(endDate)
+    });
 
-    const allData: InuvoRealtimeData[] = [];
-    const accountSummary: any = {};
-
-    for (const account of accounts) {
-      console.log(`[INUVO_API] Fetching data for account: ${account.name} (${account.id})`);
-
-      // Fetch realtime data by channel
-      const realtimeUrl = `${INUVO_CONFIG.baseUrl}/GetAdsenseOnlineRealtimeByChannel`;
-      const params = new URLSearchParams({
-        accessToken: INUVO_CONFIG.accessToken,
-        startDate: formatDateForInuvo(startDate),
-        endDate: formatDateForInuvo(endDate),
-        agid: account.id  // Add account ID to fetch account-specific data
-      });
-
-      const response = await fetch(`${realtimeUrl}?${params}`, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'AdSyntheX-Dashboard/1.0'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Inuvo API error: ${response.status} ${response.statusText}`);
+    console.log(`[INUVO_API] Calling ${realtimeUrl}?${params}`);
+    const response = await fetch(`${realtimeUrl}?${params}`, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'AdSyntheX-Dashboard/1.0'
       }
+    });
 
-      const data = await response.json();
-      console.log(`[INUVO_API] Account ${account.id} returned ${data.length || 0} records`);
-
-      // Process and filter data for this account
-      if (Array.isArray(data)) {
-        const accountData = data.map((item: any) => ({
-          TKID: item.TKID || '',
-          AGID: item.AGID || account.id,
-          PLATFORM_TYPE_CODE: item.PLATFORM_TYPE_CODE || 'Unknown',
-          ESTIMATED_EARNINGS: parseFloat(item.ESTIMATED_EARNINGS || 0),
-          AD_REQUESTS: parseInt(item.AD_REQUESTS || 0),
-          MATCHED_AD_REQUESTS: parseInt(item.MATCHED_AD_REQUESTS || 0),
-          PAGE_VIEWS: parseInt(item.PAGE_VIEWS || 0),
-          IMPRESSIONS: parseInt(item.IMPRESSIONS || 0),
-          INDIVIDUAL_AD_IMPRESSIONS: parseInt(item.INDIVIDUAL_AD_IMPRESSIONS || 0),
-          CLICKS: parseInt(item.CLICKS || 0),
-          FUNNEL_REQUESTS: parseInt(item.FUNNEL_REQUESTS || 0),
-          FUNNEL_IMPRESSIONS: parseInt(item.FUNNEL_IMPRESSIONS || 0),
-          FUNNEL_CLICKS: parseInt(item.FUNNEL_CLICKS || 0),
-          DATE_UPLOADED: item.DATE_UPLOADED || '',
-          DATE_UPLOADED_PST: item.DATE_UPLOADED_PST || '',
-          ESTIMATED_CLICKS: parseInt(item.ESTIMATED_CLICKS || 0),
-          DATE: item.DATE || formatDateForInuvo(startDate)
-        }));
-
-        allData.push(...accountData);
-
-        // Calculate account summary
-        accountSummary[account.id] = {
-          earnings: accountData.reduce((sum, item) => sum + item.ESTIMATED_EARNINGS, 0),
-          clicks: accountData.reduce((sum, item) => sum + item.CLICKS, 0),
-          impressions: accountData.reduce((sum, item) => sum + item.IMPRESSIONS, 0)
-        };
-      }
-
-      // Add delay between account requests
-      await new Promise(resolve => setTimeout(resolve, 1000));
+    if (!response.ok) {
+      throw new Error(`Inuvo API error: ${response.status} ${response.statusText}`);
     }
 
-    const response: InuvoResponse = {
+    const data = await response.json();
+    console.log(`[INUVO_API] Returned ${data.length || 0} records`);
+
+    const allData: InuvoRealtimeData[] = [];
+
+    if (Array.isArray(data)) {
+      const parsedData = data.map((item: any) => ({
+        TKID: item.CAMP_ID?.toString() || item.TKID?.toString() || '',
+        CAMP_ID: item.CAMP_ID,
+        AGID: item.AGID || accountId || 'unknown',
+        PLATFORM_TYPE_CODE: item.PLATFORM_TYPE_CODE || 'Unknown',
+        ESTIMATED_EARNINGS: parseFloat(item.ESTIMATED_EARNINGS || 0),
+        AD_REQUESTS: parseInt(item.AD_REQUESTS || 0),
+        MATCHED_AD_REQUESTS: parseInt(item.MATCHED_AD_REQUESTS || 0),
+        PAGE_VIEWS: parseInt(item.PAGE_VIEWS || 0),
+        IMPRESSIONS: parseInt(item.IMPRESSIONS || 0),
+        INDIVIDUAL_AD_IMPRESSIONS: parseInt(item.INDIVIDUAL_AD_IMPRESSIONS || 0),
+        CLICKS: parseInt(item.CLICKS || 0),
+        FUNNEL_REQUESTS: parseInt(item.FUNNEL_REQUESTS || 0),
+        FUNNEL_IMPRESSIONS: parseInt(item.FUNNEL_IMPRESSIONS || 0),
+        FUNNEL_CLICKS: parseInt(item.FUNNEL_CLICKS || 0),
+        DATE_UPLOADED: item.DATE_UPLOADED || '',
+        DATE_UPLOADED_PST: item.DATE_UPLOADED_PST || '',
+        ESTIMATED_CLICKS: parseInt(item.ESTIMATED_CLICKS || 0),
+        DATE: item.DATE || formatDateForInuvo(startDate)
+      }));
+
+      allData.push(...parsedData);
+    }
+
+    const apiResponse: InuvoResponse = {
       data: allData,
       total_earnings: allData.reduce((sum, item) => sum + item.ESTIMATED_EARNINGS, 0),
       total_clicks: allData.reduce((sum, item) => sum + item.CLICKS, 0),
       total_impressions: allData.reduce((sum, item) => sum + item.IMPRESSIONS, 0),
-      account_summary: accountSummary,
+      account_summary: {},
       _source: 'inuvo_api',
       _timestamp: new Date().toISOString()
     };
 
-    console.log(`[INUVO_API] Total: $${response.total_earnings.toFixed(2)} revenue, ${response.total_clicks} clicks`);
-    return response;
+    console.log(`[INUVO_API] Total: $${apiResponse.total_earnings.toFixed(2)} revenue, ${apiResponse.total_clicks} clicks`);
+    return apiResponse;
 
   } catch (error) {
     console.error('[INUVO_API] Error fetching data:', error);
@@ -235,78 +181,68 @@ export async function fetchInuvoDailyData(
   }
 
   try {
-    const accounts = accountId
-      ? INUVO_CONFIG.accounts.filter(acc => acc.id === accountId)
-      : INUVO_CONFIG.accounts;
+    const dailyUrl = `${INUVO_CONFIG.baseUrl}/GetAdsenseLegacyDaily`;
+    const params = new URLSearchParams({
+      accessToken: INUVO_CONFIG.accessToken,
+      startDate: formatDateForInuvo(startDate),
+      endDate: formatDateForInuvo(endDate)
+    });
 
-    const allData: InuvoRealtimeData[] = [];
-    const accountSummary: any = {};
-
-    for (const account of accounts) {
-      // Fetch daily data by channel
-      const dailyUrl = `${INUVO_CONFIG.baseUrl}/GetAdsenseOnlineDailyByChannel`;
-      const params = new URLSearchParams({
-        accessToken: INUVO_CONFIG.accessToken,
-        startDate: formatDateForInuvo(startDate),
-        agid: account.id  // Add account ID to fetch account-specific data
-      });
-
-      const response = await fetch(`${dailyUrl}?${params}`, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'AdSyntheX-Dashboard/1.0'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Inuvo daily API error: ${response.status} ${response.statusText}`);
+    console.log(`[INUVO_API] Calling ${dailyUrl}?${params}`);
+    const response = await fetch(`${dailyUrl}?${params}`, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'AdSyntheX-Dashboard/1.0'
       }
+    });
 
-      const data = await response.json();
-
-      if (Array.isArray(data)) {
-        const accountData = data.map((item: any) => ({
-          TKID: item.TKID || '',
-          AGID: item.AGID || account.id,
-          PLATFORM_TYPE_CODE: item.PLATFORM_TYPE_CODE || 'Unknown',
-          ESTIMATED_EARNINGS: parseFloat(item.ESTIMATED_EARNINGS || 0),
-          AD_REQUESTS: parseInt(item.AD_REQUESTS || 0),
-          MATCHED_AD_REQUESTS: parseInt(item.MATCHED_AD_REQUESTS || 0),
-          PAGE_VIEWS: parseInt(item.PAGE_VIEWS || 0),
-          IMPRESSIONS: parseInt(item.IMPRESSIONS || 0),
-          INDIVIDUAL_AD_IMPRESSIONS: parseInt(item.INDIVIDUAL_AD_IMPRESSIONS || 0),
-          CLICKS: parseInt(item.CLICKS || 0),
-          FUNNEL_REQUESTS: parseInt(item.FUNNEL_REQUESTS || 0),
-          FUNNEL_IMPRESSIONS: parseInt(item.FUNNEL_IMPRESSIONS || 0),
-          FUNNEL_CLICKS: parseInt(item.FUNNEL_CLICKS || 0),
-          DATE_UPLOADED: item.DATE_UPLOADED || '',
-          DATE_UPLOADED_PST: item.DATE_UPLOADED_PST || '',
-          ESTIMATED_CLICKS: parseInt(item.ESTIMATED_CLICKS || 0),
-          DATE: item.DATE || formatDateForInuvo(startDate)
-        }));
-
-        allData.push(...accountData);
-
-        accountSummary[account.id] = {
-          earnings: accountData.reduce((sum, item) => sum + item.ESTIMATED_EARNINGS, 0),
-          clicks: accountData.reduce((sum, item) => sum + item.CLICKS, 0),
-          impressions: accountData.reduce((sum, item) => sum + item.IMPRESSIONS, 0)
-        };
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 1000));
+    if (!response.ok) {
+      throw new Error(`Inuvo daily API error: ${response.status} ${response.statusText}`);
     }
 
-    return {
+    const data = await response.json();
+    console.log(`[INUVO_API] Returned ${data.length || 0} relative records`);
+
+    const allData: InuvoRealtimeData[] = [];
+
+    if (Array.isArray(data)) {
+      const parsedData = data.map((item: any) => ({
+        TKID: item.CAMP_ID?.toString() || item.TKID?.toString() || '',
+        CAMP_ID: item.CAMP_ID,
+        AGID: item.AGID || accountId || 'unknown',
+        PLATFORM_TYPE_CODE: item.PLATFORM_TYPE_CODE || 'Unknown',
+        ESTIMATED_EARNINGS: parseFloat(item.ESTIMATED_EARNINGS || 0),
+        AD_REQUESTS: parseInt(item.AD_REQUESTS || 0),
+        MATCHED_AD_REQUESTS: parseInt(item.MATCHED_AD_REQUESTS || 0),
+        PAGE_VIEWS: parseInt(item.PAGE_VIEWS || 0),
+        IMPRESSIONS: parseInt(item.IMPRESSIONS || 0),
+        INDIVIDUAL_AD_IMPRESSIONS: parseInt(item.INDIVIDUAL_AD_IMPRESSIONS || 0),
+        CLICKS: parseInt(item.CLICKS || 0),
+        FUNNEL_REQUESTS: parseInt(item.FUNNEL_REQUESTS || 0),
+        FUNNEL_IMPRESSIONS: parseInt(item.FUNNEL_IMPRESSIONS || 0),
+        FUNNEL_CLICKS: parseInt(item.FUNNEL_CLICKS || 0),
+        DATE_UPLOADED: item.DATE_UPLOADED || '',
+        DATE_UPLOADED_PST: item.DATE_UPLOADED_PST || '',
+        ESTIMATED_CLICKS: parseInt(item.ESTIMATED_CLICKS || 0),
+        DATE: item.DATE || formatDateForInuvo(startDate)
+      }));
+
+      allData.push(...parsedData);
+    }
+
+    const apiResponse: InuvoResponse = {
       data: allData,
       total_earnings: allData.reduce((sum, item) => sum + item.ESTIMATED_EARNINGS, 0),
       total_clicks: allData.reduce((sum, item) => sum + item.CLICKS, 0),
       total_impressions: allData.reduce((sum, item) => sum + item.IMPRESSIONS, 0),
-      account_summary: accountSummary,
+      account_summary: {},
       _source: 'inuvo_api',
       _timestamp: new Date().toISOString()
     };
+
+    console.log(`[INUVO_API] Total: $${apiResponse.total_earnings.toFixed(2)} revenue, ${apiResponse.total_clicks} clicks`);
+    return apiResponse;
 
   } catch (error) {
     console.error('[INUVO_API] Error fetching daily data:', error);
@@ -329,7 +265,7 @@ function extractTKIDFromURL(url: string): string | null {
 
     // Try URL parameter first
     const urlParams = new URLSearchParams(url.split('?')[1] || '');
-    const tkidParam = urlParams.get('tkid') || urlParams.get('TKID');
+    const tkidParam = urlParams.get('tkid') || urlParams.get('TKID') || urlParams.get('camp_id') || urlParams.get('CAMP_ID');
     if (tkidParam) return tkidParam;
 
     // Try path-based TKID
@@ -358,8 +294,9 @@ export function mapCostRevenue(
 
   const mappings: CostRevenueMapping[] = [];
   const inuvoMap = new Map<string, InuvoRealtimeData[]>();
+  const inuvoCampIdMap = new Map<string, InuvoRealtimeData[]>();
 
-  // Group Inuvo data by TKID (case-insensitive)
+  // Group Inuvo data by TKID (case-insensitive) and CAMP_ID
   inuvoData.forEach(item => {
     if (item.TKID) {
       const tkid = item.TKID.toString().trim().toLowerCase(); // Normalize to lowercase
@@ -368,9 +305,18 @@ export function mapCostRevenue(
       }
       inuvoMap.get(tkid)!.push(item);
     }
+    
+    if (item.CAMP_ID) {
+      const campId = item.CAMP_ID.toString().trim();
+      if (!inuvoCampIdMap.has(campId)) {
+        inuvoCampIdMap.set(campId, []);
+      }
+      inuvoCampIdMap.get(campId)!.push(item);
+    }
   });
 
   console.log(`[COST_REVENUE_MAPPING] Inuvo TKIDs available (${inuvoMap.size}): ${Array.from(inuvoMap.keys()).slice(0, 10).join(', ')}${inuvoMap.size > 10 ? '...' : ''}`);
+  console.log(`[COST_REVENUE_MAPPING] Inuvo CAMP_IDs available (${inuvoCampIdMap.size}): ${Array.from(inuvoCampIdMap.keys()).slice(0, 10).join(', ')}${inuvoCampIdMap.size > 10 ? '...' : ''}`);
 
   // Map Google Ads data with Inuvo revenue using TKID extraction
   googleAdsData.forEach(ad => {
@@ -394,10 +340,23 @@ export function mapCostRevenue(
 
     if (tkid) {
       const normalizedTkid = tkid.toLowerCase(); // Normalize to lowercase for comparison
-      console.log(`[COST_REVENUE_MAPPING] Processing TKID: ${tkid} (normalized: ${normalizedTkid}), Cost: $${cost}`);
+
+      let matchedRevenueRecords: InuvoRealtimeData[] | null = null;
+      let matchedBy = '';
 
       if (inuvoMap.has(normalizedTkid)) {
-        const revenueRecords = inuvoMap.get(normalizedTkid)!;
+        matchedRevenueRecords = inuvoMap.get(normalizedTkid)!;
+        matchedBy = 'TKID';
+      } else if (ad.campaign_id && inuvoCampIdMap.has(ad.campaign_id.toString().trim())) {
+        matchedRevenueRecords = inuvoCampIdMap.get(ad.campaign_id.toString().trim())!;
+        matchedBy = 'CAMP_ID';
+        tkid = ad.campaign_id.toString().trim(); // Ensure tkid is updated to campaign_id for mappings
+      }
+
+      console.log(`[COST_REVENUE_MAPPING] Processing ad with Cost: $${cost}, TKID extract: ${normalizedTkid}, CampaignID: ${ad.campaign_id}`);
+
+      if (matchedRevenueRecords) {
+        const revenueRecords = matchedRevenueRecords;
 
         // Aggregate Inuvo metrics
         const totalRevenue = revenueRecords.reduce((sum, record) => sum + record.ESTIMATED_EARNINGS, 0);
@@ -415,7 +374,7 @@ export function mapCostRevenue(
         const cpa = ad.metrics?.cpa || (conversions > 0 ? cost / conversions : 0);
 
         mappings.push({
-          TKID: tkid,
+          TKID: tkid || '',
           // Google Ads Metrics
           conversions: conversions,
           cpa: cpa,
@@ -431,14 +390,14 @@ export function mapCostRevenue(
           date: ad.date || revenueRecords[0]?.DATE || formatDateForDisplay(new Date())
         });
 
-        console.log(`[COST_REVENUE_MAPPING] Mapped TKID ${tkid} (${normalizedTkid}): $${cost} cost → $${totalRevenue.toFixed(2)} revenue`);
+        console.log(`[COST_REVENUE_MAPPING] Mapped by ${matchedBy} ${tkid}: $${cost} cost → $${totalRevenue.toFixed(2)} revenue`);
       } else {
         // Ad has cost but no revenue (no matching TKID in inuvo)
         const conversions = ad.metrics?.conversions || 0;
         const cpa = ad.metrics?.cpa || (conversions > 0 ? cost / conversions : 0);
 
         mappings.push({
-          TKID: tkid,
+          TKID: tkid || '',
           // Google Ads Metrics
           conversions: conversions,
           cpa: cpa,
@@ -531,7 +490,7 @@ export function getMockInuvoData(startDate: string, endDate: string): InuvoRespo
   const mockData: InuvoRealtimeData[] = [
     {
       TKID: 'article_123456',
-      AGID: '7195529443',
+      AGID: '9532228491',
       PLATFORM_TYPE_CODE: 'Desktop',
       ESTIMATED_EARNINGS: 185.75,
       AD_REQUESTS: 2800,
@@ -550,7 +509,7 @@ export function getMockInuvoData(startDate: string, endDate: string): InuvoRespo
     },
     {
       TKID: 'article_789012',
-      AGID: '7195529443',
+      AGID: '9532228491',
       PLATFORM_TYPE_CODE: 'HighEndMobile',
       ESTIMATED_EARNINGS: 142.30,
       AD_REQUESTS: 3500,
@@ -569,7 +528,7 @@ export function getMockInuvoData(startDate: string, endDate: string): InuvoRespo
     },
     {
       TKID: 'article_345678',
-      AGID: '7195529443',
+      AGID: '9532228491',
       PLATFORM_TYPE_CODE: 'Tablet',
       ESTIMATED_EARNINGS: 98.45,
       AD_REQUESTS: 1800,
@@ -598,45 +557,10 @@ export function getMockInuvoData(startDate: string, endDate: string): InuvoRespo
     total_clicks: totalClicks,
     total_impressions: totalImpressions,
     account_summary: {
-      '7195529443': {
-        earnings: totalEarnings * 0.20,
-        clicks: Math.floor(totalClicks * 0.20),
-        impressions: Math.floor(totalImpressions * 0.20)
-      },
-      '7616718892': {
-        earnings: totalEarnings * 0.12,
-        clicks: Math.floor(totalClicks * 0.12),
-        impressions: Math.floor(totalImpressions * 0.12)
-      },
-      '9833281050': {
-        earnings: totalEarnings * 0.15,
-        clicks: Math.floor(totalClicks * 0.15),
-        impressions: Math.floor(totalImpressions * 0.15)
-      },
-      '9790364217': {
-        earnings: totalEarnings * 0.12,
-        clicks: Math.floor(totalClicks * 0.12),
-        impressions: Math.floor(totalImpressions * 0.12)
-      },
-      '9835231086': {
-        earnings: totalEarnings * 0.12,
-        clicks: Math.floor(totalClicks * 0.12),
-        impressions: Math.floor(totalImpressions * 0.12)
-      },
-      '2420687578': {
-        earnings: totalEarnings * 0.09,
-        clicks: Math.floor(totalClicks * 0.09),
-        impressions: Math.floor(totalImpressions * 0.09)
-      },
-      '8277852439': {
-        earnings: totalEarnings * 0.10,
-        clicks: Math.floor(totalClicks * 0.10),
-        impressions: Math.floor(totalImpressions * 0.10)
-      },
-      '3882415196': {
-        earnings: totalEarnings * 0.10,
-        clicks: Math.floor(totalClicks * 0.10),
-        impressions: Math.floor(totalImpressions * 0.10)
+      '9532228491': {
+        earnings: totalEarnings,
+        clicks: totalClicks,
+        impressions: totalImpressions
       }
     },
     _source: 'inuvo_api',

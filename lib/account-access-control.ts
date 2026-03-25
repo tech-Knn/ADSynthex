@@ -18,7 +18,7 @@ export interface AccountAccessConfig {
  * EMERGENCY FIX 2026-02-07: Disabled feeds to prevent quota exhaustion
  * Set to empty array to disable a feed entirely
  */
-export const DISABLED_FEEDS: FeedType[] = ['adscom', 'compado', 'inuvo'];
+export const DISABLED_FEEDS: FeedType[] = ['adscom', 'compado'];
 
 /**
  * Map of account IDs to their allowed feeds
@@ -93,6 +93,9 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_4518158484': ['adsense'], // AFS-TRT-IST-13
   'CID_1056018921': ['adsense'], // AFS-TRT-IST-14
   'CID_8739175417': ['adsense'], // AFS-TRT-IST-15
+
+  // Inuvo Accounts
+  'CID_9532228491': ['inuvo'], // kaptinklunk - Inuvo - PST
 
   // CarHp Accounts (search.carhp.com - GEO-based campaigns) - dedicated /carhp page
   'CID_5079394847': ['carhp'], // CarHp New 02

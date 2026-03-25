@@ -118,6 +118,8 @@ export async function POST(request: NextRequest) {
         console.log(`[PREDICTO_COST_REVENUE] Using cached data - applying predefined channel filtering`);
 
         // CRITICAL: For individual account views, filter by predefined channels
+        let useCachedData = true;
+
         if (!isMultiAccount && finalCustomerId) {
           const { getAllowedChannels } = await import('@/lib/account-access-control');
           const normalizedCustomerId = finalCustomerId.toString().startsWith('CID_')
@@ -147,42 +149,47 @@ export async function POST(request: NextRequest) {
             const afterFilter = filteredData.length;
             console.log(`[PREDICTO_COST_REVENUE] 🎯 Cache filtered by predefined channels (${predefinedChannels.join(', ')}): ${beforeFilter} → ${afterFilter} items`);
           } else {
-            // No predefined channels for this account — show only cost items.
-            // Keeping all revenue here would leak other accounts' revenue.
-            const beforeFilter = filteredData.length;
-            filteredData = filteredData.filter((item: any) => item.has_cost_data);
-            const afterFilter = filteredData.length;
-
-            console.log(`[PREDICTO_COST_REVENUE] Single account cache (no channels configured): Filtered out ${beforeFilter - afterFilter} revenue-only items to prevent cross-account leakage`);
+            // No predefined channels - cannot use cached data safely
+            // Force fresh fetch to enable dynamic channel detection
+            console.warn(`[PREDICTO_COST_REVENUE] ⚠️  Account ${finalCustomerId} has no predefined channels - bypassing cache`);
+            console.warn(`[PREDICTO_COST_REVENUE] Fetching fresh data to enable dynamic channel detection from campaign URLs`);
+            useCachedData = false;
           }
 
-          console.log(`[PREDICTO_COST_REVENUE] Showing ${filteredData.length} items: ${filteredData.filter((i: any) => i.has_cost_data).length} with cost, ${filteredData.filter((i: any) => i.has_revenue_data).length} with revenue`);
+          if (useCachedData) {
+            console.log(`[PREDICTO_COST_REVENUE] Showing ${filteredData.length} items: ${filteredData.filter((i: any) => i.has_cost_data).length} with cost, ${filteredData.filter((i: any) => i.has_revenue_data).length} with revenue`);
+          }
         }
 
-        // Recalculate summary and account summaries for filtered data
-        const filteredSummary = calculateSummary(filteredData);
+        // Only return cached data if we decided to use it
+        if (useCachedData) {
+          // Recalculate summary and account summaries for filtered data
+          const filteredSummary = calculateSummary(filteredData);
 
-        // Import aggregateByAccount for cached data
-        const { aggregateByAccount } = await import('@/lib/predicto-cost-revenue');
-        const filteredAccountSummaries = aggregateByAccount(filteredData);
+          // Import aggregateByAccount for cached data
+          const { aggregateByAccount } = await import('@/lib/predicto-cost-revenue');
+          const filteredAccountSummaries = aggregateByAccount(filteredData);
 
-        return NextResponse.json({
-          campaign_aggregated: filteredData,
-          summary: filteredSummary,
-          account_summaries: filteredAccountSummaries,
-          google_ads_data: cachedAggregated.data.google_ads_data || {},
-          predicto_data: cachedAggregated.data.predicto_data || {},
-          cost_revenue_mapping: [],
-          _source: 'redis-aggregated-cache',
-          _timestamp: new Date().toISOString(),
-          _message: `Cached aggregated data (${Math.round(cachedAggregated.age / 1000)}s old)${!isMultiAccount ? ' - single account view' : ''}`,
-          _dataFreshness: {
-            source: 'redis',
-            ageMinutes: Math.round(cachedAggregated.age / 60000),
-            isFresh: cachedAggregated.age < 1800000, // < 30 min
-            message: `Aggregated cache (${Math.round(cachedAggregated.age / 60000)} min old)`,
-          },
-        });
+          return NextResponse.json({
+            campaign_aggregated: filteredData,
+            summary: filteredSummary,
+            account_summaries: filteredAccountSummaries,
+            google_ads_data: cachedAggregated.data.google_ads_data || {},
+            predicto_data: cachedAggregated.data.predicto_data || {},
+            cost_revenue_mapping: [],
+            _source: 'redis-aggregated-cache',
+            _timestamp: new Date().toISOString(),
+            _message: `Cached aggregated data (${Math.round(cachedAggregated.age / 1000)}s old)${!isMultiAccount ? ' - single account view' : ''}`,
+            _dataFreshness: {
+              source: 'redis',
+              ageMinutes: Math.round(cachedAggregated.age / 60000),
+              isFresh: cachedAggregated.age < 1800000, // < 30 min
+              message: `Aggregated cache (${Math.round(cachedAggregated.age / 60000)} min old)`,
+            },
+          });
+        }
+
+        // If not using cached data, fall through to fresh fetch
       }
     }
 
@@ -800,37 +807,61 @@ export async function POST(request: NextRequest) {
 
         if (ownedChannels.length === 0) {
           console.warn(`[PREDICTO] No channel ownership configured for account ${finalCustomerId}`);
-          console.warn(`[PREDICTO] Using smart filtering to match revenue with cost campaigns`);
+          console.warn(`[PREDICTO] Using dynamic channel detection from ALL campaigns and ads`);
           console.warn(`[PREDICTO] For best accuracy, configure ownership in lib/predicto-channel-ownership.ts`);
 
-          const costCampaignChannels = new Set<string>();
+          // IMPROVED: Extract channels from ALL campaigns (not just with cost > 0)
+          const detectedChannels = new Set<string>();
+
+          // Extract from all campaign URLs
           allCampaigns.forEach(c => {
-            if (c.cost > 0 && c.final_urls) {
+            if (c.final_urls && Array.isArray(c.final_urls)) {
               c.final_urls.forEach((url: string) => {
-                extractChannelIdsFromUrl(url).forEach(ch => costCampaignChannels.add(ch.toLowerCase()));
+                extractChannelIdsFromUrl(url).forEach(ch => detectedChannels.add(ch.toLowerCase()));
               });
             }
           });
 
-          console.log(`[PREDICTO] Found ${costCampaignChannels.size} channels in cost campaigns: ${Array.from(costCampaignChannels).slice(0, 5).join(', ')}`);
+          // Also extract directly from ads for accounts where campaigns might not have URLs
+          const adsDataArray = Array.isArray(googleAdsData) ? googleAdsData : [googleAdsData];
+          adsDataArray.forEach((accountData: any) => {
+            const actualData = accountData?.data || accountData;
+            if (actualData?.ads && Array.isArray(actualData.ads)) {
+              actualData.ads.forEach((ad: any) => {
+                if (ad.final_urls && Array.isArray(ad.final_urls)) {
+                  ad.final_urls.forEach((url: string) => {
+                    extractChannelIdsFromUrl(url).forEach(ch => detectedChannels.add(ch.toLowerCase()));
+                  });
+                }
+              });
+            }
+          });
+
+          console.log(`[PREDICTO] 🔍 Dynamic detection found ${detectedChannels.size} channels from campaigns/ads`);
+          if (detectedChannels.size > 0) {
+            console.log(`[PREDICTO] Channels: ${Array.from(detectedChannels).slice(0, 10).join(', ')}${detectedChannels.size > 10 ? '...' : ''}`);
+          }
 
           const beforeFilter = combined.length;
 
-          if (costCampaignChannels.size === 0) {
-            // No channels detected in campaign URLs and no predefined ownership config.
+          if (detectedChannels.size === 0) {
+            // No channels detected in campaign/ad URLs and no predefined ownership config.
             // Filter to ONLY cost items to prevent leaking revenue from other accounts.
-            const beforeFilter = combined.length;
             combined = combined.filter((item: any) => item.has_cost_data);
             const afterFilter = combined.length;
-            console.warn(`[PREDICTO] No channels configured for account ${finalCustomerId} - showing cost-only data`);
+            console.warn(`[PREDICTO] ⚠️  No channels detected for account ${finalCustomerId} - showing cost-only data`);
             console.warn(`[PREDICTO] Filtered out ${beforeFilter - afterFilter} revenue-only items to prevent cross-account revenue leakage`);
-            console.warn(`[PREDICTO] To see revenue, configure channel IDs in lib/account-access-control.ts or add ?cid= params to campaign URLs`);
+            console.warn(`[PREDICTO] To see revenue: Add ?cid= parameters to campaign/ad URLs in Google Ads`);
+            console.warn(`[PREDICTO] Example: https://yoursite.com/search?cid=ch88087`);
           } else {
+            // Match revenue with dynamically detected channels
             combined = combined.filter(item => {
+              // Always keep cost data
               if (item.has_cost_data) return true;
 
+              // For revenue items, check if their channel_ids match detected channels
               if (item.channel_ids && Array.isArray(item.channel_ids)) {
-                return item.channel_ids.some(ch => costCampaignChannels.has(ch.toLowerCase()));
+                return item.channel_ids.some(ch => detectedChannels.has(ch.toLowerCase()));
               }
 
               return false;
@@ -838,7 +869,9 @@ export async function POST(request: NextRequest) {
 
             const kept = combined.length;
             const blocked = beforeFilter - kept;
-            console.log(`[PREDICTO] Smart filter: kept ${kept} items (${combined.filter(i => i.has_cost_data).length} with cost, ${combined.filter(i => !i.has_cost_data && i.has_revenue_data).length} matched revenue), blocked ${blocked} unrelated channels`);
+            const costItems = combined.filter(i => i.has_cost_data).length;
+            const revenueItems = combined.filter(i => !i.has_cost_data && i.has_revenue_data).length;
+            console.log(`[PREDICTO] ✅ Dynamic channel matching: ${kept} items kept (${costItems} cost, ${revenueItems} matched revenue), ${blocked} blocked`);
           }
         } else {
           console.log(`[PREDICTO_COST_REVENUE]    Account owns ${ownedChannels.length} channels: ${ownedChannels.slice(0, 10).join(', ')}${ownedChannels.length > 10 ? '...' : ''}`);
