@@ -23,6 +23,10 @@ const CARHP_ACCOUNTS = [
     { id: '1791919543', name: 'CarHp New 04', descriptiveName: 'CarHp New 04 (IST)' },
     { id: '7839557944', name: 'CarHp New 05', descriptiveName: 'CarHp New 05 (IST)' },
     { id: '2324382023', name: 'CarHp New 06', descriptiveName: 'CarHp New 06 (IST)' },
+    { id: '8613393445', name: 'CarHp New 07', descriptiveName: 'CarHp New 07 (IST)' },
+    { id: '8817588152', name: 'CarHp New 08', descriptiveName: 'CarHp New 08 (IST)' },
+    { id: '5106471180', name: 'CarHp New 09', descriptiveName: 'CarHp New 09 (IST)' },
+    { id: '1594975507', name: 'CarHp New 10', descriptiveName: 'CarHp New 10 (IST)' },
     { id: '1161525078', name: 'CAR-HP-01', descriptiveName: 'CAR-HP-01 (PST)' },
     { id: '9345796923', name: 'CAR-HP-02', descriptiveName: 'CAR-HP-02 (PST)' },
 ];
