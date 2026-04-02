@@ -6,7 +6,7 @@
  * Regular users only have access to specific feeds based on their account type.
  */
 
-export type FeedType = 'adscom' | 'compado' | 'inuvo' | 'adsense' | 'predicto' | 'carhp';
+export type FeedType = 'adscom' | 'compado' | 'inuvo' | 'adsense' | 'predicto' | 'carhp' | 'thefactrelay';
 
 export interface AccountAccessConfig {
   accountId: string;
@@ -121,6 +121,10 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_5827892184': ['carhp'], // CarHp New 19
   'CID_1757864848': ['carhp'], // CarHp New 20
 
+  // TheFactRelay Accounts
+  'CID_2144311178': ['thefactrelay'], // TheFactRelay 01
+  'CID_7371749207': ['thefactrelay'], // TheFactRelay 02
+
   // EMERGENCY FIX 2026-02-07: Compado accounts DISABLED (not in use, wasting quota)
   // 'CID_5416418019': ['compado'],
   // 'CID_5108802445': ['compado'],
@@ -220,6 +224,7 @@ export const FEED_ROUTES: Record<FeedType, string[]> = {
   adsense: ['/adsense', '/adsense-test', '/api/adsense', '/api/adsense-cost-revenue', '/api/adsense-test-revenue'],
   predicto: ['/predicto', '/api/predicto', '/api/predicto-cost-revenue'],
   carhp: ['/carhp', '/api/adsense-cost-revenue'],
+  thefactrelay: ['/thefactrelay', '/api/adsense-cost-revenue'],
 };
 
 /**

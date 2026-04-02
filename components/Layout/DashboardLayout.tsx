@@ -13,7 +13,8 @@ import {
   ThunderboltOutlined,
   GoogleOutlined,
   FileSearchOutlined,
-  CarOutlined
+  CarOutlined,
+  FileTextOutlined
 } from '@ant-design/icons';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
@@ -239,6 +240,16 @@ const CUSTOMER_ACCOUNTS = [
     id: 'CID_9345796923',
     name: 'CAR-HP-02',
     value: '9345796923'
+  },
+  {
+    id: 'CID_2144311178',
+    name: 'TheFactRelay 01',
+    value: '2144311178'
+  },
+  {
+    id: 'CID_7371749207',
+    name: 'TheFactRelay 02',
+    value: '7371749207'
   },
   {
     id: 'CID_5416418019',
@@ -543,6 +554,7 @@ const getFeedTypeFromPathname = (pathname: string): FeedType | null => {
   if (pathname === '/adsense') return 'adsense';
   if (pathname === '/predicto') return 'predicto';
   if (pathname === '/carhp') return 'carhp';
+  if (pathname === '/thefactrelay') return 'thefactrelay';
   return null;
 };
 
@@ -608,6 +620,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     if (pathname === '/adsense') return '7';
     if (pathname === '/predicto') return '5';
     if (pathname === '/carhp') return '8';
+    if (pathname === '/thefactrelay') return '9';
     return '1';
   };
 
@@ -639,7 +652,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         console.log(`[DashboardLayout] User ${accountId} has access to feeds:`, feeds);
       } else if (authType === 'admin') {
         // Admin has access to all feeds
-        setAllowedFeeds(['adscom', 'compado', 'inuvo', 'adsense', 'predicto', 'carhp']);
+        setAllowedFeeds(['adscom', 'compado', 'inuvo', 'adsense', 'predicto', 'carhp', 'thefactrelay']);
       }
 
       // If not admin and we have an account ID, select it by default
@@ -817,6 +830,12 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 key: '5',
                 icon: <GoogleOutlined />,
                 label: <Link href="/predicto">Predicto</Link>,
+              }] : []),
+              // TheFactRelay - Only show if user has 'thefactrelay' access
+              ...(allowedFeeds.includes('thefactrelay') ? [{
+                key: '9',
+                icon: <FileTextOutlined />,
+                label: <Link href="/thefactrelay">TheFactRelay</Link>,
               }] : []),
               // {
               //   key: '6',

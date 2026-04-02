@@ -111,6 +111,10 @@ export const ACCOUNT_TO_MCC: Record<string, keyof typeof MCC_CONFIGS> = {
   '1757864848': 'primary',  // CarHp New 20 (IST)
   '1161525078': 'primary',  // CAR-HP-01 (PST)
   '9345796923': 'primary',  // CAR-HP-02 (PST)
+
+  // TheFactRelay Accounts
+  '2144311178': 'primary',  // TheFactRelay 01
+  '7371749207': 'primary',  // TheFactRelay 02
 };
 
 export function getMCCForAccount(customerId: string): MCCCredentials | null {

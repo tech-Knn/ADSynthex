@@ -2,7 +2,7 @@ import { E } from '@upstash/redis/zmscore-DWj9Vh1g';
 import { OAuth2Client } from 'google-auth-library';
 import { getMCCForAccount, getDefaultMCC } from './mcc-config';
 
-export type AdSenseAccountType = 'afs' | 'carhp';
+export type AdSenseAccountType = 'afs' | 'carhp' | 'thefactrelay';
 
 function getOAuthClient(customerId?: string, adsenseAccountType?: AdSenseAccountType): OAuth2Client {
   // CARHP: use dedicated CARHP AdSense OAuth credentials

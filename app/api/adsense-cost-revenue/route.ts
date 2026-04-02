@@ -39,8 +39,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { startDate, endDate, adsenseAccountId, customerId, accountIds, forceLive, adsenseAccountType } = body;
 
-    // Determine feed type: 'carhp' for CARHP accounts, 'adsense' for AFS accounts
-    const requiredFeedType = adsenseAccountType === 'carhp' ? 'carhp' : 'adsense';
+    // Determine feed type based on account type
+    const requiredFeedType = adsenseAccountType === 'carhp' ? 'carhp' : adsenseAccountType === 'thefactrelay' ? 'thefactrelay' : 'adsense';
 
     console.log('[ADSENSE_REVENUE] ===== REQUEST START =====');
     console.log('[ADSENSE_REVENUE] Date range:', startDate, 'to', endDate);
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
     const accountsKey = accountIds?.length > 0
       ? accountIds.sort().join(',')
       : customerId || 'unknown';
-    const feedPrefix = requiredFeedType === 'carhp' ? 'carhp' : 'afs';
+    const feedPrefix = requiredFeedType === 'carhp' ? 'carhp' : requiredFeedType === 'thefactrelay' ? 'thefactrelay' : 'afs';
     const aggregatedCacheKey = `${feedPrefix}_aggregated:${accountsKey}:${adsenseAccountId}:${startDate}:${endDate}`;
 
     // Check aggregated cache FIRST (unless force refresh)
