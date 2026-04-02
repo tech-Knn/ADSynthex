@@ -494,7 +494,7 @@ export async function POST(request: NextRequest) {
           console.log('[ADSENSE_COST_REVENUE] FORCE LIVE: Bypassing account-level cache, fetching fresh data');
         } else {
           console.log('[ADSENSE_COST_REVENUE] Cache MISS, fetching from bulletproofAPI');
-        }
+        } 
         googleAdsDataPromises = bulletproofAPI.getData(startDate, endDate, customerId, {
           priority: isToday ? 9 : 8,
           allowStale: !forceLive, // CRITICAL: Bypass cache when forceLive=true
@@ -648,7 +648,7 @@ export async function POST(request: NextRequest) {
             console.warn(`[ADSENSE_COST_REVENUE] WARNING: ${Math.round(failureRate * 100)}% of accounts failed! Proceeding with Revenue only.`);
           }
 
-          message += `⚠️ WARNING: ${failedAccounts.length}/${accountIds.length} accounts failed! Data incomplete. `;
+          message += `WARNING: ${failedAccounts.length}/${accountIds.length} accounts failed! Data incomplete. `;
         }
       } else {
         // Single account
@@ -748,8 +748,8 @@ export async function POST(request: NextRequest) {
     message += `AdSense: ${adsenseData.length} records. `;
 
     if (adsenseData.length === 0) {
-      console.warn('[ADSENSE_COST_REVENUE] ⚠️ WARNING: AdSense returned 0 records for date range');
-      message += '⚠️ No AdSense revenue data found. ';
+      console.warn('[ADSENSE_COST_REVENUE]  WARNING: AdSense returned 0 records for date range');
+      message += ' No AdSense revenue data found. ';
     } else {
       const totalAdSenseRevenue = adsenseData.reduce((sum, r) => sum + r.earnings, 0);
       console.log(`[ADSENSE_COST_REVENUE] AdSense: ${adsenseData.length} records, Total: $${totalAdSenseRevenue.toFixed(2)}`);
@@ -1723,6 +1723,7 @@ export async function POST(request: NextRequest) {
 
     // Recalculate summary with filtered data
     const filteredTotalCost = filteredCampaignAggregated.reduce((sum: number, c: any) => sum + c.cost, 0);
+    
     const filteredTotalRevenue = filteredCampaignAggregated.reduce((sum: number, c: any) => sum + c.revenue, 0);
     const filteredTotalProfit = filteredTotalRevenue - filteredTotalCost;
     const filteredTotalConversions = filteredCampaignAggregated.reduce((sum: number, c: any) => sum + c.conversions, 0);
@@ -1822,7 +1823,7 @@ export async function POST(request: NextRequest) {
         dataType: 'unified',
         priority: 'high'
       });
-      console.log(`[ADSENSE_REVENUE] ✅ Data quality passed - Saved aggregated result to cache (TTL: ${AGGREGATED_CACHE_TTL}s)`);
+      console.log(`[ADSENSE_REVENUE] Data quality passed - Saved aggregated result to cache (TTL: ${AGGREGATED_CACHE_TTL}s)`);
     } catch (err) {
       console.warn('[ADSENSE_REVENUE] Failed to save aggregated cache:', err);
     }

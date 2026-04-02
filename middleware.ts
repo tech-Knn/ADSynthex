@@ -24,6 +24,7 @@ const publicPaths = [
   '/api/clear-cache',  // Cache clearing endpoint
   '/api/find-duplicate-style-ids',  // Find duplicate style_ids across accounts
   '/api/adsense-accounts',  // Get AdSense accounts
+  '/api/debug-gads', // For diagnosing Google Ads
   '/api/afs-unmapped-revenue',  // Get unmapped AFS revenue
   '/logout'
 ];

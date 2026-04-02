@@ -249,15 +249,48 @@ export function combineGoogleAdsAndPredictoData(
 
 /**
  * Calculate summary statistics
+ * CRITICAL FIX: Deduplicate channel revenue to prevent over-counting
  */
 export function calculateSummary(combinedData: ReturnType<typeof combineGoogleAdsAndPredictoData>) {
+  // CRITICAL: Build unique channel revenue map to prevent double-counting
+  // When multiple campaigns share the same channel, we must count that channel's revenue only ONCE
+  const uniqueChannelRevenue = new Map<string, number>();
+
+  // Collect unique channel revenues
+  combinedData.forEach(item => {
+    if (item.channel_ids && item.channel_ids.length > 0) {
+      // This item has channels - split its revenue proportionally across its channels
+      const revenuePerChannel = item.revenue / item.channel_ids.length;
+      item.channel_ids.forEach(channelId => {
+        uniqueChannelRevenue.set(channelId, (uniqueChannelRevenue.get(channelId) || 0) + revenuePerChannel);
+      });
+    } else if (item.has_revenue_data && !item.has_cost_data) {
+      // Orphaned revenue (no channel IDs) - use campaign_id as unique key
+      uniqueChannelRevenue.set(item.campaign_id, item.revenue);
+    }
+  });
+
+  // Sum unique channel revenues (this is the CORRECT total)
+  const totalRevenueDeduped = Array.from(uniqueChannelRevenue.values()).reduce((sum, rev) => sum + rev, 0);
+
+  // Log deduplication for transparency
+  const naiveTotal = combinedData.reduce((sum, c) => sum + c.revenue, 0);
+  const deduplicationSavings = naiveTotal - totalRevenueDeduped;
+  if (Math.abs(deduplicationSavings) > 0.01) {
+    console.log(`[SUMMARY_DEDUP] ⚠️  Revenue deduplication applied`);
+    console.log(`[SUMMARY_DEDUP]    Naive sum: $${naiveTotal.toFixed(2)}`);
+    console.log(`[SUMMARY_DEDUP]    Corrected: $${totalRevenueDeduped.toFixed(2)}`);
+    console.log(`[SUMMARY_DEDUP]    Removed: $${Math.abs(deduplicationSavings).toFixed(2)} duplicate revenue`);
+    console.log(`[SUMMARY_DEDUP]    Reason: ${combinedData.length} campaigns sharing ${uniqueChannelRevenue.size} unique channels`);
+  }
+
   const summary = {
     total_campaigns: combinedData.length,
     campaigns_with_cost: combinedData.filter(c => c.has_cost_data).length,
     campaigns_with_revenue: combinedData.filter(c => c.has_revenue_data).length,
     campaigns_matched: combinedData.filter(c => c.has_cost_data && c.has_revenue_data).length,
     total_cost: combinedData.reduce((sum, c) => sum + c.cost, 0),
-    total_revenue: combinedData.reduce((sum, c) => sum + c.revenue, 0),
+    total_revenue: totalRevenueDeduped, // ✅ Use deduplicated revenue instead of naive sum
     total_profit: 0,
     average_roi: 0,
     average_roas: 0,

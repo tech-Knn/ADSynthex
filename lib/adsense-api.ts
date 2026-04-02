@@ -166,7 +166,7 @@ export async function getAdSenseAccounts(customerId?: string, adsenseAccountType
   try {
     const token = await getAccessToken(customerId, adsenseAccountType);
 
-    const response = await fetch('https://adsense.googleapis.com/v2/accounts', {
+    const response = await fetch('https://adsense.googleapis.com/v2/accounts', {                                                                                                                                                                                                                                                                                         
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'

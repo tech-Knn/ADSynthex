@@ -667,16 +667,21 @@ export async function POST(request: NextRequest) {
 
         console.log(`[PREDICTO] Retrieved ${predictoRevenue.length} Predicto revenue records (by channel)`);
 
-        // 2. Fetch PURE revenue (for summary cards only - prevents duplication)
-        console.log(`[PREDICTO_PURE] Fetching PURE Predicto revenue (date-only, no channel grouping)`);
-        purePredictoRevenue = await predictoApiClient.fetchRevenueData({
-          start_date: startDate,
-          end_date: endDate,
-          metrics: ['impressions', 'clicks', 'revenue'],
-          dimensions: ['date'], // ← KEY: Only date dimension, no channel/campaign grouping
-        });
-
-        console.log(`[PREDICTO_PURE] Retrieved ${purePredictoRevenue.length} daily records from Predicto`);
+        // 2. Fetch PURE revenue (ONLY for multi-account view to prevent duplication)
+        // For individual account view, we'll use channel-filtered revenue instead
+        if (isMultiAccount) {
+          console.log(`[PREDICTO_PURE] Multi-account view: Fetching PURE Predicto revenue (date-only, all accounts)`);
+          purePredictoRevenue = await predictoApiClient.fetchRevenueData({
+            start_date: startDate,
+            end_date: endDate,
+            metrics: ['impressions', 'clicks', 'revenue'],
+            dimensions: ['date'], // ← KEY: Only date dimension, returns ALL accounts' revenue
+          });
+          console.log(`[PREDICTO_PURE] Retrieved ${purePredictoRevenue.length} daily records from Predicto (all accounts)`);
+        } else {
+          console.log(`[PREDICTO_PURE] Single account view: Will use channel-filtered revenue (no separate pure fetch needed)`);
+          purePredictoRevenue = []; // Not needed for single account view
+        }
 
         // CRITICAL: Validate Predicto returned actual revenue data
         if (!predictoRevenue || !Array.isArray(predictoRevenue)) {
@@ -708,13 +713,17 @@ export async function POST(request: NextRequest) {
           console.log(`[PREDICTO_COST_REVENUE] ✓ Total Predicto revenue (by channel): $${totalRevenue.toFixed(2)}`);
         }
 
-        // Validate pure revenue
-        const pureRevenueTotal = purePredictoRevenue.reduce((sum, r) => sum + (r.revenue || 0), 0);
-        console.log(`[PREDICTO_PURE] ✓ Total PURE Predicto revenue (date-only): $${pureRevenueTotal.toFixed(2)}`);
+        // Validate pure revenue (only for multi-account view)
+        if (isMultiAccount && purePredictoRevenue.length > 0) {
+          const pureRevenueTotal = purePredictoRevenue.reduce((sum, r) => sum + (r.revenue || 0), 0);
+          console.log(`[PREDICTO_PURE] ✓ Total PURE Predicto revenue (date-only, all accounts): $${pureRevenueTotal.toFixed(2)}`);
 
-        if (Math.abs(totalRevenue - pureRevenueTotal) > 0.01) {
-          console.log(`[PREDICTO_PURE] ℹ️  Revenue difference: Channel-grouped=$${totalRevenue.toFixed(2)}, Pure=$${pureRevenueTotal.toFixed(2)}`);
-          console.log(`[PREDICTO_PURE] Using PURE revenue for summary to match Predicto dashboard`);
+          if (Math.abs(totalRevenue - pureRevenueTotal) > 0.01) {
+            console.log(`[PREDICTO_PURE] ℹ️  Revenue difference: Channel-grouped=$${totalRevenue.toFixed(2)}, Pure=$${pureRevenueTotal.toFixed(2)}`);
+            console.log(`[PREDICTO_PURE] Using PURE revenue for multi-account summary to match Predicto dashboard`);
+          }
+        } else {
+          console.log(`[PREDICTO_PURE] Single account view: Will calculate pure revenue from channel-filtered data`);
         }
       } catch (predictoError) {
         console.error('[PREDICTO_COST_REVENUE] CRITICAL: Predicto API request FAILED:', predictoError);
@@ -985,16 +994,68 @@ export async function POST(request: NextRequest) {
       // Calculate summary using PURE Predicto revenue (no channel duplication)
       console.log(`[PREDICTO_PURE] Calculating summary with PURE Predicto revenue (no duplication)`);
 
-      // Calculate pure revenue from date-only Predicto data
+      // CRITICAL FIX: For single account, extract channels from ACTUAL mapped campaigns
+      // This ensures we count revenue from channels that are actually in use, not just predefined ones
       let pureRevenue = 0;
       let pureClicks = 0;
       let pureImpressions = 0;
 
-      purePredictoRevenue.forEach(record => {
-        pureRevenue += record.revenue || 0;
-        pureClicks += record.clicks || 0;
-        pureImpressions += record.impressions || 0;
-      });
+      if (isMultiAccount && purePredictoRevenue.length > 0) {
+        // MULTI-ACCOUNT: Use date-only pure revenue (fetched separately, includes all accounts)
+        console.log(`[PREDICTO_PURE] Multi-account mode: Using date-only pure revenue from all accounts`);
+
+        purePredictoRevenue.forEach(record => {
+          pureRevenue += record.revenue || 0;
+          pureClicks += record.clicks || 0;
+          pureImpressions += record.impressions || 0;
+        });
+      } else if (!isMultiAccount) {
+        // SINGLE ACCOUNT: Extract unique channels from the aggregated campaigns
+        // This is more accurate than using predefined channels because it uses actual mapped data
+        console.log(`[PREDICTO_PURE] Single account mode: Extracting channels from ${aggregated.length} mapped campaigns`);
+
+        const actualChannelsInUse = new Set<string>();
+
+        // Collect all channel IDs that are actually mapped in the campaigns
+        aggregated.forEach(campaign => {
+          if (campaign.channel_ids && Array.isArray(campaign.channel_ids)) {
+            campaign.channel_ids.forEach(ch => actualChannelsInUse.add(ch.toLowerCase()));
+          }
+        });
+
+        console.log(`[PREDICTO_PURE] Found ${actualChannelsInUse.size} unique channels in use: ${Array.from(actualChannelsInUse).slice(0, 10).join(', ')}`);
+
+        // Now aggregate revenue by these actual channels from Predicto data
+        const channelRevenueMap = new Map<string, { revenue: number; clicks: number; impressions: number }>();
+
+        predictoRevenue.forEach(record => {
+          const channelId = record.custom_channel_id?.toLowerCase();
+          if (channelId && actualChannelsInUse.has(channelId)) {
+            if (!channelRevenueMap.has(channelId)) {
+              channelRevenueMap.set(channelId, { revenue: 0, clicks: 0, impressions: 0 });
+            }
+            const channel = channelRevenueMap.get(channelId)!;
+            channel.revenue += record.revenue || 0;
+            channel.clicks += record.clicks || 0;
+            channel.impressions += record.impressions || 0;
+          }
+        });
+
+        // Sum unique channel revenues (each channel counted once)
+        channelRevenueMap.forEach(data => {
+          pureRevenue += data.revenue;
+          pureClicks += data.clicks;
+          pureImpressions += data.impressions;
+        });
+
+        console.log(`[PREDICTO_PURE] Single account summary: ${channelRevenueMap.size} channels matched, Revenue=$${pureRevenue.toFixed(2)}, Clicks=${pureClicks}`);
+      } else {
+        // Fallback: Sum from aggregated campaign data
+        console.log(`[PREDICTO_PURE] Fallback: Using aggregated campaign data for summary`);
+        pureRevenue = aggregated.reduce((sum, c) => sum + c.revenue, 0);
+        pureClicks = aggregated.reduce((sum, c) => sum + c.clicks, 0);
+        pureImpressions = aggregated.reduce((sum, c) => sum + c.impressions, 0);
+      }
 
       console.log(`[PREDICTO_PURE] Pure totals: Revenue=$${pureRevenue.toFixed(2)}, Clicks=${pureClicks.toLocaleString()}, Impressions=${pureImpressions.toLocaleString()}`);
 
@@ -1021,7 +1082,12 @@ export async function POST(request: NextRequest) {
         match_rate: aggregated.length > 0 ? (aggregated.filter(c => c.has_cost_data && c.has_revenue_data).length / aggregated.length) * 100 : 0,
       };
 
-      console.log(`[PREDICTO_PURE] ✅ Summary calculated with PURE revenue: $${summary.total_revenue.toFixed(2)} (vs channel-mapped revenue which may have duplication)`);
+      const summaryMethod = isMultiAccount
+        ? 'pure-date-only-revenue'
+        : 'campaign-channel-filtered-revenue';
+
+      console.log(`[PREDICTO_PURE] ✅ Summary calculated with ${summaryMethod}: $${summary.total_revenue.toFixed(2)}`);
+      console.log(`[PREDICTO_PURE] Method: ${isMultiAccount ? 'Multi-account - date-only pure revenue' : 'Single account - revenue from actual campaign channels'}`);
 
       // Aggregate by account for account-level breakdown
       const accountSummaries = aggregateByAccount(aggregated);
@@ -1034,9 +1100,9 @@ export async function POST(request: NextRequest) {
       );
       console.log(`[PREDICTO_COST_REVENUE] Matched ${aggregated.length} campaigns`);
       console.log(
-        `[PREDICTO_COST_REVENUE] Summary (PURE): $${summary.total_cost.toFixed(2)} cost, $${summary.total_revenue.toFixed(2)} revenue, ${summary.average_roi.toFixed(1)}% ROI`
+        `[PREDICTO_COST_REVENUE] Summary: $${summary.total_cost.toFixed(2)} cost, $${summary.total_revenue.toFixed(2)} revenue, ${summary.average_roi.toFixed(1)}% ROI`
       );
-      console.log(`[PREDICTO_COST_REVENUE] ℹ️  Summary uses PURE Predicto revenue (no channel duplication) to match Predicto dashboard`);
+      console.log(`[PREDICTO_COST_REVENUE] ℹ️  Summary method: ${summaryMethod}`);
 
       const totalTime = Date.now() - startTime;
 
@@ -1104,7 +1170,11 @@ export async function POST(request: NextRequest) {
       });
       console.log(`[PREDICTO_COST_REVENUE] ✅ Data quality passed - Cached with dynamic TTL`);
 
-      message = `Successfully mapped Predicto cost-revenue data in ${(totalTime / 1000).toFixed(1)}s${!isMultiAccount ? ' - single account view' : ' - multi-account view'}. Summary uses PURE Predicto revenue (no channel duplication).`;
+      const summaryDescription = isMultiAccount
+        ? 'multi-account view - pure date-only revenue (all accounts)'
+        : 'single account view - revenue from actual campaign channels';
+
+      message = `Successfully mapped Predicto cost-revenue data in ${(totalTime / 1000).toFixed(1)}s. Summary: ${summaryDescription}.`;
 
       return NextResponse.json(
         {
@@ -1114,20 +1184,21 @@ export async function POST(request: NextRequest) {
           google_ads_data: { account_count: googleAdsData.length, campaign_count: allCampaigns.length },
           predicto_data: {
             record_count: predictoRevenue.length,
-            pure_revenue_used: true,
-            pure_record_count: purePredictoRevenue.length
+            pure_revenue_used: isMultiAccount, // Only true for multi-account view
+            pure_record_count: purePredictoRevenue?.length || 0,
+            channel_count: accountChannelIds.size
           },
           cost_revenue_mapping: [], // Not including full mappings to reduce response size
           _source: 'fresh-api',
           _timestamp: new Date().toISOString(),
           _message: message,
           _activeChannels: Array.from(accountChannelIds),
-          _summaryMethod: 'pure-predicto-revenue', // Indicates we're using pure revenue (no duplication)
+          _summaryMethod: summaryMethod, // Indicates which method was used for summary calculation
           _dataFreshness: {
             source: 'api',
             ageMinutes: 0,
             isFresh: true,
-            message: 'Fresh data from APIs - Summary uses PURE Predicto revenue',
+            message: `Fresh data - ${summaryDescription}`,
           },
         },
         {
