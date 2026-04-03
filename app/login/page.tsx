@@ -82,6 +82,8 @@ export default function LoginPage() {
             router.push('/predicto');
           } else if (firstFeed === 'carhp') {
             router.push('/carhp');
+          } else if (firstFeed === 'thefactrelay') {
+            router.push('/thefactrelay');
           } else {
             // Fallback
             router.push('/dashboard');
