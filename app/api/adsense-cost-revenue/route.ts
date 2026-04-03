@@ -1352,9 +1352,33 @@ export async function POST(request: NextRequest) {
     let allocatedRevenueValue = 0;
     let skippedRevenueValue = 0;
 
+    // Domain allowlist: only accept AdSense revenue from the feed's own domain.
+    // This prevents style_ids shared across multiple domains from pulling in
+    // revenue that belongs to a different site (e.g. thefactrelay vs 10linesgabout).
+    const FEED_ALLOWED_DOMAINS: Partial<Record<FeedType, string[]>> = {
+      thefactrelay: ['thefactrelay.com'],
+      carhp: ['carhp.com', 'search.carhp.com'],
+    };
+    const allowedDomains = FEED_ALLOWED_DOMAINS[requiredFeedType as FeedType] ?? null;
+
     for (const rev of adsenseData) {
       totalRevenueItems++;
       totalRevenueValue += rev.earnings;
+
+      // Domain filter: for feed types with a domain allowlist, skip revenue
+      // records that come from a different domain even if the style_id matches.
+      if (allowedDomains) {
+        const revDomain = (rev.domain_name || '').toLowerCase();
+        const domainAllowed = allowedDomains.some(d => revDomain === d || revDomain.endsWith('.' + d));
+        if (!domainAllowed) {
+          skippedRevenueItems++;
+          skippedRevenueValue += rev.earnings;
+          if (skippedRevenueItems <= 20) {
+            console.log(`[ADSENSE_COST_REVENUE] SKIPPED #${skippedRevenueItems}: style=${rev.style_id}, domain=${rev.domain_name}, earnings=$${rev.earnings.toFixed(2)}, reason=domain not allowed for ${requiredFeedType}`);
+          }
+          continue;
+        }
+      }
 
       // SIMPLE AFS-STYLE MATCHING: Check if style_id exists in our campaign mapping
       const styleId = rev.style_id;
