@@ -120,6 +120,13 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_6616851341': ['carhp'], // CarHp New 18
   'CID_5827892184': ['carhp'], // CarHp New 19
   'CID_1757864848': ['carhp'], // CarHp New 20
+  'CID_1792814156': ['carhp'], // CarHp New 21
+  'CID_7087102807': ['carhp'], // CarHp New 22
+  'CID_7903347315': ['carhp'], // CarHp New 23
+  'CID_1131535915': ['carhp'], // CarHp New 24
+  'CID_6738120407': ['carhp'], // CarHp New 25
+  'CID_7454337227': ['carhp'], // CarHp New 26
+  'CID_2502787460': ['carhp'], // CarHp New 27
 
   // TheFactRelay Accounts
   'CID_2144311178': ['thefactrelay'], // TheFactRelay 01
