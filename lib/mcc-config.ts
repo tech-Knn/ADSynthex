@@ -87,6 +87,11 @@ export const ACCOUNT_TO_MCC: Record<string, keyof typeof MCC_CONFIGS> = {
   '5556851600': 'primary', // Predicto EST-28
   '3907817554': 'primary', // Predicto EST-29
   '7505004095': 'primary', // Predicto EST-30
+  '3138682158': 'primary', // Predicto EST-31
+  '2851239327': 'primary', // Predicto EST-34
+  '7262761952': 'primary', // Predicto EST-35
+  '5651153058': 'primary', // Predicto EST-36
+  '8588048670': 'primary', // Predicto EST-37
 
   // CarHp Accounts (use PRIMARY MCC for Google Ads cost) - Sequential order
   '8536037999': 'primary',  // CarHp New 01 (IST)

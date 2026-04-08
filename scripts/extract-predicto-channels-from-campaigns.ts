@@ -9,6 +9,7 @@
  */
 
 import { initializeGoogleAdsClient } from '../lib/google-ads-api';
+import { getMCCForAccount, getDefaultMCC } from '../lib/mcc-config';
 import { extractChannelIdsFromUrl } from '../lib/predicto-channel-mapper';
 import config from '../lib/google-ads-config';
 
@@ -39,6 +40,11 @@ const PREDICTO_ACCOUNTS_TO_FIX = [
   { customerId: '5556851600', name: 'Predicto - EST - 28' },
   { customerId: '3907817554', name: 'Predicto - EST - 29' },
   { customerId: '7505004095', name: 'Predicto - EST - 30' },
+  { customerId: '3138682158', name: 'Predicto - EST - 31' },
+  { customerId: '2851239327', name: 'Predicto - EST - 34' },
+  { customerId: '7262761952', name: 'Predicto - EST - 35' },
+  { customerId: '5651153058', name: 'Predicto - EST - 36' },
+  { customerId: '8588048670', name: 'Predicto - EST - 37' },
 ];
 
 // Query to fetch campaigns with final URL suffix
@@ -104,11 +110,12 @@ async function extractChannelsFromAccount(
 
   try {
     // Initialize Google Ads client for this account
-    const { client, customer: mccCustomer } = initializeGoogleAdsClient(customerId);
+    const { client } = initializeGoogleAdsClient(customerId);
+    const mccCreds = getMCCForAccount(customerId) || getDefaultMCC();
     const accountCustomer = client.Customer({
       customer_id: customerId,
-      refresh_token: mccCustomer.credentials.refresh_token!,
-      login_customer_id: mccCustomer.credentials.login_customer_id,
+      refresh_token: mccCreds.googleAds.refreshToken,
+      login_customer_id: mccCreds.mccId,
     });
 
     // Step 1: Extract from campaign final URL suffixes

@@ -132,6 +132,81 @@ const CUSTOMER_ACCOUNTS = [
     value: '2563438099'
   },
   {
+    id: 'CID_6731595092',
+    name: 'Predicto - EST - 21',
+    value: '6731595092'
+  },
+  {
+    id: 'CID_8656375545',
+    name: 'Predicto - EST - 22',
+    value: '8656375545'
+  },
+  {
+    id: 'CID_5802421650',
+    name: 'Predicto - EST - 23',
+    value: '5802421650'
+  },
+  {
+    id: 'CID_1213532895',
+    name: 'Predicto - EST - 24',
+    value: '1213532895'
+  },
+  {
+    id: 'CID_7273310309',
+    name: 'Predicto - EST - 25',
+    value: '7273310309'
+  },
+  {
+    id: 'CID_3318899588',
+    name: 'Predicto - EST - 26',
+    value: '3318899588'
+  },
+  {
+    id: 'CID_8997459454',
+    name: 'Predicto - EST - 27',
+    value: '8997459454'
+  },
+  {
+    id: 'CID_5556851600',
+    name: 'Predicto - EST - 28',
+    value: '5556851600'
+  },
+  {
+    id: 'CID_3907817554',
+    name: 'Predicto - EST - 29',
+    value: '3907817554'
+  },
+  {
+    id: 'CID_7505004095',
+    name: 'Predicto - EST - 30',
+    value: '7505004095'
+  },
+  {
+    id: 'CID_3138682158',
+    name: 'Predicto - EST - 31',
+    value: '3138682158'
+  },
+  {
+    id: 'CID_2851239327',
+    name: 'Predicto - EST - 34',
+    value: '2851239327'
+  },
+  {
+    id: 'CID_7262761952',
+    name: 'Predicto - EST - 35',
+    value: '7262761952'
+  },
+  {
+    id: 'CID_5651153058',
+    name: 'Predicto - EST - 36',
+    value: '5651153058'
+  },
+  {
+    id: 'CID_8588048670',
+    name: 'Predicto - EST - 37',
+    value: '8588048670'
+  },
+  {
     id: 'CID_5079394847',
     name: 'CarHp New 02',
     value: '5079394847'
