@@ -839,51 +839,51 @@ export async function fetchGoogleAdsData(
         }, RETRY_CONFIG.maxRetries, 1000);
       };
 
+      // PERFORMANCE: Run all independent queries in parallel per account.
+      // campaigns, geo_targets, ads, and asset_groups are all independent — no ordering required.
+      // This reduces per-account wall time from 4× serial API latency to 1× (parallel batch).
       const activeCampaignQuery = buildActiveCampaignQuery(startDate, endDate);
-      const activeCampaignResponse = await makeApiCall(activeCampaignQuery, 'Active Campaigns');
-      console.log(`[GOOGLE_ADS_API] Account ${account.id} returned ${activeCampaignResponse?.length || 0} campaigns`);
+      const allAdQuery = buildAllAdGroupAdQuery(startDate, endDate);
+      const assetGroupQuery = buildAssetGroupQuery(startDate, endDate);
 
+      const [activeCampaignResponse, geoTargetMap, allAdResponse, assetGroupResponse] = await Promise.all([
+        makeApiCall(activeCampaignQuery, 'Active Campaigns').catch((err: any) => {
+          console.warn(`[GOOGLE_ADS_API] Campaigns query failed for ${account.id}:`, err?.message);
+          return null;
+        }),
+        fetchCampaignGeoTargets(accountCustomer, account).catch((err: any) => {
+          console.warn(`[GOOGLE_ADS_API] Geo-targeting failed for ${account.id}:`, err?.message);
+          return new Map<string, string[]>();
+        }),
+        makeApiCall(allAdQuery, 'All Ads').catch((err: any) => {
+          console.warn(`[GOOGLE_ADS_API] Ads query failed for ${account.id}:`, err?.message);
+          return null;
+        }),
+        makeApiCall(assetGroupQuery, 'Asset Groups').catch((err: any) => {
+          console.warn(`[GOOGLE_ADS_API] Asset groups query failed for ${account.id}:`, err?.message);
+          return null;
+        }),
+      ]);
+
+      console.log(`[GOOGLE_ADS_API] Account ${account.id}: ${activeCampaignResponse?.length || 0} campaigns, ${allAdResponse?.length || 0} ads, ${assetGroupResponse?.length || 0} asset groups`);
+
+      // Process campaigns and attach geo targets
       if (activeCampaignResponse && activeCampaignResponse.length > 0) {
         const processedCampaigns = processCampaignData(activeCampaignResponse, account);
 
-        // Fetch geo-targeting data for campaigns
-        try {
-          console.log(`[GOOGLE_ADS_API] Fetching geo-targeting data for ${processedCampaigns.length} campaigns...`);
-          const geoTargetMap = await fetchCampaignGeoTargets(accountCustomer, account);
-
-          // Attach geo-targets to campaigns
-          for (const campaign of processedCampaigns) {
-            const geoTargets = geoTargetMap.get(campaign.campaign_id);
-            if (geoTargets && geoTargets.length > 0) {
-              campaign.geo_targets = geoTargets;
-              console.log(`[GOOGLE_ADS_API] Campaign ${campaign.campaign_id} (${campaign.campaign_name}): ${geoTargets.join(', ')}`);
-            }
+        for (const campaign of processedCampaigns) {
+          const geoTargets = (geoTargetMap as Map<string, string[]>).get(campaign.campaign_id);
+          if (geoTargets && geoTargets.length > 0) {
+            campaign.geo_targets = geoTargets;
           }
-        } catch (error: any) {
-          console.warn(`[GOOGLE_ADS_API] Geo-targeting fetch failed (continuing):`, error.message);
-        }
-
-        // Fetch geographic view data (revenue by campaign + geo)
-        try {
-          console.log(`[GOOGLE_ADS_API] Fetching geographic view data for revenue by geo...`);
-          const geoViewData = await fetchGeographicViewData(accountCustomer, account, startDate, endDate);
-          if (geoViewData && geoViewData.length > 0) {
-            data.geographic_views!.push(...geoViewData);
-            console.log(`[GOOGLE_ADS_API] Added ${geoViewData.length} geographic view records`);
-          }
-        } catch (error: any) {
-          console.warn(`[GOOGLE_ADS_API] Geographic view fetch failed (continuing):`, error.message);
         }
 
         data.campaigns.push(...processedCampaigns);
       }
 
-      // QUOTA OPTIMIZATION: Removed "All Campaigns" query for AFS feed
-      // The "Active Campaigns" query already includes ENABLED + PAUSED campaigns
-      // The only difference is REMOVED campaigns, which have $0 cost and don't contribute to revenue matching
-      // This saves 1 API call per account (33 accounts × 1 = 33 calls saved per sync)
-      // For non-AFS feeds, we could add it back if needed, but AFS uses style_id matching from ads
-      if (feedType && feedType !== 'adsense') {
+      // For non-adsense/non-carhp feeds, merge "All Campaigns" (includes REMOVED) into the data.
+      // adsense and carhp only need ENABLED+PAUSED (style_id matching ignores REMOVED campaigns).
+      if (feedType && feedType !== 'adsense' && feedType !== 'carhp') {
         // For other feeds (adscom, compado, inuvo), fetch all campaigns if needed
         try {
           const allCampaignsQuery = buildAllCampaignsQuery(startDate, endDate);
@@ -919,37 +919,18 @@ export async function fetchGoogleAdsData(
           console.warn(`[GOOGLE_ADS_API] All Campaigns query failed (continuing with active campaigns):`, error instanceof Error ? error.message : 'Unknown error');
           // Continue with active campaigns data
         }
-      } else {
-        console.log(`[GOOGLE_ADS_API] Skipping "All Campaigns" query for ${feedType} feed (quota optimization - saves 1 API call)`);
       }
 
-      // CRITICAL: We MUST fetch ALL ads (including paused/removed), not just active ads.
-      // If a campaign is paused today but had cost yesterday, we need its ads to extract the
-      // style_id from the URLs. If we only fetch active ads, paused campaigns will have
-      // 0 ads and their cost will be dropped because it can't be mapped to a style_id.
-      try {
-        const allAdQuery = buildAllAdGroupAdQuery(startDate, endDate);
-        const allAdResponse = await makeApiCall(allAdQuery, 'All Ads');
-        if (allAdResponse && allAdResponse.length > 0) {
-          const processedAds = processAdData(allAdResponse, account);
-          data.ads.push(...processedAds);
-        }
-      } catch (error) {
-        console.warn(`[GOOGLE_ADS_API] All Ads query failed:`, error instanceof Error ? error.message : 'Unknown error');
+      // Process ads (needed for style_id extraction)
+      if (allAdResponse && allAdResponse.length > 0) {
+        const processedAds = processAdData(allAdResponse, account);
+        data.ads.push(...processedAds);
       }
 
-      // Fetch Performance Max asset groups (with error handling to not block click queries)
-      try {
-        const assetGroupQuery = buildAssetGroupQuery(startDate, endDate);
-        const assetGroupResponse = await makeApiCall(assetGroupQuery, 'Asset Groups');
-        if (assetGroupResponse && assetGroupResponse.length > 0) {
-          const assetGroupAds = processAssetGroupData(assetGroupResponse, account);
-
-          // Add asset group ads to the list
-          data.ads.push(...assetGroupAds);
-        }
-      } catch (error) {
-        console.warn(`[GOOGLE_ADS_API] Asset Groups query failed (continuing):`, error instanceof Error ? error.message : 'Unknown error');
+      // Process asset groups
+      if (assetGroupResponse && assetGroupResponse.length > 0) {
+        const assetGroupAds = processAssetGroupData(assetGroupResponse, account);
+        data.ads.push(...assetGroupAds);
       }
 
       // Fetch click_view data (GCLIDs) for feeds that use GCLID matching

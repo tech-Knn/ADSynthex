@@ -114,9 +114,10 @@ export class BulletproofGoogleAdsAPI {
       const quotaStatus = await googleAdsRateLimiter.getQuotaStatus();
 
       // CRITICAL FIX: Invalidate cache if it has campaigns but NO ads
-      // This prevents negative profit issues in AFS where style_ids can't be extracted
-      if (feedType === 'adsense' && cached.data.campaigns?.length > 0 && (!cached.data.ads || cached.data.ads.length === 0)) {
-        console.warn(`[BULLETPROOF_API] Cache has ${cached.data.campaigns.length} campaigns but 0 ads - INVALIDATING for AFS feed`);
+      // Both adsense and carhp feeds rely on ads to extract style_ids for revenue matching.
+      // If ads are missing (e.g. ads query failed and was cached), $0 revenue results.
+      if ((feedType === 'adsense' || feedType === 'carhp') && cached.data.campaigns?.length > 0 && (!cached.data.ads || cached.data.ads.length === 0)) {
+        console.warn(`[BULLETPROOF_API] Cache has ${cached.data.campaigns.length} campaigns but 0 ads - INVALIDATING for ${feedType} feed`);
         // Don't return cached data - fetch fresh data instead
       } else {
         console.log(`[BULLETPROOF_API] ${cached.source} cache hit, age: ${Math.round(cached.age / 1000)}s`);

@@ -17,10 +17,7 @@ export async function GET() {
         allAccounts.push(...accounts.map(acc => ({ ...acc, type: 'afs', mcc: 'primary' })));
         console.log(`[ADSENSE_ACCOUNTS_API] Fetched ${accounts.length} AFS accounts from primary MCC`);
       } catch (err: any) {
-
-
-
-        
+       
         console.warn(`[ADSENSE_ACCOUNTS_API] Failed to fetch AFS accounts: ${err.message}. Using fallback hardcoded accounts.`);
         // Fallback for AFS to ensure Dashboard works even if API token fails in production
         allAccounts.push({

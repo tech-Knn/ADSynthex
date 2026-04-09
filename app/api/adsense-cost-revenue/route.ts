@@ -375,10 +375,10 @@ export async function POST(request: NextRequest) {
       if (uncachedAccountIds.length > 0) {
         console.log(`[ADSENSE_COST_REVENUE] Fetching ${uncachedAccountIds.length} uncached accounts: ${uncachedAccountIds.join(', ')}`);
 
-        // Use smaller batch size for force refresh to avoid overwhelming rate limiter
-        // Normal fetch: batch of 5 (faster, using cache fallback)
-        // Force refresh: batch of 2 (slower but more reliable, ensures each account gets full API attention)
-        const BATCH_SIZE = forceLive ? 2 : 5;
+        // Batch size tuned for parallelism vs rate limit safety
+        // Normal fetch: batch of 10 (faster, most accounts will be cached)
+        // Force refresh: batch of 5 (more reliable under fresh-fetch load)
+        const BATCH_SIZE = forceLive ? 5 : 10;
         const MAX_RETRIES = 3;
         const batches: string[][] = [];
         for (let i = 0; i < uncachedAccountIds.length; i += BATCH_SIZE) {
@@ -422,9 +422,9 @@ export async function POST(request: NextRequest) {
 
           console.log(`[ADSENSE_COST_REVENUE] Batch ${i + 1}/${batches.length}: ${allResults.size} total successes, ${failedAccountIds.length} failures`);
 
-          // Add delay between batches: longer for force refresh to let API recover
-          if (i < batches.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, forceLive ? 500 : 100));
+          // Small delay between batches only for force refresh to let API recover
+          if (i < batches.length - 1 && forceLive) {
+            await new Promise(resolve => setTimeout(resolve, 200));
           }
         }
 
@@ -432,8 +432,8 @@ export async function POST(request: NextRequest) {
         for (let retry = 0; retry < MAX_RETRIES && failedAccountIds.length > 0; retry++) {
           console.log(`[ADSENSE_COST_REVENUE] Retry ${retry + 1}/${MAX_RETRIES}: Retrying ${failedAccountIds.length} failed accounts: ${failedAccountIds.join(', ')}`);
 
-          // Increasing backoff: 3s, 5s, 8s
-          await new Promise(resolve => setTimeout(resolve, (retry + 1) * 2000 + 1000));
+          // Increasing backoff: 1s, 1.5s, 2s (reduced from 3s/5s/7s to avoid long waits)
+          await new Promise(resolve => setTimeout(resolve, (retry + 1) * 500 + 500));
 
           const retryResults = await Promise.all(
             failedAccountIds.map(async (accId: string) => {
@@ -625,10 +625,19 @@ export async function POST(request: NextRequest) {
               googleAdsData.ads.push(...accData.ads);
             }
 
-            console.log(`[ADSENSE_COST_REVENUE] Account ${accountId}: ${accData.campaigns?.length || 0} campaigns, ${accData.ads?.length || 0} ads tagged`);
+            const campaignCount = accData.campaigns?.length || 0;
+            const adCount = accData.ads?.length || 0;
+            console.log(`[ADSENSE_COST_REVENUE] Account ${accountId}: ${campaignCount} campaigns, ${adCount} ads tagged`);
 
-            // CRITICAL: Cache this account's data separately
-            cacheAccountData(accountId, { googleAdsData: accData });
+            // CRITICAL: Only cache if ads are present (or account has no campaigns).
+            // Accounts with campaigns but 0 ads had their ads query fail — caching would
+            // permanently store broken data and return $0 revenue on every subsequent load.
+            const hasIncompleteData = campaignCount > 0 && adCount === 0;
+            if (!hasIncompleteData) {
+              cacheAccountData(accountId, { googleAdsData: accData });
+            } else {
+              console.warn(`[ADSENSE_COST_REVENUE] Account ${accountId}: skipping cache — ${campaignCount} campaigns but 0 ads (ads query likely failed)`);
+            }
           } else {
             // Account failed
             failedAccounts.push(accountId);

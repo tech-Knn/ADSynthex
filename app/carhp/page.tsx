@@ -388,10 +388,24 @@ export default function CarHpPage() {
                                     <Card title={<Title level={4}>Account-Level Performance</Title>}>
                                         <Table
                                             columns={[
-                                                { title: 'Account', dataIndex: 'account_id', key: 'account_id', render: (id: string) => <Text strong>{CARHP_ACCOUNTS.find(a => a.id === id)?.name || id}</Text> },
+                                                { title: 'Account', dataIndex: 'account_id', key: 'account_id', render: (id: string, row: any) => (
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                        <Text strong>{CARHP_ACCOUNTS.find(a => a.id === id)?.name || id}</Text>
+                                                        {row.cost > 0 && row.revenue === 0 && (
+                                                            <Tooltip title="Cost found but $0 revenue — ad URLs may be missing the style_id parameter, or AdSense has no data for this account yet.">
+                                                                <span style={{ color: '#fa8c16', fontSize: 14, cursor: 'help' }}>⚠️</span>
+                                                            </Tooltip>
+                                                        )}
+                                                    </div>
+                                                ) },
                                                 { title: 'Campaigns', dataIndex: 'campaignCount', key: 'campaignCount' },
                                                 { title: 'Cost', dataIndex: 'cost', key: 'cost', render: (v: number) => <Text style={{ color: '#ff4d4f' }}>${(v || 0).toFixed(2)}</Text>, sorter: (a: any, b: any) => a.cost - b.cost },
-                                                { title: 'Revenue', dataIndex: 'revenue', key: 'revenue', render: (v: number) => <Text style={{ color: '#52c41a' }}>${(v || 0).toFixed(2)}</Text>, sorter: (a: any, b: any) => a.revenue - b.revenue },
+                                                { title: 'Revenue', dataIndex: 'revenue', key: 'revenue', render: (v: number, row: any) => (
+                                                    <Text style={{ color: '#52c41a' }}>
+                                                        ${(v || 0).toFixed(2)}
+                                                        {row.cost > 0 && v === 0 && <span style={{ color: '#fa8c16', marginLeft: 4, fontSize: 11 }}>no match</span>}
+                                                    </Text>
+                                                ), sorter: (a: any, b: any) => a.revenue - b.revenue },
                                                 { title: 'Profit', dataIndex: 'profit', key: 'profit', render: (v: number) => <Text style={{ color: v >= 0 ? '#52c41a' : '#ff4d4f' }}>${(v || 0).toFixed(2)}</Text>, sorter: (a: any, b: any) => a.profit - b.profit },
                                                 { title: 'ROI', dataIndex: 'roi', key: 'roi', render: (v: number) => <Text style={{ color: v >= 0 ? '#52c41a' : '#ff4d4f' }}>{(v || 0).toFixed(1)}%</Text>, sorter: (a: any, b: any) => a.roi - b.roi },
                                                 { title: 'Conversions', dataIndex: 'conversions', key: 'conversions', render: (v: number) => Math.round(v || 0).toLocaleString() },
