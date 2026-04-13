@@ -89,33 +89,38 @@ export async function POST(request: NextRequest) {
       const { googleAdsRateLimiter } = await import('@/lib/redis-rate-limiter');
       const quotaCheck = await googleAdsRateLimiter.canMakeRequest();
 
-      let actualForceRefresh = forceRefresh;
-      if (forceRefresh && !quotaCheck.allowed) {
-        console.warn(`[INUVO_ENDPOINT] COOLDOWN ACTIVE - ignoring forceRefresh`);
-        actualForceRefresh = false;
+      // Inuvo is a realtime dashboard — never serve stale/zero-cached Google Ads data.
+      // Always fetch fresh unless the rate limiter is in cooldown.
+      const canFetchFresh = quotaCheck.allowed;
+      if (!canFetchFresh) {
+        console.warn(`[INUVO_ENDPOINT] Rate limit cooldown active — will try cached data: ${quotaCheck.reason}`);
       }
 
       // For multi-account, fetch all Inuvo accounts (customerId=null, feedType=inuvo)
       // For single-account, fetch specific account
       const fetchCustomerId = isMultiAccount ? null : (customerId || null);
 
-      if (actualForceRefresh) {
+      // Always clear the Inuvo cache before fetching so we never serve zero-data from a
+      // stale cached call that ran before today's spend started.
+      if (canFetchFresh) {
         try {
           const { redisCacheManager } = await import('@/lib/redis-cache-manager');
           const pattern = fetchCustomerId ? `*${fetchCustomerId}*` : `*inuvo*`;
           const keys = await redisCacheManager.getKeysByPattern(pattern);
-          for (const key of keys) await redisCacheManager.delete(key);
-          console.log(`[INUVO_ENDPOINT] Cleared ${keys.length} cache entries`);
+          if (keys.length > 0) {
+            for (const key of keys) await redisCacheManager.delete(key);
+            console.log(`[INUVO_ENDPOINT] Cleared ${keys.length} stale cache entries`);
+          }
         } catch (cacheError) {
           console.warn(`[INUVO_ENDPOINT] Cache clear failed:`, cacheError);
         }
       }
 
-      // Fetch Google Ads cost data
+      // Fetch Google Ads cost data — allowStale only when rate-limited
       console.log(`[INUVO_ENDPOINT] Fetching Google Ads data for ${modeLabel}...`);
       const googleAdsResult = await bulletproofAPI.getData(startDate, endDate, fetchCustomerId, {
         priority: 8,
-        allowStale: !actualForceRefresh,
+        allowStale: !canFetchFresh,
         maxWait: 20000,
         feedType: 'inuvo'
       });
