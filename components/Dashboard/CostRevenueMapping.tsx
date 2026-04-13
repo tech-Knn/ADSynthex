@@ -88,14 +88,18 @@ interface CostRevenueMappingProps {
   loading?: boolean;
   onRefresh?: () => void;
   showDetailedView?: boolean;
+  hideSummaryCards?: boolean;
+  hideCampaignDetails?: boolean;
 }
 
-export default function CostRevenueMapping({ 
-  data, 
-  summary, 
-  loading = false, 
+export default function CostRevenueMapping({
+  data,
+  summary,
+  loading = false,
   onRefresh,
-  showDetailedView = false 
+  showDetailedView = false,
+  hideSummaryCards = false,
+  hideCampaignDetails = false,
 }: CostRevenueMappingProps) {
   const [detailedView, setDetailedView] = useState(showDetailedView);
   const [sortedData, setSortedData] = useState<CostRevenueMapping[]>([]);
@@ -455,7 +459,7 @@ export default function CostRevenueMapping({
   return (
     <div>
       {/* Summary Cards */}
-      <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
+      {!hideSummaryCards && <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
         <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
@@ -527,11 +531,10 @@ export default function CostRevenueMapping({
             </div>
           </Card>
         </Col>
-      </Row>
-
+      </Row>}
 
       {/* Detailed Table */}
-      {data.length > 0 && (
+      {!hideCampaignDetails && data.length > 0 && (
         <Card 
           title={
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
