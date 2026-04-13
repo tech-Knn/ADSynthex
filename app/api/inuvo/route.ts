@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Clear cache for new Inuvo accounts or if forceRefresh (and not in cooldown)
-      const newInuvoAccounts = ['9532228491'];
+      const newInuvoAccounts = ['9532228491', '9375852176'];
       const shouldClearCache = actualForceRefresh || (customerId && newInuvoAccounts.includes(customerId));
 
       if (shouldClearCache && customerId) {
@@ -134,10 +134,13 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Create cost/revenue mapping using TKID
+      // Create cost/revenue mapping using campaign names to extract Inuvo CAMP_IDs.
+      // IMPORTANT: Use campaigns (not ads) — cost lives at campaign level and the
+      // Inuvo CAMP_ID is embedded in the Google Ads campaign name, e.g.
+      // "03/4/26 - Beta Thalassemia - usa - 374647 #2" → CAMP_ID 374647
       console.log('[INUVO_ENDPOINT] Creating cost/revenue mapping...');
       const costRevenueMapping = mapCostRevenue(
-        googleAdsData?.ads || [],
+        googleAdsData?.campaigns || [],
         inuvoData.data || []
       );
 
@@ -149,7 +152,7 @@ export async function POST(request: NextRequest) {
         google_ads_data: {
           ads: googleAdsData?.ads || [],
           campaigns: googleAdsData?.campaigns || [],
-          total_cost: googleAdsData?.ads?.reduce((sum: number, ad: any) => sum + (ad.metrics?.cost || 0), 0) || 0
+          total_cost: googleAdsData?.campaigns?.reduce((sum: number, c: any) => sum + (c.metrics?.cost || 0), 0) || 0
         },
         cost_revenue_mapping: costRevenueMapping,
         summary,
@@ -245,7 +248,8 @@ export async function GET(request: NextRequest) {
         tkid_mapping: 'enabled' 
       },
       accounts: [
-        { id: '9532228491', name: 'kaptinklunk - Inuvo - PST' }
+        { id: '9532228491', name: 'kaptinklunk - Inuvo - PST' },
+        { id: '9375852176', name: 'kaptinklunk - Inuvo - PST 2' }
       ],
       endpoints: {
         realtime: '/api/inuvo (POST with dataType: "realtime")',

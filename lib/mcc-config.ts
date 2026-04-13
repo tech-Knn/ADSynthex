@@ -124,6 +124,10 @@ export const ACCOUNT_TO_MCC: Record<string, keyof typeof MCC_CONFIGS> = {
   '1161525078': 'primary',  // CAR-HP-01 (PST)
   '9345796923': 'primary',  // CAR-HP-02 (PST)
 
+  // Inuvo Accounts
+  '9532228491': 'primary',  // kaptinklunk - Inuvo - PST
+  '9375852176': 'primary',  // kaptinklunk - Inuvo - PST 2
+
   // TheFactRelay Accounts
   '2144311178': 'primary',  // TheFactRelay 01
   '7371749207': 'primary',  // TheFactRelay 02

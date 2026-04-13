@@ -78,6 +78,11 @@ const INUVO_CONFIG: InuvoApiConfig = {
       id: '9532228491',
       name: 'kaptinklunk - Inuvo - PST',
       timezone: 'PST'
+    },
+    {
+      id: '9375852176',
+      name: 'kaptinklunk - Inuvo - PST 2',
+      timezone: 'PST'
     }
   ]
 };
@@ -90,7 +95,7 @@ export async function fetchInuvoRealtimeData(
   endDate: string,
   accountId?: string
 ): Promise<InuvoResponse> {
-  console.log(`[INUVO_API] Fetching realtime data: ${startDate} to ${endDate}`);
+  console.log(`[INUVO_API] Fetching realtime data: ${startDate} to ${endDate}${accountId ? `, account: ${accountId}` : ''}`);
 
   if (!INUVO_CONFIG.accessToken) {
     throw new Error('Inuvo access token not configured');
@@ -118,7 +123,7 @@ export async function fetchInuvoRealtimeData(
     }
 
     const data = await response.json();
-    console.log(`[INUVO_API] Returned ${data.length || 0} records`);
+    console.log(`[INUVO_API] Returned ${data.length || 0} total records`);
 
     const allData: InuvoRealtimeData[] = [];
 
@@ -126,7 +131,8 @@ export async function fetchInuvoRealtimeData(
       const parsedData = data.map((item: any) => ({
         TKID: item.CAMP_ID?.toString() || item.TKID?.toString() || '',
         CAMP_ID: item.CAMP_ID,
-        AGID: item.AGID || accountId || 'unknown',
+        // Inuvo API does not return AGID — leave empty; matching is done by CAMP_ID
+        AGID: '',
         PLATFORM_TYPE_CODE: item.PLATFORM_TYPE_CODE || 'Unknown',
         ESTIMATED_EARNINGS: parseFloat(item.ESTIMATED_EARNINGS || 0),
         AD_REQUESTS: parseInt(item.AD_REQUESTS || 0),
@@ -174,7 +180,7 @@ export async function fetchInuvoDailyData(
   endDate: string,
   accountId?: string
 ): Promise<InuvoResponse> {
-  console.log(`[INUVO_API] Fetching daily data: ${startDate} to ${endDate}`);
+  console.log(`[INUVO_API] Fetching daily data: ${startDate} to ${endDate}${accountId ? `, account: ${accountId}` : ''}`);
 
   if (!INUVO_CONFIG.accessToken) {
     throw new Error('Inuvo access token not configured');
@@ -202,7 +208,7 @@ export async function fetchInuvoDailyData(
     }
 
     const data = await response.json();
-    console.log(`[INUVO_API] Returned ${data.length || 0} relative records`);
+    console.log(`[INUVO_API] Returned ${data.length || 0} total daily records`);
 
     const allData: InuvoRealtimeData[] = [];
 
@@ -210,7 +216,8 @@ export async function fetchInuvoDailyData(
       const parsedData = data.map((item: any) => ({
         TKID: item.CAMP_ID?.toString() || item.TKID?.toString() || '',
         CAMP_ID: item.CAMP_ID,
-        AGID: item.AGID || accountId || 'unknown',
+        // Inuvo API does not return AGID — leave empty; matching is done by CAMP_ID
+        AGID: '',
         PLATFORM_TYPE_CODE: item.PLATFORM_TYPE_CODE || 'Unknown',
         ESTIMATED_EARNINGS: parseFloat(item.ESTIMATED_EARNINGS || 0),
         AD_REQUESTS: parseInt(item.AD_REQUESTS || 0),
@@ -251,63 +258,67 @@ export async function fetchInuvoDailyData(
 }
 
 /**
- * Extract TKID from Google Ads URL
+ * Extract TKID/CAMP_ID from Google Ads URL parameters
  */
-function extractTKIDFromURL(url: string): string | null {
+function extractCampIdFromURL(url: string): string | null {
   try {
-    // Common TKID patterns in URLs:
-    // - ?tkid=value
-    // - &tkid=value  
-    // - /tkid/value
-    // - tkid-value
-
     if (!url) return null;
 
-    // Try URL parameter first
+    // Try URL parameter (camp_id, CAMP_ID, tkid, TKID)
     const urlParams = new URLSearchParams(url.split('?')[1] || '');
-    const tkidParam = urlParams.get('tkid') || urlParams.get('TKID') || urlParams.get('camp_id') || urlParams.get('CAMP_ID');
-    if (tkidParam) return tkidParam;
+    const param = urlParams.get('camp_id') || urlParams.get('CAMP_ID') ||
+                  urlParams.get('tkid') || urlParams.get('TKID');
+    if (param) return param;
 
-    // Try path-based TKID
-    const tkidPathMatch = url.match(/\/tkid\/([^\/\?]+)/i);
-    if (tkidPathMatch) return tkidPathMatch[1];
-
-    // Try dash-separated TKID
-    const tkidDashMatch = url.match(/tkid[-_]([^\/\?&]+)/i);
-    if (tkidDashMatch) return tkidDashMatch[1];
+    // Try path-based pattern: /tkid/374647 or /camp_id/374647
+    const pathMatch = url.match(/\/(tkid|camp_id)\/(\d{4,7})/i);
+    if (pathMatch) return pathMatch[2];
 
     return null;
   } catch (error) {
-    console.error('Error extracting TKID from URL:', error);
     return null;
   }
 }
 
 /**
- * Map cost and revenue data using TKID from URLs and Inuvo data
+ * Extract Inuvo CAMP_ID from Google Ads campaign name.
+ * Inuvo campaign names embed the CAMP_ID as a 5-6 digit number.
+ * Example: "03/4/26 - Beta Thalassemia - usa - 374647 #2" → "374647"
+ * Example: "3/4/26 - lutetium-177-therapy - usa - 374646 #2" → "374646"
+ */
+function extractCampIdFromName(campaignName: string, inuvoCampIdMap: Map<string, any>): string | null {
+  if (!campaignName) return null;
+
+  // Find all 5-6 digit numbers in the campaign name
+  const matches = campaignName.match(/\b(\d{5,6})\b/g);
+  if (!matches) return null;
+
+  // Return the first number that exists in the Inuvo CAMP_ID map
+  for (const match of matches) {
+    if (inuvoCampIdMap.has(match)) {
+      return match;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Map cost and revenue data using CAMP_ID extracted from campaign names and URLs
  */
 export function mapCostRevenue(
   googleAdsData: any[],
   inuvoData: InuvoRealtimeData[]
 ): CostRevenueMapping[] {
-  console.log(`[COST_REVENUE_MAPPING] Mapping ${googleAdsData.length} ads with ${inuvoData.length} revenue records`);
+  console.log(`[COST_REVENUE_MAPPING] Mapping ${googleAdsData.length} campaigns with ${inuvoData.length} revenue records`);
 
   const mappings: CostRevenueMapping[] = [];
-  const inuvoMap = new Map<string, InuvoRealtimeData[]>();
   const inuvoCampIdMap = new Map<string, InuvoRealtimeData[]>();
 
-  // Group Inuvo data by TKID (case-insensitive) and CAMP_ID
+  // Group Inuvo data by CAMP_ID (the primary key from Inuvo API)
   inuvoData.forEach(item => {
-    if (item.TKID) {
-      const tkid = item.TKID.toString().trim().toLowerCase(); // Normalize to lowercase
-      if (!inuvoMap.has(tkid)) {
-        inuvoMap.set(tkid, []);
-      }
-      inuvoMap.get(tkid)!.push(item);
-    }
-    
-    if (item.CAMP_ID) {
-      const campId = item.CAMP_ID.toString().trim();
+    const campId = (item.CAMP_ID || item.TKID)?.toString().trim();
+    if (campId) {
       if (!inuvoCampIdMap.has(campId)) {
         inuvoCampIdMap.set(campId, []);
       }
@@ -315,112 +326,75 @@ export function mapCostRevenue(
     }
   });
 
-  console.log(`[COST_REVENUE_MAPPING] Inuvo TKIDs available (${inuvoMap.size}): ${Array.from(inuvoMap.keys()).slice(0, 10).join(', ')}${inuvoMap.size > 10 ? '...' : ''}`);
-  console.log(`[COST_REVENUE_MAPPING] Inuvo CAMP_IDs available (${inuvoCampIdMap.size}): ${Array.from(inuvoCampIdMap.keys()).slice(0, 10).join(', ')}${inuvoCampIdMap.size > 10 ? '...' : ''}`);
+  console.log(`[COST_REVENUE_MAPPING] Inuvo CAMP_IDs available (${inuvoCampIdMap.size}): ${Array.from(inuvoCampIdMap.keys()).slice(0, 15).join(', ')}${inuvoCampIdMap.size > 15 ? '...' : ''}`);
 
-  // Map Google Ads data with Inuvo revenue using TKID extraction
+  // Map Google Ads campaigns/ads with Inuvo revenue
   googleAdsData.forEach(ad => {
-    let tkid: string | null = null;
-    let cost = ad.metrics?.cost || ad.cost || 0;
+    const cost = ad.metrics?.cost || ad.cost || 0;
+    let campId: string | null = null;
+    let matchedBy = '';
 
-    // Try multiple sources for TKID
-    if (ad.TKID) {
-      tkid = ad.TKID.toString().trim();
-    } else if (ad.final_urls && Array.isArray(ad.final_urls)) {
-      // Extract TKID from final URLs
-      for (const url of ad.final_urls) {
-        tkid = extractTKIDFromURL(url);
-        if (tkid) break;
-      }
-    } else if (ad.ad_id) {
-      tkid = ad.ad_id.toString().trim();
-    } else if (ad.campaign_id) {
-      tkid = ad.campaign_id.toString().trim();
+    // Priority 1: Extract CAMP_ID from final_url_suffix (e.g. "?camp_id=374647")
+    if (ad.final_url_suffix) {
+      campId = extractCampIdFromURL(`?${ad.final_url_suffix}`);
+      if (campId) matchedBy = 'final_url_suffix';
     }
 
-    if (tkid) {
-      const normalizedTkid = tkid.toLowerCase(); // Normalize to lowercase for comparison
-
-      let matchedRevenueRecords: InuvoRealtimeData[] | null = null;
-      let matchedBy = '';
-
-      if (inuvoMap.has(normalizedTkid)) {
-        matchedRevenueRecords = inuvoMap.get(normalizedTkid)!;
-        matchedBy = 'TKID';
-      } else if (ad.campaign_id && inuvoCampIdMap.has(ad.campaign_id.toString().trim())) {
-        matchedRevenueRecords = inuvoCampIdMap.get(ad.campaign_id.toString().trim())!;
-        matchedBy = 'CAMP_ID';
-        tkid = ad.campaign_id.toString().trim(); // Ensure tkid is updated to campaign_id for mappings
+    // Priority 2: Extract CAMP_ID from final_urls array
+    if (!campId && ad.final_urls && Array.isArray(ad.final_urls)) {
+      for (const url of ad.final_urls) {
+        campId = extractCampIdFromURL(url);
+        if (campId) { matchedBy = 'final_url'; break; }
       }
+    }
 
-      console.log(`[COST_REVENUE_MAPPING] Processing ad with Cost: $${cost}, TKID extract: ${normalizedTkid}, CampaignID: ${ad.campaign_id}`);
+    // Priority 3: Extract CAMP_ID from campaign name (most reliable for Inuvo)
+    // Pattern: "03/4/26 - Beta Thalassemia - usa - 374647 #2" → "374647"
+    if (!campId && ad.campaign_name) {
+      campId = extractCampIdFromName(ad.campaign_name, inuvoCampIdMap);
+      if (campId) matchedBy = 'campaign_name';
+    }
 
-      if (matchedRevenueRecords) {
-        const revenueRecords = matchedRevenueRecords;
+    const conversions = ad.metrics?.conversions || 0;
+    const cpa = ad.metrics?.cpa || (conversions > 0 ? cost / conversions : 0);
+    const campaignName = ad.campaign_name || ad.name || `Campaign ${campId || 'unknown'}`;
+    const date = ad.date || ad.segments?.date || formatDateForDisplay(new Date());
 
-        // Aggregate Inuvo metrics
-        const totalRevenue = revenueRecords.reduce((sum, record) => sum + record.ESTIMATED_EARNINGS, 0);
-        const totalInuvoClicks = revenueRecords.reduce((sum, record) => sum + record.CLICKS, 0);
-        const totalImpressions = revenueRecords.reduce((sum, record) => sum + record.IMPRESSIONS, 0);
+    if (campId && inuvoCampIdMap.has(campId)) {
+      const revenueRecords = inuvoCampIdMap.get(campId)!;
 
-        // Calculate derived metrics
-        const profit = totalRevenue - cost;
-        const roi = cost > 0 ? ((totalRevenue - cost) / cost) * 100 : 0;
-        const inuvoCtr = totalImpressions > 0 ? (totalInuvoClicks / totalImpressions) * 100 : 0;
-        const epc = totalInuvoClicks > 0 ? totalRevenue / totalInuvoClicks : 0;
+      const totalRevenue = revenueRecords.reduce((sum, r) => sum + r.ESTIMATED_EARNINGS, 0);
+      const totalInuvoClicks = revenueRecords.reduce((sum, r) => sum + r.CLICKS, 0);
+      const totalImpressions = revenueRecords.reduce((sum, r) => sum + r.IMPRESSIONS, 0);
 
-        // Extract Google Ads metrics
-        const conversions = ad.metrics?.conversions || 0;
-        const cpa = ad.metrics?.cpa || (conversions > 0 ? cost / conversions : 0);
+      const profit = totalRevenue - cost;
+      const roi = cost > 0 ? ((totalRevenue - cost) / cost) * 100 : 0;
+      const inuvoCtr = totalImpressions > 0 ? (totalInuvoClicks / totalImpressions) * 100 : 0;
+      const epc = totalInuvoClicks > 0 ? totalRevenue / totalInuvoClicks : 0;
 
-        mappings.push({
-          TKID: tkid || '',
-          // Google Ads Metrics
-          conversions: conversions,
-          cpa: cpa,
-          cost: cost,
-          // Inuvo Metrics
-          revenue: totalRevenue,
-          ctr: inuvoCtr,
-          epc: epc,
-          clicks: totalInuvoClicks,
-          roi: roi,
-          profit: profit,
-          campaign_name: ad.campaign_name || ad.name || `Campaign ${tkid}`,
-          date: ad.date || revenueRecords[0]?.DATE || formatDateForDisplay(new Date())
-        });
-
-        console.log(`[COST_REVENUE_MAPPING] Mapped by ${matchedBy} ${tkid}: $${cost} cost → $${totalRevenue.toFixed(2)} revenue`);
-      } else {
-        // Ad has cost but no revenue (no matching TKID in inuvo)
-        const conversions = ad.metrics?.conversions || 0;
-        const cpa = ad.metrics?.cpa || (conversions > 0 ? cost / conversions : 0);
-
-        mappings.push({
-          TKID: tkid || '',
-          // Google Ads Metrics
-          conversions: conversions,
-          cpa: cpa,
-          cost: cost,
-          // Inuvo Metrics (no data available)
-          revenue: 0,
-          ctr: 0,
-          epc: 0,
-          clicks: 0,
-          roi: -100,
-          profit: -cost,
-          campaign_name: ad.campaign_name || ad.name || `Campaign ${tkid}`,
-          date: ad.date || formatDateForDisplay(new Date())
-        });
-
-        console.log(`[COST_REVENUE_MAPPING] No revenue for TKID ${tkid}: $${cost} cost only`);
-      }
-    } else {
-      console.log(`[COST_REVENUE_MAPPING] No TKID found for ad:`, {
-        ad_id: ad.ad_id,
-        campaign_id: ad.campaign_id,
-        final_urls: ad.final_urls
+      mappings.push({
+        TKID: campId,
+        conversions, cpa, cost,
+        revenue: totalRevenue,
+        ctr: inuvoCtr, epc, clicks: totalInuvoClicks,
+        roi, profit,
+        campaign_name: campaignName,
+        date: revenueRecords[0]?.DATE || date
       });
+
+      console.log(`[COST_REVENUE_MAPPING] ✓ Matched by ${matchedBy} CAMP_ID=${campId}: $${cost.toFixed(2)} cost → $${totalRevenue.toFixed(2)} revenue`);
+    } else {
+      // No matching Inuvo revenue found
+      mappings.push({
+        TKID: campId || ad.campaign_id?.toString() || '',
+        conversions, cpa, cost,
+        revenue: 0, ctr: 0, epc: 0, clicks: 0,
+        roi: -100, profit: -cost,
+        campaign_name: campaignName,
+        date
+      });
+
+      console.log(`[COST_REVENUE_MAPPING] ✗ No revenue match for "${campaignName}" (campId=${campId || 'not found'}): $${cost.toFixed(2)} cost only`);
     }
   });
 

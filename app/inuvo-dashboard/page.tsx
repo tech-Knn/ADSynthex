@@ -103,9 +103,9 @@ export default function InuvoDashboard() {
       
       console.log(`[INUVO_DASHBOARD] Fetching data: ${startDate} to ${endDate}, Account: ${selectedAccount}, Type: ${dataType}`);
       
-      // Auto force-refresh for new Inuvo accounts to ensure fresh data
-      const newAccounts = ['8277852439', '3882415196'];
-      const shouldForceRefresh = selectedAccount && newAccounts.includes(selectedAccount);
+      // Always force-refresh for Inuvo accounts to ensure accurate data (no stale cache)
+      const inuvoAccounts = ['9532228491', '9375852176'];
+      const shouldForceRefresh = selectedAccount && inuvoAccounts.includes(selectedAccount);
 
       const response = await fetch('/api/inuvo', {
         method: 'POST',
@@ -159,7 +159,8 @@ export default function InuvoDashboard() {
   };
 
   const accounts = [
-    { id: '9532228491', name: 'kaptinklunk - Inuvo - PST' }
+    { id: '9532228491', name: 'kaptinklunk - Inuvo - PST' },
+    { id: '9375852176', name: 'kaptinklunk - Inuvo - PST 2' }
   ];
 
   return (
