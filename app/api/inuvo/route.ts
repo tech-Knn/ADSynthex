@@ -90,63 +90,87 @@ export async function POST(request: NextRequest) {
       const { googleAdsRateLimiter } = await import('@/lib/redis-rate-limiter');
       const quotaCheck = await googleAdsRateLimiter.canMakeRequest();
 
-      // Inuvo is a realtime dashboard — never serve stale/zero-cached Google Ads data.
-      // Always fetch fresh unless the rate limiter is in cooldown.
       const canFetchFresh = quotaCheck.allowed;
       if (!canFetchFresh) {
-        console.warn(`[INUVO_ENDPOINT] Rate limit cooldown active — will try cached data: ${quotaCheck.reason}`);
+        console.warn(`[INUVO_ENDPOINT] Rate limit cooldown active — will use cached data: ${quotaCheck.reason}`);
       }
 
       // For multi-account, fetch all Inuvo accounts (customerId=null, feedType=inuvo)
       // For single-account, fetch specific account
       const fetchCustomerId = isMultiAccount ? null : (customerId || null);
 
-      // Always clear the Inuvo cache before fetching so we never serve zero-data from a
-      // stale cached call that ran before today's spend started.
-      if (canFetchFresh) {
+      // Only clear cache on an explicit forceRefresh — otherwise let the cache serve fast responses.
+      if (forceRefresh && canFetchFresh) {
         try {
           const { redisCacheManager } = await import('@/lib/redis-cache-manager');
           const pattern = fetchCustomerId ? `*${fetchCustomerId}*` : `*inuvo*`;
           const keys = await redisCacheManager.getKeysByPattern(pattern);
           if (keys.length > 0) {
             for (const key of keys) await redisCacheManager.delete(key);
-            console.log(`[INUVO_ENDPOINT] Cleared ${keys.length} stale cache entries`);
+            console.log(`[INUVO_ENDPOINT] Force-refresh: cleared ${keys.length} cache entries`);
           }
         } catch (cacheError) {
           console.warn(`[INUVO_ENDPOINT] Cache clear failed:`, cacheError);
         }
       }
 
-      // Fetch Google Ads cost data — allowStale only when rate-limited
-      console.log(`[INUVO_ENDPOINT] Fetching Google Ads data for ${modeLabel}...`);
-      const googleAdsResult = await bulletproofAPI.getData(startDate, endDate, fetchCustomerId, {
-        priority: 8,
-        allowStale: !canFetchFresh,
-        maxWait: 20000,
-        feedType: 'inuvo'
-      });
+      // Fetch Google Ads and Inuvo in parallel — they are completely independent.
+      console.log(`[INUVO_ENDPOINT] Parallel fetch: Google Ads (${modeLabel}) + Inuvo ${dataType}...`);
 
-      googleAdsData = googleAdsResult.data;
-      message += `Google Ads: ${googleAdsResult.message}. `;
+      const inuvoFetch = (useMockData || !process.env.INUVO_ACCESS_TOKEN)
+        ? Promise.resolve({ data: getMockInuvoData(startDate, endDate), isMock: true })
+        : (dataType === 'daily'
+            ? fetchInuvoDailyData(startDate, endDate).then(d => ({ data: d, isMock: false }))
+            : fetchInuvoRealtimeData(startDate, endDate).then(d => ({ data: d, isMock: false }))
+          ).catch(err => {
+            console.warn('[INUVO_ENDPOINT] Inuvo API failed, falling back to mock:', err);
+            return { data: getMockInuvoData(startDate, endDate), isMock: true, fallback: true };
+          });
 
-      // Fetch Inuvo revenue data (single call returns all CAMP_IDs)
-      console.log('[INUVO_ENDPOINT] Fetching Inuvo revenue data...');
-      if (useMockData || !process.env.INUVO_ACCESS_TOKEN) {
-        inuvoData = getMockInuvoData(startDate, endDate);
-        message += 'Inuvo: Mock data (API key not configured). ';
-      } else {
+      const [googleAdsResult, inuvoResult] = await Promise.all([
+        bulletproofAPI.getData(startDate, endDate, fetchCustomerId, {
+          priority: 8,
+          allowStale: true,          // use cache for fast normal loads
+          maxWait: 20000,
+          feedType: 'inuvo'
+        }),
+        inuvoFetch,
+      ]);
+
+      // Stale-zero protection: if cache returned 0 campaigns and rate limiter allows, re-fetch once.
+      let finalGoogleAdsResult = googleAdsResult;
+      if (
+        canFetchFresh &&
+        !forceRefresh &&
+        googleAdsResult.source === 'cache' &&
+        !googleAdsResult.data?.campaigns?.length
+      ) {
+        console.log(`[INUVO_ENDPOINT] Cache returned 0 campaigns — forcing fresh fetch`);
         try {
-          if (dataType === 'daily') {
-            inuvoData = await fetchInuvoDailyData(startDate, endDate);
-          } else {
-            inuvoData = await fetchInuvoRealtimeData(startDate, endDate);
-          }
-          message += `Inuvo: Fresh ${dataType} data from API. `;
-        } catch (inuvoError) {
-          console.warn('[INUVO_ENDPOINT] Inuvo API failed, using mock data:', inuvoError);
-          inuvoData = getMockInuvoData(startDate, endDate);
-          message += 'Inuvo: Fallback to mock data (API error). ';
-        }
+          const { redisCacheManager } = await import('@/lib/redis-cache-manager');
+          const pattern = fetchCustomerId ? `*${fetchCustomerId}*` : `*inuvo*`;
+          const keys = await redisCacheManager.getKeysByPattern(pattern);
+          for (const key of keys) await redisCacheManager.delete(key);
+        } catch (_) { /* ignore */ }
+        finalGoogleAdsResult = await bulletproofAPI.getData(startDate, endDate, fetchCustomerId, {
+          priority: 8,
+          allowStale: false,
+          maxWait: 25000,
+          feedType: 'inuvo'
+        });
+      }
+
+      googleAdsData = finalGoogleAdsResult.data;
+      message += `Google Ads: ${finalGoogleAdsResult.message}. `;
+
+      const rawInuvo = (inuvoResult as any);
+      inuvoData = rawInuvo.data;
+      if (rawInuvo.isMock && !useMockData) {
+        message += `Inuvo: Fallback to mock data (API error). `;
+      } else if (rawInuvo.isMock) {
+        message += `Inuvo: Mock data (API key not configured). `;
+      } else {
+        message += `Inuvo: Fresh ${dataType} data from API. `;
       }
 
       // Build cost/revenue mapping using CAMP_ID from campaign names

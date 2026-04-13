@@ -96,10 +96,10 @@ export default function InuvoDashboard() {
   }, []);
 
   useEffect(() => {
-    fetchData();
+    fetchData(false);
   }, [dateRange, selectedAccount, dataType]);
 
-  const fetchData = async () => {
+  const fetchData = async (forceRefresh = false) => {
     setLoading(true);
     setError(null);
 
@@ -114,7 +114,7 @@ export default function InuvoDashboard() {
         endDate,
         dataType,
         useMockData: false,
-        forceRefresh: false,
+        forceRefresh,
         ...(isAllAccounts
           ? { accountIds: INUVO_ACCOUNTS.map(a => a.id) }
           : { customerId: selectedAccount }),
@@ -270,7 +270,7 @@ export default function InuvoDashboard() {
                   <Button
                     type="primary"
                     icon={<ReloadOutlined />}
-                    onClick={fetchData}
+                    onClick={() => fetchData(true)}
                     loading={loading}
                     style={{
                       background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
