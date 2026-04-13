@@ -97,6 +97,7 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   // Inuvo Accounts
   'CID_9532228491': ['inuvo'], // kaptinklunk - Inuvo - PST
   'CID_9375852176': ['inuvo'], // kaptinklunk - Inuvo - PST 2
+  'CID_6641065048': ['inuvo'], // kaptinklunk - Inuvo - PST 3
 
   // CarHp Accounts (search.carhp.com - GEO-based campaigns) - dedicated /carhp page
   'CID_5079394847': ['carhp'], // CarHp New 02

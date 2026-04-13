@@ -18,6 +18,7 @@ import { cookies } from 'next/headers';
 const INUVO_ACCOUNTS = [
   { id: '9532228491', name: 'kaptinklunk - Inuvo - PST' },
   { id: '9375852176', name: 'kaptinklunk - Inuvo - PST 2' },
+  { id: '6641065048', name: 'kaptinklunk - Inuvo - PST 3' },
 ];
 
 interface AccountSummary {
