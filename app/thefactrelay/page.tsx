@@ -16,6 +16,9 @@ const { Option } = Select;
 const TFR_ACCOUNTS = [
     { id: '2144311178', name: 'TheFactRelay 01', descriptiveName: 'TheFactRelay 01' },
     { id: '7371749207', name: 'TheFactRelay 02', descriptiveName: 'TheFactRelay 02' },
+    { id: '2334822533', name: 'TheFactRelay 03', descriptiveName: 'TheFactRelay 03' },
+    { id: '7600645594', name: 'TheFactRelay 04', descriptiveName: 'TheFactRelay 04' },
+    { id: '2722142680', name: 'TheFactRelay 05', descriptiveName: 'TheFactRelay 05' },
 ];
 
 const TFR_PUBLISHER_ID = 'accounts/pub-6567805284657549'; // Oarex Funding LLC

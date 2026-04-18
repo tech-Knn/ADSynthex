@@ -133,6 +133,9 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   // TheFactRelay Accounts
   'CID_2144311178': ['thefactrelay'], // TheFactRelay 01
   'CID_7371749207': ['thefactrelay'], // TheFactRelay 02
+  'CID_2334822533': ['thefactrelay'], // TheFactRelay 03
+  'CID_7600645594': ['thefactrelay'], // TheFactRelay 04
+  'CID_2722142680': ['thefactrelay'], // TheFactRelay 05
 
   // EMERGENCY FIX 2026-02-07: Compado accounts DISABLED (not in use, wasting quota)
   // 'CID_5416418019': ['compado'],

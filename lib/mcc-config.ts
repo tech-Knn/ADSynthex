@@ -132,6 +132,9 @@ export const ACCOUNT_TO_MCC: Record<string, keyof typeof MCC_CONFIGS> = {
   // TheFactRelay Accounts
   '2144311178': 'primary',  // TheFactRelay 01
   '7371749207': 'primary',  // TheFactRelay 02
+  '2334822533': 'primary',  // TheFactRelay 03
+  '7600645594': 'primary',  // TheFactRelay 04
+  '2722142680': 'primary',  // TheFactRelay 05
 };
 
 export function getMCCForAccount(customerId: string): MCCCredentials | null {
