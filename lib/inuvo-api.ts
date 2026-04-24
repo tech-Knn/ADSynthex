@@ -88,6 +88,16 @@ const INUVO_CONFIG: InuvoApiConfig = {
       id: '6641065048',
       name: 'kaptinklunk - Inuvo - PST 3',
       timezone: 'PST'
+    },
+    {
+      id: '7053668495',
+      name: 'kaptinklunk - Inuvo - PST 4',
+      timezone: 'PST'
+    },
+    {
+      id: '6463288476',
+      name: 'kaptinklunk - Inuvo - PST 5',
+      timezone: 'PST'
     }
   ]
 };
