@@ -23,6 +23,9 @@ const INUVO_ACCOUNTS = [
   { id: '6463288476', name: 'kaptinklunk - Inuvo - PST 5' },
 ];
 
+// Versioned cache suffix — bump when accounts are added so old cache is bypassed automatically
+const INUVO_CACHE_KEY = `inuvo_v${INUVO_ACCOUNTS.length}`;
+
 interface AccountSummary {
   account_id: string;
   account_name: string;
@@ -75,7 +78,6 @@ export async function POST(request: NextRequest) {
         );
       }
       customerId = accountValue;
-      // Users cannot use multi-account mode
       accountIds = undefined;
     }
 
@@ -97,26 +99,24 @@ export async function POST(request: NextRequest) {
         console.warn(`[INUVO_ENDPOINT] Rate limit cooldown active — will use cached data: ${quotaCheck.reason}`);
       }
 
-      // For multi-account, fetch all Inuvo accounts (customerId=null, feedType=inuvo)
-      // For single-account, fetch specific account
       const fetchCustomerId = isMultiAccount ? null : (customerId || null);
 
-      // Only clear cache on an explicit forceRefresh — otherwise let the cache serve fast responses.
+      // Force-refresh: clear both memory cache and the specific Redis key
       if (forceRefresh && canFetchFresh) {
         try {
           const { redisCacheManager } = await import('@/lib/redis-cache-manager');
-          const pattern = fetchCustomerId ? `*${fetchCustomerId}*` : `*inuvo*`;
-          const keys = await redisCacheManager.getKeysByPattern(pattern);
-          if (keys.length > 0) {
-            for (const key of keys) await redisCacheManager.delete(key);
-            console.log(`[INUVO_ENDPOINT] Force-refresh: cleared ${keys.length} cache entries`);
-          }
+          const { redisClient } = await import('@/lib/redis-client');
+          // Clear memory cache for inuvo feed
+          await redisCacheManager.invalidate('inuvo');
+          // Clear Redis directly using the known versioned key format
+          const redisKey = `cache:google-ads:${fetchCustomerId || 'all'}:${startDate}:${endDate}:${INUVO_CACHE_KEY}`;
+          await redisClient.del(redisKey);
+          console.log(`[INUVO_ENDPOINT] Force-refresh: cleared inuvo cache (${redisKey})`);
         } catch (cacheError) {
           console.warn(`[INUVO_ENDPOINT] Cache clear failed:`, cacheError);
         }
       }
 
-      // Fetch Google Ads and Inuvo in parallel — they are completely independent.
       console.log(`[INUVO_ENDPOINT] Parallel fetch: Google Ads (${modeLabel}) + Inuvo ${dataType}...`);
 
       const inuvoFetch = (useMockData || !process.env.INUVO_ACCESS_TOKEN)
@@ -132,14 +132,15 @@ export async function POST(request: NextRequest) {
       const [googleAdsResult, inuvoResult] = await Promise.all([
         bulletproofAPI.getData(startDate, endDate, fetchCustomerId, {
           priority: 8,
-          allowStale: true,          // use cache for fast normal loads
+          allowStale: true,
           maxWait: 20000,
-          feedType: 'inuvo'
+          feedType: 'inuvo',
+          cacheKeySuffix: INUVO_CACHE_KEY,   // version key so new accounts auto-bust cache
         }),
         inuvoFetch,
       ]);
 
-      // Stale-zero protection: if cache returned 0 campaigns and rate limiter allows, re-fetch once.
+      // Stale-zero protection: cache returned 0 campaigns — force fresh fetch
       let finalGoogleAdsResult = googleAdsResult;
       if (
         canFetchFresh &&
@@ -150,15 +151,16 @@ export async function POST(request: NextRequest) {
         console.log(`[INUVO_ENDPOINT] Cache returned 0 campaigns — forcing fresh fetch`);
         try {
           const { redisCacheManager } = await import('@/lib/redis-cache-manager');
-          const pattern = fetchCustomerId ? `*${fetchCustomerId}*` : `*inuvo*`;
-          const keys = await redisCacheManager.getKeysByPattern(pattern);
-          for (const key of keys) await redisCacheManager.delete(key);
+          const { redisClient } = await import('@/lib/redis-client');
+          await redisCacheManager.invalidate('inuvo');
+          await redisClient.del(`cache:google-ads:${fetchCustomerId || 'all'}:${startDate}:${endDate}:${INUVO_CACHE_KEY}`);
         } catch (_) { /* ignore */ }
         finalGoogleAdsResult = await bulletproofAPI.getData(startDate, endDate, fetchCustomerId, {
           priority: 8,
           allowStale: false,
           maxWait: 25000,
-          feedType: 'inuvo'
+          feedType: 'inuvo',
+          cacheKeySuffix: INUVO_CACHE_KEY,
         });
       }
 
@@ -175,12 +177,24 @@ export async function POST(request: NextRequest) {
         message += `Inuvo: Fresh ${dataType} data from API. `;
       }
 
-      // Build cost/revenue mapping using CAMP_ID from campaign names
       const allCampaigns = googleAdsData?.campaigns || [];
       console.log(`[INUVO_ENDPOINT] Mapping ${allCampaigns.length} campaigns against ${inuvoData.data?.length || 0} Inuvo records`);
 
       const costRevenueMapping = mapCostRevenue(allCampaigns, inuvoData.data || []);
       const summary = getCostRevenueSummary(costRevenueMapping);
+
+      // Total Inuvo earnings from API (independent of CAMP_ID matching)
+      const inuvoTotalEarnings: number = inuvoData.total_earnings || 0;
+      const matchedRevenue: number = summary.totalRevenue;
+      const unmatchedRevenue: number = Math.max(0, inuvoTotalEarnings - matchedRevenue);
+
+      if (inuvoTotalEarnings > 0) {
+        const matchPct = Math.round((matchedRevenue / inuvoTotalEarnings) * 100);
+        console.log(`[INUVO_ENDPOINT] Revenue match: $${matchedRevenue.toFixed(2)} matched / $${inuvoTotalEarnings.toFixed(2)} total Inuvo (${matchPct}%)`);
+        if (unmatchedRevenue > 0.01) {
+          console.warn(`[INUVO_ENDPOINT] $${unmatchedRevenue.toFixed(2)} Inuvo revenue unmatched — CAMP_IDs not found in campaign names/URLs`);
+        }
+      }
 
       // Build per-account summaries for admin multi-account view
       let accountSummaries: AccountSummary[] | undefined;
@@ -201,7 +215,7 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        // Aggregate per account using customer_id on each campaign
+        // Aggregate cost per account from Google Ads campaigns
         for (const campaign of allCampaigns) {
           const accId = campaign.customer_id;
           if (!accId || !summaryMap.has(accId)) continue;
@@ -210,24 +224,21 @@ export async function POST(request: NextRequest) {
           entry.campaign_count += 1;
         }
 
-        // Match revenue back to accounts via the cost_revenue_mapping
+        // Aggregate revenue per account via cost_revenue_mapping → campaign → customer_id
         for (const mapping of costRevenueMapping) {
-          // Find which account this campaign belongs to
           const campaign = allCampaigns.find((c: any) => c.campaign_name === mapping.campaign_name);
           if (!campaign) continue;
           const accId = campaign.customer_id;
           if (!accId || !summaryMap.has(accId)) continue;
-          const entry = summaryMap.get(accId)!;
-          entry.total_revenue += mapping.revenue || 0;
+          summaryMap.get(accId)!.total_revenue += mapping.revenue || 0;
         }
 
-        // Compute profit + ROI for each account
+        // Compute profit + ROI, then round
         for (const entry of summaryMap.values()) {
           entry.total_profit = entry.total_revenue - entry.total_cost;
           entry.roi = entry.total_cost > 0
             ? ((entry.total_revenue - entry.total_cost) / entry.total_cost) * 100
             : 0;
-          // Round
           entry.total_cost = Math.round(entry.total_cost * 100) / 100;
           entry.total_revenue = Math.round(entry.total_revenue * 100) / 100;
           entry.total_profit = Math.round(entry.total_profit * 100) / 100;
@@ -244,14 +255,18 @@ export async function POST(request: NextRequest) {
           total_cost: summary.totalCost
         },
         cost_revenue_mapping: costRevenueMapping,
-        summary,
+        summary: {
+          ...summary,
+          inuvoTotalEarnings: Math.round(inuvoTotalEarnings * 100) / 100,
+          unmatchedRevenue: Math.round(unmatchedRevenue * 100) / 100,
+        },
         ...(accountSummaries ? { account_summaries: accountSummaries } : {}),
         _source: 'inuvo_cost_revenue_api',
         _timestamp: new Date().toISOString(),
         _message: message.trim()
       };
 
-      console.log(`[INUVO_ENDPOINT] Done: ${costRevenueMapping.length} mappings, $${summary.totalCost} cost, $${summary.totalRevenue} revenue`);
+      console.log(`[INUVO_ENDPOINT] Done: ${costRevenueMapping.length} mappings, $${summary.totalCost} cost, $${summary.totalRevenue} matched rev, $${inuvoTotalEarnings.toFixed(2)} total Inuvo rev`);
 
       return NextResponse.json(response, {
         headers: {
@@ -304,7 +319,8 @@ export async function GET(request: NextRequest) {
         google_ads_api: 'bulletproof_protected',
         cost_revenue_mapping: 'enabled',
         camp_id_extraction: 'campaign_name',
-        multi_account: 'enabled'
+        multi_account: 'enabled',
+        cache_versioning: INUVO_CACHE_KEY,
       },
       accounts: INUVO_ACCOUNTS,
       timestamp: new Date().toISOString()

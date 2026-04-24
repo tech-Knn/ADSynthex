@@ -45,18 +45,19 @@ export class BulletproofGoogleAdsAPI {
       allowStale?: boolean;
       maxWait?: number;
       feedType?: FeedType | null;
+      cacheKeySuffix?: string;
     } = {}
   ): Promise<ApiResponse> {
-    const { priority = 5, allowStale = true, maxWait = 30000, feedType = null } = options;
+    const { priority = 5, allowStale = true, maxWait = 30000, feedType = null, cacheKeySuffix } = options;
 
     // Step 0: Request deduplication - Check if same request is already in-flight
-    // Include feedType in cache key to prevent cross-feed cache pollution
+    // Include feedType (and optional suffix) in cache key to prevent cross-feed cache pollution
     const cacheKey = redisCacheManager.generateKey({
       dataType: 'google-ads',
       accountId: customerId,
       startDate,
       endDate,
-      extra: feedType || undefined  // Use 'extra' parameter to include feedType in cache key
+      extra: cacheKeySuffix || feedType || undefined
     });
 
     const requestKey = `${cacheKey}:${priority}`;
@@ -69,7 +70,7 @@ export class BulletproofGoogleAdsAPI {
     }
 
     // Create a promise for this request and store it with timestamp
-    const requestPromise = this.executeRequest(startDate, endDate, customerId, cacheKey, { priority, allowStale, maxWait, feedType });
+    const requestPromise = this.executeRequest(startDate, endDate, customerId, cacheKey, { priority, allowStale, maxWait, feedType: feedType });
 
     // Store the promise with timestamp for cleanup
     this.inflightRequests.set(requestKey, {

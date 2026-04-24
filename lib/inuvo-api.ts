@@ -273,20 +273,28 @@ export async function fetchInuvoDailyData(
 }
 
 /**
- * Extract TKID/CAMP_ID from Google Ads URL parameters
+ * Extract TKID/CAMP_ID from Google Ads URL parameters.
+ * Strips ValueTrack placeholders ({lpurl}, {gclid}, etc.) before parsing.
  */
 function extractCampIdFromURL(url: string): string | null {
   try {
     if (!url) return null;
 
+    // Strip ValueTrack parameters (e.g. {lpurl}, {gclid}, {ignore})
+    const clean = url.replace(/\{[^}]+\}/g, '');
+
     // Try URL parameter (camp_id, CAMP_ID, tkid, TKID)
-    const urlParams = new URLSearchParams(url.split('?')[1] || '');
-    const param = urlParams.get('camp_id') || urlParams.get('CAMP_ID') ||
-                  urlParams.get('tkid') || urlParams.get('TKID');
-    if (param) return param;
+    const qIdx = clean.indexOf('?');
+    const queryString = qIdx >= 0 ? clean.slice(qIdx + 1) : clean;
+    if (queryString) {
+      const urlParams = new URLSearchParams(queryString);
+      const param = urlParams.get('camp_id') || urlParams.get('CAMP_ID') ||
+                    urlParams.get('tkid') || urlParams.get('TKID');
+      if (param) return param.trim();
+    }
 
     // Try path-based pattern: /tkid/374647 or /camp_id/374647
-    const pathMatch = url.match(/\/(tkid|camp_id)\/(\d{4,7})/i);
+    const pathMatch = clean.match(/\/(tkid|camp_id)\/(\d{4,7})/i);
     if (pathMatch) return pathMatch[2];
 
     return null;
@@ -297,18 +305,18 @@ function extractCampIdFromURL(url: string): string | null {
 
 /**
  * Extract Inuvo CAMP_ID from Google Ads campaign name.
- * Inuvo campaign names embed the CAMP_ID as a 5-6 digit number.
+ * Inuvo campaign names embed the CAMP_ID as a 4-7 digit number.
  * Example: "03/4/26 - Beta Thalassemia - usa - 374647 #2" → "374647"
  * Example: "3/4/26 - lutetium-177-therapy - usa - 374646 #2" → "374646"
  */
 function extractCampIdFromName(campaignName: string, inuvoCampIdMap: Map<string, any>): string | null {
   if (!campaignName) return null;
 
-  // Find all 5-6 digit numbers in the campaign name
-  const matches = campaignName.match(/\b(\d{5,6})\b/g);
+  // Find all 4-7 digit numbers in the campaign name (extended from 5-6)
+  const matches = campaignName.match(/\b(\d{4,7})\b/g);
   if (!matches) return null;
 
-  // Return the first number that exists in the Inuvo CAMP_ID map
+  // Return the first number that actually exists in the Inuvo data (filters false positives)
   for (const match of matches) {
     if (inuvoCampIdMap.has(match)) {
       return match;

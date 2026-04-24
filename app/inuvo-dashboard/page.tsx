@@ -297,14 +297,33 @@ export default function InuvoDashboard() {
               type="error"
               showIcon
               style={{ marginBottom: '24px' }}
-              action={<Button size="small" onClick={fetchData}>Retry</Button>}
+              action={<Button size="small" onClick={() => fetchData()}>Retry</Button>}
             />
           )}
           {data?._source === 'mock_fallback' && (
             <Alert message="Using Mock Data" description={data._message} type="warning" showIcon style={{ marginBottom: '24px' }} />
           )}
           {data?._message && data._source !== 'mock_fallback' && (
-            <Alert message="Data Status" description={data._message} type="info" showIcon style={{ marginBottom: '24px' }} />
+            <Alert
+              message="Data Status"
+              description={
+                <span>
+                  {data._message}
+                  {data.summary?.inuvoTotalEarnings > 0 && (
+                    <span style={{ marginLeft: 12, color: data.summary.unmatchedRevenue > 0.01 ? '#faad14' : '#52c41a' }}>
+                      {' '}| Inuvo total: ${data.summary.inuvoTotalEarnings?.toFixed(2)} &nbsp;
+                      Matched: ${data.summary.totalRevenue?.toFixed(2)}
+                      {data.summary.unmatchedRevenue > 0.01 && (
+                        <span style={{ color: '#faad14' }}> (${data.summary.unmatchedRevenue?.toFixed(2)} unmatched)</span>
+                      )}
+                    </span>
+                  )}
+                </span>
+              }
+              type="info"
+              showIcon
+              style={{ marginBottom: '24px' }}
+            />
           )}
 
           <Spin spinning={loading} size="large">
