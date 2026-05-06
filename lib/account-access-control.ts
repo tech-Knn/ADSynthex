@@ -6,7 +6,7 @@
  * Regular users only have access to specific feeds based on their account type.
  */
 
-export type FeedType = 'adscom' | 'compado' | 'inuvo' | 'adsense' | 'predicto' | 'carhp' | 'thefactrelay';
+export type FeedType = 'adscom' | 'compado' | 'inuvo' | 'adsense' | 'predicto' | 'carhp' | 'thefactrelay' | 'androidadvice';
 
 export interface AccountAccessConfig {
   accountId: string;
@@ -139,6 +139,17 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_7600645594': ['thefactrelay'], // TheFactRelay 04
   'CID_2722142680': ['thefactrelay'], // TheFactRelay 05
 
+  // AndroidAdvice Accounts (androidadvices.com)
+  'CID_8701280199': ['androidadvice'], // androidadvices 01
+  'CID_3765399744': ['androidadvice'], // androidadvices 02
+  'CID_3617356950': ['androidadvice'], // androidadvices 03
+  'CID_4932880256': ['androidadvice'], // androidadvices 04
+  'CID_3764963776': ['androidadvice'], // androidadvices 05
+  'CID_4702286319': ['androidadvice'], // androidadvices 06
+  'CID_8182947427': ['androidadvice'], // androidadvices 07
+  'CID_7423206633': ['androidadvice'], // androidadvices 08
+  'CID_7753453760': ['androidadvice'], // androidadvice 09
+
   // EMERGENCY FIX 2026-02-07: Compado accounts DISABLED (not in use, wasting quota)
   // 'CID_5416418019': ['compado'],
   // 'CID_5108802445': ['compado'],
@@ -199,6 +210,7 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_3907817554': ['predicto'], // Predicto - EST - 29
   'CID_7505004095': ['predicto'], // Predicto - EST - 30
   'CID_3138682158': ['predicto'], // Predicto - EST - 31
+  'CID_6043127003': ['predicto'], // Predicto - EST - 33
   'CID_2851239327': ['predicto'], // Predicto - EST - 34
   'CID_7262761952': ['predicto'], // Predicto - EST - 35
   'CID_5651153058': ['predicto'], // Predicto - EST - 36
@@ -244,6 +256,7 @@ export const FEED_ROUTES: Record<FeedType, string[]> = {
   predicto: ['/predicto', '/api/predicto', '/api/predicto-cost-revenue'],
   carhp: ['/carhp', '/api/adsense-cost-revenue'],
   thefactrelay: ['/thefactrelay', '/api/adsense-cost-revenue'],
+  androidadvice: ['/androidadvice', '/api/adsense-cost-revenue'],
 };
 
 /**
@@ -426,6 +439,9 @@ export const ACCOUNT_CHANNEL_ACCESS: Record<string, string[]> = {
 
   // Predicto - EST - 31: Channels from campaign names (cid in name, not URL)
   'CID_3138682158': ['ch605', 'ch71389', 'ch60772', 'ch71383', 'ch6091'],
+
+  // Predicto - EST - 33: No channels assigned
+  'CID_6043127003': [],
 
   // Predicto - EST - 34: No channels assigned
   'CID_2851239327': [],

@@ -14,7 +14,8 @@ import {
   GoogleOutlined,
   FileSearchOutlined,
   CarOutlined,
-  FileTextOutlined
+  FileTextOutlined,
+  AndroidOutlined
 } from '@ant-design/icons';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
@@ -630,6 +631,7 @@ const getFeedTypeFromPathname = (pathname: string): FeedType | null => {
   if (pathname === '/predicto') return 'predicto';
   if (pathname === '/carhp') return 'carhp';
   if (pathname === '/thefactrelay') return 'thefactrelay';
+  if (pathname === '/androidadvice') return 'androidadvice';
   return null;
 };
 
@@ -696,6 +698,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     if (pathname === '/predicto') return '5';
     if (pathname === '/carhp') return '8';
     if (pathname === '/thefactrelay') return '9';
+    if (pathname === '/androidadvice') return '10';
     return '1';
   };
 
@@ -727,7 +730,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         console.log(`[DashboardLayout] User ${accountId} has access to feeds:`, feeds);
       } else if (authType === 'admin') {
         // Admin has access to all feeds
-        setAllowedFeeds(['adscom', 'compado', 'inuvo', 'adsense', 'predicto', 'carhp', 'thefactrelay']);
+        setAllowedFeeds(['adscom', 'compado', 'inuvo', 'adsense', 'predicto', 'carhp', 'thefactrelay', 'androidadvice']);
       }
 
       // If not admin and we have an account ID, select it by default
@@ -911,6 +914,12 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 key: '9',
                 icon: <FileTextOutlined />,
                 label: <Link href="/thefactrelay">TheFactRelay</Link>,
+              }] : []),
+              // AndroidAdvice - Only show if user has 'androidadvice' access
+              ...(allowedFeeds.includes('androidadvice') ? [{
+                key: '10',
+                icon: <AndroidOutlined />,
+                label: <Link href="/androidadvice">AndroidAdvice</Link>,
               }] : []),
               // {
               //   key: '6',

@@ -88,6 +88,7 @@ export const ACCOUNT_TO_MCC: Record<string, keyof typeof MCC_CONFIGS> = {
   '3907817554': 'primary', // Predicto EST-29
   '7505004095': 'primary', // Predicto EST-30
   '3138682158': 'primary', // Predicto EST-31
+  '6043127003': 'primary', // Predicto EST-33
   '2851239327': 'primary', // Predicto EST-34
   '7262761952': 'primary', // Predicto EST-35
   '5651153058': 'primary', // Predicto EST-36
@@ -137,6 +138,17 @@ export const ACCOUNT_TO_MCC: Record<string, keyof typeof MCC_CONFIGS> = {
   '2334822533': 'primary',  // TheFactRelay 03
   '7600645594': 'primary',  // TheFactRelay 04
   '2722142680': 'primary',  // TheFactRelay 05
+
+  // AndroidAdvice Accounts (androidadvices.com)
+  '8701280199': 'primary',  // androidadvices 01
+  '3765399744': 'primary',  // androidadvices 02
+  '3617356950': 'primary',  // androidadvices 03
+  '4932880256': 'primary',  // androidadvices 04
+  '3764963776': 'primary',  // androidadvices 05
+  '4702286319': 'primary',  // androidadvices 06
+  '8182947427': 'primary',  // androidadvices 07
+  '7423206633': 'primary',  // androidadvices 08
+  '7753453760': 'primary',  // androidadvice 09
 };
 
 export function getMCCForAccount(customerId: string): MCCCredentials | null {

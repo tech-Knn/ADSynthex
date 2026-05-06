@@ -2,7 +2,7 @@ import { E } from '@upstash/redis/zmscore-DWj9Vh1g';
 import { OAuth2Client } from 'google-auth-library';
 import { getMCCForAccount, getDefaultMCC } from './mcc-config';
 
-export type AdSenseAccountType = 'afs' | 'carhp' | 'thefactrelay';
+export type AdSenseAccountType = 'afs' | 'carhp' | 'thefactrelay' | 'androidadvice';
 
 function getOAuthClient(customerId?: string, adsenseAccountType?: AdSenseAccountType): OAuth2Client {
   // CARHP: use dedicated CARHP AdSense OAuth credentials
@@ -12,6 +12,17 @@ function getOAuthClient(customerId?: string, adsenseAccountType?: AdSenseAccount
       clientSecret: process.env.CARHP_ADSENSE_CLIENT_SECRET,
     });
     const refreshToken = process.env.CARHP_ADSENSE_REFRESH_TOKEN;
+    if (refreshToken) client.setCredentials({ refresh_token: refreshToken });
+    return client;
+  }
+
+  // ANDROIDADVICE: dedicated AndroidAdvice AdSense OAuth credentials
+  if (adsenseAccountType === 'androidadvice') {
+    const client = new OAuth2Client({
+      clientId: process.env.ANDROIDADVICE_ADSENSE_CLIENT_ID,
+      clientSecret: process.env.ANDROIDADVICE_ADSENSE_CLIENT_SECRET,
+    });
+    const refreshToken = process.env.ANDROIDADVICE_ADSENSE_REFRESH_TOKEN;
     if (refreshToken) client.setCredentials({ refresh_token: refreshToken });
     return client;
   }

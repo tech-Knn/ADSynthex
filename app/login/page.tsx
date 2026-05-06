@@ -84,6 +84,8 @@ export default function LoginPage() {
             router.push('/carhp');
           } else if (firstFeed === 'thefactrelay') {
             router.push('/thefactrelay');
+          } else if (firstFeed === 'androidadvice') {
+            router.push('/androidadvice');
           } else {
             // Fallback
             router.push('/dashboard');

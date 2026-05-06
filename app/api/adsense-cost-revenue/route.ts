@@ -37,10 +37,38 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { startDate, endDate, adsenseAccountId, customerId, accountIds, forceLive, adsenseAccountType } = body;
+    const { startDate, endDate, customerId, accountIds, forceLive, adsenseAccountType } = body;
+    let { adsenseAccountId } = body;
 
     // Determine feed type based on account type
-    const requiredFeedType = adsenseAccountType === 'carhp' ? 'carhp' : adsenseAccountType === 'thefactrelay' ? 'thefactrelay' : 'adsense';
+    const requiredFeedType =
+      adsenseAccountType === 'carhp' ? 'carhp'
+      : adsenseAccountType === 'thefactrelay' ? 'thefactrelay'
+      : adsenseAccountType === 'androidadvice' ? 'androidadvice'
+      : 'adsense';
+
+    // Server-side publisher ID resolution: never trust the client for a publisher ID
+    // tied to a feed type. Each feed has exactly one publisher; the server picks it
+    // from this map so a request can't cross-pollinate one feed's data into another.
+    // 'adsense' (default AFS) has multiple pub IDs per customer, so it stays client-driven.
+    const FEED_PUBLISHER_IDS: Record<string, string | undefined> = {
+      carhp: 'accounts/pub-4304762948491681',
+      thefactrelay: 'accounts/pub-6567805284657549',
+      androidadvice: process.env.ANDROIDADVICE_PUBLISHER_ID,
+    };
+    const expectedPubId = FEED_PUBLISHER_IDS[adsenseAccountType];
+    if (expectedPubId) {
+      if (adsenseAccountId && adsenseAccountId !== expectedPubId) {
+        console.warn(`[ADSENSE_REVENUE] Client sent pub ID ${adsenseAccountId} for ${adsenseAccountType}, overriding with server-configured ${expectedPubId}`);
+      }
+      adsenseAccountId = expectedPubId;
+    } else if (adsenseAccountType === 'androidadvice') {
+      console.error('[ADSENSE_REVENUE] ANDROIDADVICE_PUBLISHER_ID env var is not set');
+      return NextResponse.json({
+        error: 'Server misconfiguration',
+        message: 'ANDROIDADVICE_PUBLISHER_ID is not configured'
+      }, { status: 500 });
+    }
 
     console.log('[ADSENSE_REVENUE] ===== REQUEST START =====');
     console.log('[ADSENSE_REVENUE] Date range:', startDate, 'to', endDate);
@@ -66,7 +94,11 @@ export async function POST(request: NextRequest) {
     const accountsKey = accountIds?.length > 0
       ? accountIds.sort().join(',')
       : customerId || 'unknown';
-    const feedPrefix = requiredFeedType === 'carhp' ? 'carhp' : requiredFeedType === 'thefactrelay' ? 'thefactrelay' : 'afs';
+    const feedPrefix =
+      requiredFeedType === 'carhp' ? 'carhp'
+      : requiredFeedType === 'thefactrelay' ? 'thefactrelay'
+      : requiredFeedType === 'androidadvice' ? 'androidadvice'
+      : 'afs';
     const aggregatedCacheKey = `${feedPrefix}_aggregated:${accountsKey}:${adsenseAccountId}:${startDate}:${endDate}`;
 
     // Check aggregated cache FIRST (unless force refresh)
@@ -1367,6 +1399,7 @@ export async function POST(request: NextRequest) {
     const FEED_ALLOWED_DOMAINS: Partial<Record<FeedType, string[]>> = {
       thefactrelay: ['thefactrelay.com'],
       carhp: ['carhp.com', 'search.carhp.com'],
+      androidadvice: ['androidadvices.com'],
     };
     const allowedDomains = FEED_ALLOWED_DOMAINS[requiredFeedType as FeedType] ?? null;
 
