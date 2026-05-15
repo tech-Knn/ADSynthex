@@ -188,6 +188,16 @@ const CUSTOMER_ACCOUNTS = [
     value: '3138682158'
   },
   {
+    id: 'CID_2192245899',
+    name: 'Predicto - EST - 32',
+    value: '2192245899'
+  },
+  {
+    id: 'CID_6043127003',
+    name: 'Predicto - EST - 33',
+    value: '6043127003'
+  },
+  {
     id: 'CID_2851239327',
     name: 'Predicto - EST - 34',
     value: '2851239327'
@@ -206,6 +216,46 @@ const CUSTOMER_ACCOUNTS = [
     id: 'CID_8588048670',
     name: 'Predicto - EST - 37',
     value: '8588048670'
+  },
+  {
+    id: 'CID_7974960490',
+    name: 'Predicto - EST - 38',
+    value: '7974960490'
+  },
+  {
+    id: 'CID_8683194652',
+    name: 'Predicto - EST - 39',
+    value: '8683194652'
+  },
+  {
+    id: 'CID_5947639623',
+    name: 'Predicto - EST - 40',
+    value: '5947639623'
+  },
+  {
+    id: 'CID_1191411049',
+    name: 'Predicto - EST - 41',
+    value: '1191411049'
+  },
+  {
+    id: 'CID_7080789309',
+    name: 'Predicto - EST - 42',
+    value: '7080789309'
+  },
+  {
+    id: 'CID_7292070150',
+    name: 'Predicto - EST - 43',
+    value: '7292070150'
+  },
+  {
+    id: 'CID_5813682086',
+    name: 'Predicto - EST - 44',
+    value: '5813682086'
+  },
+  {
+    id: 'CID_2019271596',
+    name: 'Predicto - EST - 45',
+    value: '2019271596'
   },
   {
     id: 'CID_5079394847',

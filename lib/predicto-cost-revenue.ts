@@ -714,6 +714,21 @@ function getAccountName(customerId: string): string {
     '5556851600': 'Predicto - EST - 28',
     '3907817554': 'Predicto - EST - 29',
     '7505004095': 'Predicto - EST - 30',
+    '3138682158': 'Predicto - EST - 31',
+    '2192245899': 'Predicto - EST - 32',
+    '6043127003': 'Predicto - EST - 33',
+    '2851239327': 'Predicto - EST - 34',
+    '7262761952': 'Predicto - EST - 35',
+    '5651153058': 'Predicto - EST - 36',
+    '8588048670': 'Predicto - EST - 37',
+    '7974960490': 'Predicto - EST - 38',
+    '8683194652': 'Predicto - EST - 39',
+    '5947639623': 'Predicto - EST - 40',
+    '1191411049': 'Predicto - EST - 41',
+    '7080789309': 'Predicto - EST - 42',
+    '7292070150': 'Predicto - EST - 43',
+    '5813682086': 'Predicto - EST - 44',
+    '2019271596': 'Predicto - EST - 45',
   };
   return accountNames[customerId] || `Account ${customerId}`;
 }
@@ -750,6 +765,21 @@ const ALL_PREDICTO_ACCOUNTS = [
   '5556851600', // EST-28
   '3907817554', // EST-29
   '7505004095', // EST-30
+  '3138682158', // EST-31
+  '2192245899', // EST-32
+  '6043127003', // EST-33
+  '2851239327', // EST-34
+  '7262761952', // EST-35
+  '5651153058', // EST-36
+  '8588048670', // EST-37
+  '7974960490', // EST-38
+  '8683194652', // EST-39
+  '5947639623', // EST-40
+  '1191411049', // EST-41
+  '7080789309', // EST-42
+  '7292070150', // EST-43
+  '5813682086', // EST-44
+  '2019271596', // EST-45
 ];
 
 /**
