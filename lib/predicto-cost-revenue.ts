@@ -685,36 +685,6 @@ export async function fetchCostRevenueByChannelId(
 function getAccountName(customerId: string): string {
   const accountNames: Record<string, string> = {
     '2382992113': 'Predicto - EST - 01',
-    '1640518611': 'Predicto - EST - 02',
-    '8091270364': 'Predicto - EST - 03',
-    '8846129452': 'Predicto - EST - 04',
-    '6474140466': 'Predicto - EST - 05',
-    '4920639194': 'Predicto - EST - 06',
-    '7282297343': 'Predicto - EST - 07',
-    '1298005744': 'Predicto - EST - 08',
-    '5777354952': 'Predicto - EST - 09',
-    '1449565595': 'Predicto - EST - 10',
-    '3485355192': 'Predicto - EST - 11',
-    '8395624186': 'Predicto - EST - 12',
-    '2866937044': 'Predicto - EST - 13',
-    '8474169341': 'Predicto - EST - 14',
-    '4690287335': 'Predicto - EST - 15',
-    '9352426268': 'Predicto - EST - 16',
-    '9084810037': 'Predicto - EST - 17',
-    '4517107811': 'Predicto - EST - 18',
-    '4272056005': 'Predicto - EST - 19',
-    '2563438099': 'Predicto - EST - 20',
-    '6731595092': 'Predicto - EST - 21',
-    '8656375545': 'Predicto - EST - 22',
-    '5802421650': 'Predicto - EST - 23',
-    '1213532895': 'Predicto - EST - 24',
-    '7273310309': 'Predicto - EST - 25',
-    '3318899588': 'Predicto - EST - 26',
-    '8997459454': 'Predicto - EST - 27',
-    '5556851600': 'Predicto - EST - 28',
-    '3907817554': 'Predicto - EST - 29',
-    '7505004095': 'Predicto - EST - 30',
-    '3138682158': 'Predicto - EST - 31',
     '2192245899': 'Predicto - EST - 32',
     '6043127003': 'Predicto - EST - 33',
     '2851239327': 'Predicto - EST - 34',
@@ -741,36 +711,6 @@ function getAccountName(customerId: string): string {
 // List of all Predicto accounts (EST-01 through EST-30)
 const ALL_PREDICTO_ACCOUNTS = [
   '2382992113', // EST-01
-  '1640518611', // EST-02
-  '8091270364', // EST-03
-  '8846129452', // EST-04
-  '6474140466', // EST-05
-  '4920639194', // EST-06
-  '7282297343', // EST-07
-  '1298005744', // EST-08
-  '5777354952', // EST-09
-  '1449565595', // EST-10
-  '3485355192', // EST-11
-  '8395624186', // EST-12
-  '2866937044', // EST-13
-  '8474169341', // EST-14
-  '4690287335', // EST-15
-  '9352426268', // EST-16
-  '9084810037', // EST-17
-  '4517107811', // EST-18
-  '4272056005', // EST-19
-  '2563438099', // EST-20
-  '6731595092', // EST-21
-  '8656375545', // EST-22
-  '5802421650', // EST-23
-  '1213532895', // EST-24
-  '7273310309', // EST-25
-  '3318899588', // EST-26
-  '8997459454', // EST-27
-  '5556851600', // EST-28
-  '3907817554', // EST-29
-  '7505004095', // EST-30
-  '3138682158', // EST-31
   '2192245899', // EST-32
   '6043127003', // EST-33
   '2851239327', // EST-34

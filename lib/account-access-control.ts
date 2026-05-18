@@ -180,36 +180,6 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
 
   // Predicto Accounts - Only access Predicto feed
   'CID_2382992113': ['predicto'], // Predicto - EST - 01
-  'CID_1640518611': ['predicto'], // Predicto - EST - 02
-  'CID_8091270364': ['predicto'], // Predicto - EST - 03
-  'CID_8846129452': ['predicto'], // Predicto - EST - 04
-  'CID_6474140466': ['predicto'], // Predicto - EST - 05
-  'CID_4920639194': ['predicto'], // Predicto - EST - 06
-  'CID_7282297343': ['predicto'], // Predicto - EST - 07
-  'CID_1298005744': ['predicto'], // Predicto - EST - 08
-  'CID_5777354952': ['predicto'], // Predicto - EST - 09
-  'CID_1449565595': ['predicto'], // Predicto - EST - 10
-  'CID_3485355192': ['predicto'], // Predicto - EST - 11
-  'CID_8395624186': ['predicto'], // Predicto - EST - 12
-  'CID_2866937044': ['predicto'], // Predicto - EST - 13
-  'CID_8474169341': ['predicto'], // Predicto - EST - 14
-  'CID_4690287335': ['predicto'], // Predicto - EST - 15
-  'CID_9352426268': ['predicto'], // Predicto - EST - 16
-  'CID_9084810037': ['predicto'], // Predicto - EST - 17
-  'CID_4517107811': ['predicto'], // Predicto - EST - 18
-  'CID_4272056005': ['predicto'], // Predicto - EST - 19
-  'CID_2563438099': ['predicto'], // Predicto - EST - 20
-  'CID_6731595092': ['predicto'], // Predicto - EST - 21
-  'CID_8656375545': ['predicto'], // Predicto - EST - 22
-  'CID_5802421650': ['predicto'], // Predicto - EST - 23
-  'CID_1213532895': ['predicto'], // Predicto - EST - 24
-  'CID_7273310309': ['predicto'], // Predicto - EST - 25
-  'CID_3318899588': ['predicto'], // Predicto - EST - 26
-  'CID_8997459454': ['predicto'], // Predicto - EST - 27
-  'CID_5556851600': ['predicto'], // Predicto - EST - 28
-  'CID_3907817554': ['predicto'], // Predicto - EST - 29
-  'CID_7505004095': ['predicto'], // Predicto - EST - 30
-  'CID_3138682158': ['predicto'], // Predicto - EST - 31
   'CID_2192245899': ['predicto'], // Predicto - EST - 32
   'CID_6043127003': ['predicto'], // Predicto - EST - 33
   'CID_2851239327': ['predicto'], // Predicto - EST - 34
@@ -355,104 +325,16 @@ export function getFeedTypeFromRoute(pathname: string): FeedType | null {
  * NOTE: Also update lib/predicto-channel-ownership.ts if you modify this!
  */
 export const ACCOUNT_CHANNEL_ACCESS: Record<string, string[]> = {
-  // Predicto - EST - 01: Main channels including orphans that belong here
+  // Predicto - EST - 01: Main channels (includes channels reassigned from EST-02/03/04/31 after their accounts were removed)
   'CID_2382992113': [
     'ch88087', 'ch88092', 'ch88095', 'ch88096', 'ch88097', 'ch88098',
-    'ch88099', 'ch88101', 'ch88102', 'ch88103', 'ch88108', 'ch88109', 'ch88111',
+    'ch88099', 'ch88100', 'ch88101', 'ch88102', 'ch88103', 'ch88104',
+    'ch88105', 'ch88106', 'ch88107', 'ch88108', 'ch88109', 'ch88111', 'ch88112',
     'ch46405', 'ch46406', 'ch46407', 'ch46409', 'ch46410', 'ch46411',
     'ch46418', 'ch4642', 'ch46420', 'ch46421', 'ch46423', 'ch46428',
-    'ch46433', 'ch4644', 'ch46441'
+    'ch46433', 'ch4644', 'ch46441',
+    'ch605', 'ch71389', 'ch60772', 'ch71383', 'ch6091'
   ],
-
-  // Predicto - EST - 02: Only ch88100
-  'CID_1640518611': ['ch88100'],
-
-  // Predicto - EST - 03: Includes orphans ch88105, ch88106, ch88107, ch88112
-  'CID_8091270364': ['ch88105', 'ch88106', 'ch88107', 'ch88112'],
-
-  // Predicto - EST - 04: Only ch88104
-  'CID_8846129452': ['ch88104'],
-
-  // Predicto - EST - 05: No channels assigned
-  'CID_6474140466': [],
-
-  // Predicto - EST - 06: No channels assigned
-  'CID_4920639194': [],
-
-  // Predicto - EST - 07: Only ch88110
-  'CID_7282297343': ['ch88110'],
-
-  // Predicto - EST - 08: No channels assigned
-  'CID_1298005744': [],
-
-  // Predicto - EST - 09: No channels assigned
-  'CID_5777354952': [],
-
-  // Predicto - EST - 10: No channels assigned
-  'CID_1449565595': [],
-
-  // Predicto - EST - 11: No channels assigned
-  'CID_3485355192': [],
-
-  // Predicto - EST - 12: No channels assigned
-  'CID_8395624186': [],
-
-  // Predicto - EST - 13: No channels assigned
-  'CID_2866937044': [],
-
-  // Predicto - EST - 14: No channels assigned
-  'CID_8474169341': [],
-
-  // Predicto - EST - 15: No channels assigned
-  'CID_4690287335': [],
-
-  // Predicto - EST - 16: No channels assigned
-  'CID_9352426268': [],
-
-  // Predicto - EST - 17: No channels assigned
-  'CID_9084810037': [],
-
-  // Predicto - EST - 18: No channels assigned
-  'CID_4517107811': [],
-
-  // Predicto - EST - 19: No channels assigned
-  'CID_4272056005': [],
-
-  // Predicto - EST - 20: No channels assigned
-  'CID_2563438099': [],
-
-  // Predicto - EST - 21: No channels assigned
-  'CID_6731595092': [],
-
-  // Predicto - EST - 22: No channels assigned
-  'CID_8656375545': [],
-
-  // Predicto - EST - 23: No channels assigned
-  'CID_5802421650': [],
-
-  // Predicto - EST - 24: No channels assigned
-  'CID_1213532895': [],
-
-  // Predicto - EST - 25: No channels assigned
-  'CID_7273310309': [],
-
-  // Predicto - EST - 26: No channels assigned
-  'CID_3318899588': [],
-
-  // Predicto - EST - 27: No channels assigned
-  'CID_8997459454': [],
-
-  // Predicto - EST - 28: No channels assigned
-  'CID_5556851600': [],
-
-  // Predicto - EST - 29: No channels assigned
-  'CID_3907817554': [],
-
-  // Predicto - EST - 30: No channels assigned
-  'CID_7505004095': [],
-
-  // Predicto - EST - 31: Channels from campaign names (cid in name, not URL)
-  'CID_3138682158': ['ch605', 'ch71389', 'ch60772', 'ch71383', 'ch6091'],
 
   // Predicto - EST - 32: No channels assigned
   'CID_2192245899': [],
