@@ -35,7 +35,17 @@ export const MCC_CONFIGS: Record<string, MCCCredentials> = {
     },
   },
 
-  // Note: Secondary MCC not in use — all accounts (TRT, CARHP) use primary MCC for Google Ads cost
+  // Founderzest MCC — Predicto EST-46 to EST-50
+  founderzest: {
+    mccId: process.env.FOUNDERZEST_MCC_ID || '',
+    name: 'Founderzest MCC',
+    googleAds: {
+      clientId: process.env.FOUNDERZEST_GOOGLE_ADS_CLIENT_ID || '',
+      clientSecret: process.env.FOUNDERZEST_GOOGLE_ADS_CLIENT_SECRET || '',
+      developerToken: process.env.FOUNDERZEST_GOOGLE_ADS_DEVELOPER_TOKEN || '',
+      refreshToken: process.env.FOUNDERZEST_GOOGLE_ADS_REFRESH_TOKEN || '',
+    },
+  },
 };
 
 // Account -> MCC mapping (single source of truth)
@@ -102,6 +112,11 @@ export const ACCOUNT_TO_MCC: Record<string, keyof typeof MCC_CONFIGS> = {
   '7292070150': 'primary', // Predicto EST-43
   '5813682086': 'primary', // Predicto EST-44
   '2019271596': 'primary', // Predicto EST-45
+  '2101474690': 'founderzest', // Predicto EST-46
+  '5918243431': 'founderzest', // Predicto EST-47
+  '6855103527': 'founderzest', // Predicto EST-48
+  '5352884756': 'founderzest', // Predicto EST-49
+  '6499341400': 'founderzest', // Predicto EST-50
 
   // CarHp Accounts (use PRIMARY MCC for Google Ads cost) - Sequential order
   '8536037999': 'primary',  // CarHp New 01 (IST)

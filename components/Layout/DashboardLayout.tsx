@@ -258,6 +258,31 @@ const CUSTOMER_ACCOUNTS = [
     value: '2019271596'
   },
   {
+    id: 'CID_2101474690',
+    name: 'Predicto - EST - 46',
+    value: '2101474690'
+  },
+  {
+    id: 'CID_5918243431',
+    name: 'Predicto - EST - 47',
+    value: '5918243431'
+  },
+  {
+    id: 'CID_6855103527',
+    name: 'Predicto - EST - 48',
+    value: '6855103527'
+  },
+  {
+    id: 'CID_5352884756',
+    name: 'Predicto - EST - 49',
+    value: '5352884756'
+  },
+  {
+    id: 'CID_6499341400',
+    name: 'Predicto - EST - 50',
+    value: '6499341400'
+  },
+  {
     id: 'CID_5079394847',
     name: 'CarHp New 02',
     value: '5079394847'

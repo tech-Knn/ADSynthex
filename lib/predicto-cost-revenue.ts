@@ -729,6 +729,11 @@ function getAccountName(customerId: string): string {
     '7292070150': 'Predicto - EST - 43',
     '5813682086': 'Predicto - EST - 44',
     '2019271596': 'Predicto - EST - 45',
+    '2101474690': 'Predicto - EST - 46',
+    '5918243431': 'Predicto - EST - 47',
+    '6855103527': 'Predicto - EST - 48',
+    '5352884756': 'Predicto - EST - 49',
+    '6499341400': 'Predicto - EST - 50',
   };
   return accountNames[customerId] || `Account ${customerId}`;
 }
@@ -780,6 +785,11 @@ const ALL_PREDICTO_ACCOUNTS = [
   '7292070150', // EST-43
   '5813682086', // EST-44
   '2019271596', // EST-45
+  '2101474690', // EST-46
+  '5918243431', // EST-47
+  '6855103527', // EST-48
+  '5352884756', // EST-49
+  '6499341400', // EST-50
 ];
 
 /**
