@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   fetchAdSenseRevenueByStyleId,
   extractStyleIdFromUrl,
+  extractChannelIdFromUrl,
   extractDomainFromUrl,
+  buildCompositeKey,
   type AdSenseRevenue
 } from '@/lib/adsense-api';
 import { cookies } from 'next/headers';
@@ -854,7 +856,7 @@ export async function POST(request: NextRequest) {
 
     // Build campaign to ads mapping (URLs are in ads, not campaigns)
     // IMPORTANT: Process ALL ads to extract style_ids, regardless of campaign status
-    const campaignToStyleMap = new Map<string, { styleIds: Set<string>; domains: Set<string>; campaignName: string; accountId: string; campaignStatus: string; country: string }>();
+    const campaignToStyleMap = new Map<string, { styleIds: Set<string>; styleChannelMap: Map<string, string>; domains: Set<string>; campaignName: string; accountId: string; campaignStatus: string; country: string }>();
 
     // Track stats
     let totalAds = 0;
@@ -947,6 +949,7 @@ export async function POST(request: NextRequest) {
 
         campaignToStyleMap.set(campaignKey, {
           styleIds: new Set<string>(),
+          styleChannelMap: new Map<string, string>(),
           domains: new Set<string>(),
           campaignName: campaignName,
           accountId: accountId,
@@ -959,9 +962,13 @@ export async function POST(request: NextRequest) {
 
       for (const url of finalUrls) {
         const styleId = extractStyleIdFromUrl(url);
+        const channelId = extractChannelIdFromUrl(url);
         let domain = extractDomainFromUrl(url);
         if (domain) domain = normalizeDomain(domain); // Normalize domain
-        if (styleId) mapping.styleIds.add(styleId);
+        if (styleId) {
+          mapping.styleIds.add(styleId);
+          if (channelId) mapping.styleChannelMap.set(styleId, channelId);
+        }
         if (domain) mapping.domains.add(domain);
       }
     }
@@ -997,22 +1004,28 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Build style_id to campaign name and account mapping (SIMPLE AFS-STYLE MAPPING)
-    // CRITICAL CHANGE: Team now uses UNIQUE style_ids per campaign - no more geo/domain complexity
-    const styleToCampaignName = new Map<string, { campaignName: string; accountId: string }>();
+    // Build composite-key (style_id|channel_id) -> campaign name and account mapping.
+    // Channel_id disambiguates accounts that share a style_id (style_id alone is not unique
+    // across accounts in some feeds, e.g. androidadvice). Falls back to style_id-only when
+    // the URL has no channel_id (e.g. older feeds).
+    const styleToCampaignName = new Map<string, { campaignName: string; accountId: string; styleId: string; channelId?: string }>();
 
-    // Track which style_ids belong to this account
+    // Track composite keys (and bare style_ids) that belong to the current account scope
     const currentAccountStyleIds = new Set<string>();
 
     for (const [_campaignId, data] of campaignToStyleMap.entries()) {
       for (const styleId of data.styleIds) {
+        const channelId = data.styleChannelMap.get(styleId);
+        const compositeKey = buildCompositeKey(styleId, channelId);
+        currentAccountStyleIds.add(compositeKey);
+        // Also track bare style_id for fallback matching against revenue rows lacking channel_id
         currentAccountStyleIds.add(styleId);
-        // Simple style_id-only mapping (no domain, no country)
-        // If multiple campaigns use the same style_id, keep the first one
-        if (!styleToCampaignName.has(styleId)) {
-          styleToCampaignName.set(styleId, {
+        if (!styleToCampaignName.has(compositeKey)) {
+          styleToCampaignName.set(compositeKey, {
             campaignName: data.campaignName,
-            accountId: data.accountId
+            accountId: data.accountId,
+            styleId,
+            channelId,
           });
         }
       }
@@ -1099,13 +1112,13 @@ export async function POST(request: NextRequest) {
         campaignsWithoutStyleId++;
         if (cost > 0 || clicks > 0 || impressions > 0 || conversions > 0) {
           campaignsWithCost++;
-          // Track unmapped cost under special style_id so it's not lost
-          const unmappedStyleId = `unmapped_${accountId}_${baseCampaignId}`;
-          if (!costByStyleId.has(unmappedStyleId)) {
-            costByStyleId.set(unmappedStyleId, { cost: 0, clicks: 0, impressions: 0, conversions: 0, cpa: 0, campaignStatus });
-            styleToCampaignName.set(unmappedStyleId, { campaignName: campaign.campaign_name || 'Unmapped Campaign', accountId });
+          // Track unmapped cost under special composite key so it's not lost
+          const unmappedKey = `unmapped_${accountId}_${baseCampaignId}`;
+          if (!costByStyleId.has(unmappedKey)) {
+            costByStyleId.set(unmappedKey, { cost: 0, clicks: 0, impressions: 0, conversions: 0, cpa: 0, campaignStatus });
+            styleToCampaignName.set(unmappedKey, { campaignName: campaign.campaign_name || 'Unmapped Campaign', accountId, styleId: unmappedKey });
           }
-          const existing = costByStyleId.get(unmappedStyleId)!;
+          const existing = costByStyleId.get(unmappedKey)!;
           existing.cost += cost;
           existing.clicks += clicks;
           existing.impressions += impressions;
@@ -1120,12 +1133,15 @@ export async function POST(request: NextRequest) {
         campaignsWithCost++;
       }
 
-      // Add cost for each style_id (SIMPLE mapping - no domain, no country)
+      // Add cost keyed by composite (style_id|channel_id) so accounts sharing a style_id
+      // but using different channel_ids no longer cross-pollute each other's cost.
       for (const styleId of urlData.styleIds) {
-        if (!costByStyleId.has(styleId)) {
-          costByStyleId.set(styleId, { cost: 0, clicks: 0, impressions: 0, conversions: 0, cpa: 0, campaignStatus: '' });
+        const channelId = urlData.styleChannelMap.get(styleId);
+        const compositeKey = buildCompositeKey(styleId, channelId);
+        if (!costByStyleId.has(compositeKey)) {
+          costByStyleId.set(compositeKey, { cost: 0, clicks: 0, impressions: 0, conversions: 0, cpa: 0, campaignStatus: '' });
         }
-        const existing = costByStyleId.get(styleId)!;
+        const existing = costByStyleId.get(compositeKey)!;
         existing.cost += cost;
         existing.clicks += clicks;
         existing.impressions += impressions;
@@ -1422,9 +1438,15 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // SIMPLE AFS-STYLE MATCHING: Check if style_id exists in our campaign mapping
+      // Composite-key matching: prefer (style_id|channel_id) when AdSense returned a
+      // channel_id; fall back to style_id-only if the row has no channel or the composite
+      // key is unknown to our cost mapping.
       const styleId = rev.style_id;
-      const shouldAllocate = styleToCampaignName.has(styleId) || currentAccountStyleIds.has(styleId);
+      const compositeKey = buildCompositeKey(styleId, rev.channel_id);
+      const matchKey = styleToCampaignName.has(compositeKey)
+        ? compositeKey
+        : (styleToCampaignName.has(styleId) ? styleId : null);
+      const shouldAllocate = matchKey !== null || currentAccountStyleIds.has(compositeKey) || currentAccountStyleIds.has(styleId);
 
       // If style_id doesn't belong to current account, skip it
       if (!shouldAllocate) {
@@ -1433,22 +1455,23 @@ export async function POST(request: NextRequest) {
 
         // Log first 20 skipped items for debugging
         if (skippedRevenueItems <= 20) {
-          console.log(`[ADSENSE_COST_REVENUE] SKIPPED #${skippedRevenueItems}: style=${styleId}, earnings=$${rev.earnings.toFixed(2)}, reason=style_id not in account`);
+          console.log(`[ADSENSE_COST_REVENUE] SKIPPED #${skippedRevenueItems}: style=${styleId} channel=${rev.channel_id || '-'}, earnings=$${rev.earnings.toFixed(2)}, reason=key not in account`);
         }
         continue;
       }
 
       allocatedRevenueItems++;
       allocatedRevenueValue += rev.earnings;
+      const aggKey = matchKey ?? compositeKey; // key used in revenueByStyleDomain
 
       // Log first 5 allocated items for debugging
       if (allocatedRevenueItems <= 5) {
-        console.log(`[ADSENSE_COST_REVENUE] ALLOCATED #${allocatedRevenueItems}: style=${styleId}, earnings=$${rev.earnings.toFixed(2)}`);
+        console.log(`[ADSENSE_COST_REVENUE] ALLOCATED #${allocatedRevenueItems}: style=${styleId} channel=${rev.channel_id || '-'} key=${aggKey}, earnings=$${rev.earnings.toFixed(2)}`);
       }
 
-      if (!revenueByStyleDomain.has(styleId)) {
+      if (!revenueByStyleDomain.has(aggKey)) {
         // Get the campaign name and account ID from our mapping
-        const mapping = styleToCampaignName.get(styleId);
+        const mapping = styleToCampaignName.get(aggKey);
         const campaignName = mapping?.campaignName || `Style ${styleId}`;
         const accountId = mapping?.accountId || 'unknown';
 
@@ -1456,7 +1479,7 @@ export async function POST(request: NextRequest) {
         const adsenseCountryRaw = rev.country_name || 'unknown';
         const countryCode = adsenseCountryRaw !== 'unknown' ? getCountryCode(adsenseCountryRaw) : '';
 
-        revenueByStyleDomain.set(styleId, {
+        revenueByStyleDomain.set(aggKey, {
           account_id: accountId,
           campaign_id: styleId,
           campaign_name: campaignName,
@@ -1478,7 +1501,7 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      const existing = revenueByStyleDomain.get(styleId)!;
+      const existing = revenueByStyleDomain.get(aggKey)!;
 
       // Direct revenue allocation - Simple style_id match
       existing.revenue += rev.earnings;
@@ -1496,11 +1519,17 @@ export async function POST(request: NextRequest) {
       console.log(`[ADSENSE_COST_REVENUE] ✓ Revenue allocation successful - less than $5 unmapped`);
     }
 
-    // Diagnostic: Find unmapped style_ids (simplified for style_id-only matching)
+    // Diagnostic: Find unmapped (style|channel) pairs
     const unmappedStyleIds = new Map<string, number>();
     for (const rev of adsenseData) {
-      if (!styleToCampaignName.has(rev.style_id) && !currentAccountStyleIds.has(rev.style_id)) {
-        unmappedStyleIds.set(rev.style_id, (unmappedStyleIds.get(rev.style_id) || 0) + rev.earnings);
+      const compositeKey = buildCompositeKey(rev.style_id, rev.channel_id);
+      const known =
+        styleToCampaignName.has(compositeKey) ||
+        styleToCampaignName.has(rev.style_id) ||
+        currentAccountStyleIds.has(compositeKey) ||
+        currentAccountStyleIds.has(rev.style_id);
+      if (!known) {
+        unmappedStyleIds.set(compositeKey, (unmappedStyleIds.get(compositeKey) || 0) + rev.earnings);
       }
     }
 
@@ -1551,12 +1580,14 @@ export async function POST(request: NextRequest) {
 
       for (const url of finalUrls) {
         const styleId = extractStyleIdFromUrl(url);
+        const channelId = extractChannelIdFromUrl(url);
         const article = extractArticleFromUrl(url);
 
         if (styleId) {
-          const existing = revenueByStyleDomain.get(styleId);
+          // Try composite key first, then fall back to bare style_id for older feeds
+          const compositeKey = buildCompositeKey(styleId, channelId);
+          const existing = revenueByStyleDomain.get(compositeKey) ?? revenueByStyleDomain.get(styleId);
           if (existing && article !== 'N/A') {
-            // Set article if not already set or if this is a better match
             if (existing.article === 'N/A') {
               existing.article = article;
             }
@@ -1569,9 +1600,11 @@ export async function POST(request: NextRequest) {
     let matchedCost = 0;
     let unmatchedCost = 0;
 
-    for (const [styleId, costData] of costByStyleId.entries()) {
-      if (revenueByStyleDomain.has(styleId)) {
-        const existing = revenueByStyleDomain.get(styleId)!;
+    // Note: costByStyleId is keyed by composite (style|channel) or bare style_id for older
+    // feeds. revenueByStyleDomain is keyed the same way, so a direct lookup works.
+    for (const [key, costData] of costByStyleId.entries()) {
+      if (revenueByStyleDomain.has(key)) {
+        const existing = revenueByStyleDomain.get(key)!;
         existing.cost = costData.cost;
         existing.costClicks = costData.clicks; // Google Ads clicks
         existing.impressions = costData.impressions;
@@ -1592,18 +1625,17 @@ export async function POST(request: NextRequest) {
         matchedCost++;
       } else {
         // Cost exists but no revenue - create entry with cost-only data
-
-        // Get the campaign name and account ID from our mapping
-        const mapping = styleToCampaignName.get(styleId);
-        const campaignName = mapping?.campaignName || `Style ${styleId}`;
+        const mapping = styleToCampaignName.get(key);
+        const campaignName = mapping?.campaignName || `Style ${key}`;
         const accountId = mapping?.accountId || 'unknown';
+        const displayStyleId = mapping?.styleId || key; // bare style_id for UI display
 
-        revenueByStyleDomain.set(styleId, {
+        revenueByStyleDomain.set(key, {
           account_id: accountId,
           campaign_name: campaignName,
-          style_id: styleId,
+          style_id: displayStyleId,
           domain: 'N/A',
-          country: '', // Will be populated from campaign data if available
+          country: '',
           article: 'N/A',
           cost: costData.cost,
           revenue: 0,
@@ -1611,11 +1643,11 @@ export async function POST(request: NextRequest) {
           clicks: 0,
           costClicks: costData.clicks,
           impressions: costData.impressions,
-          conversions: costData.conversions, // Actual NUMBER of conversions from Google Ads
-          cpa: costData.cpa, // Actual Google Ads CPA (cost / conversions)
+          conversions: costData.conversions,
+          cpa: costData.cpa,
           rpc: 0,
           roi: -100,
-          roas: 0
+          roas: 0,
         });
         unmatchedCost++;
       }

@@ -48,6 +48,7 @@ function getOAuthClient(customerId?: string, adsenseAccountType?: AdSenseAccount
 export interface AdSenseRevenue {
   date: string;
   style_id: string;
+  channel_id?: string;
   country_name?: string;
   domain_name?: string;
   earnings: number;
@@ -97,6 +98,7 @@ export async function fetchAdSenseRevenueByStyleId(
     url.searchParams.append('metrics', 'CLICKS');
     url.searchParams.append('dimensions', 'DATE');
     url.searchParams.append('dimensions', 'CUSTOM_SEARCH_STYLE_ID');
+    url.searchParams.append('dimensions', 'CUSTOM_CHANNEL_ID');
     url.searchParams.append('dimensions', 'COUNTRY_NAME');
     url.searchParams.append('dimensions', 'DOMAIN_NAME');
 
@@ -124,20 +126,24 @@ export async function fetchAdSenseRevenueByStyleId(
 
     const revenues: AdSenseRevenue[] = [];
 
+    // Dimension order matches the order added above:
+    // DATE, CUSTOM_SEARCH_STYLE_ID, CUSTOM_CHANNEL_ID, COUNTRY_NAME, DOMAIN_NAME
     for (const row of data.rows || []) {
       const cells = row.cells;
       const date = cells[0]?.value || '';
       const styleId = cells[1]?.value || '';
-      const countryName = cells[2]?.value || '';
-      const domainName = cells[3]?.value || '';
-      const earnings = parseFloat(cells[4]?.value || '0');
-      const impressions = parseInt(cells[5]?.value || '0', 10);
-      const clicks = parseInt(cells[6]?.value || '0', 10);
+      const channelId = cells[2]?.value || '';
+      const countryName = cells[3]?.value || '';
+      const domainName = cells[4]?.value || '';
+      const earnings = parseFloat(cells[5]?.value || '0');
+      const impressions = parseInt(cells[6]?.value || '0', 10);
+      const clicks = parseInt(cells[7]?.value || '0', 10);
 
       if (styleId && styleId !== '(not set)') {
         revenues.push({
           date,
           style_id: styleId,
+          channel_id: channelId && channelId !== '(not set)' ? channelId : undefined,
           country_name: countryName === '(not set)' ? undefined : countryName,
           domain_name: domainName === '(not set)' ? undefined : domainName,
           earnings,
@@ -162,6 +168,19 @@ export function extractStyleIdFromUrl(url: string): string | null {
   } catch {
     return null;
   }
+}
+
+export function extractChannelIdFromUrl(url: string): string | null {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.searchParams.get('channel_id');
+  } catch {
+    return null;
+  }
+}
+
+export function buildCompositeKey(styleId: string, channelId?: string | null): string {
+  return channelId ? `${styleId}|${channelId}` : styleId;
 }
 
 export function extractDomainFromUrl(url: string): string | null {
