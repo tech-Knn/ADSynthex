@@ -1399,8 +1399,25 @@ export async function POST(request: NextRequest) {
       }
     };
 
-    // Build revenue map - CRITICAL: Only allocate revenue for style_ids that belong to current account(s)
+    // Build revenue map keyed by composite (style_id|channel_id). For style_ids shared
+    // across multiple accounts (different channel_ids in their URLs), AdSense gives one
+    // revenue total per style_id; we apportion it across the colliding composite keys
+    // in proportion to each key's Google Ads cost.
     const revenueByStyleDomain = new Map<string, any>();
+
+    // Build bare-style_id -> [composite keys] index from cost map (covers all keys we
+    // actually have cost or campaign data for). Used to apportion revenue.
+    const styleIdToCompositeKeys = new Map<string, string[]>();
+    for (const compositeKey of styleToCampaignName.keys()) {
+      const mapping = styleToCampaignName.get(compositeKey)!;
+      const bare = mapping.styleId;
+      const list = styleIdToCompositeKeys.get(bare);
+      if (list) {
+        if (!list.includes(compositeKey)) list.push(compositeKey);
+      } else {
+        styleIdToCompositeKeys.set(bare, [compositeKey]);
+      }
+    }
 
     let totalRevenueItems = 0;
     let allocatedRevenueItems = 0;
@@ -1410,8 +1427,6 @@ export async function POST(request: NextRequest) {
     let skippedRevenueValue = 0;
 
     // Domain allowlist: only accept AdSense revenue from the feed's own domain.
-    // This prevents style_ids shared across multiple domains from pulling in
-    // revenue that belongs to a different site (e.g. thefactrelay vs 10linesgabout).
     const FEED_ALLOWED_DOMAINS: Partial<Record<FeedType, string[]>> = {
       thefactrelay: ['thefactrelay.com'],
       carhp: ['carhp.com', 'search.carhp.com'],
@@ -1419,12 +1434,42 @@ export async function POST(request: NextRequest) {
     };
     const allowedDomains = FEED_ALLOWED_DOMAINS[requiredFeedType as FeedType] ?? null;
 
+    const ensureEntry = (key: string, styleId: string, rev: AdSenseRevenue) => {
+      if (revenueByStyleDomain.has(key)) return revenueByStyleDomain.get(key)!;
+      const mapping = styleToCampaignName.get(key);
+      const campaignName = mapping?.campaignName || `Style ${styleId}`;
+      const accountId = mapping?.accountId || 'unknown';
+      const adsenseCountryRaw = rev.country_name || 'unknown';
+      const countryCode = adsenseCountryRaw !== 'unknown' ? getCountryCode(adsenseCountryRaw) : '';
+      const entry = {
+        account_id: accountId,
+        campaign_id: styleId,
+        campaign_name: campaignName,
+        style_id: styleId,
+        domain: rev.domain_name || 'N/A',
+        country: countryCode,
+        article: 'N/A',
+        cost: 0,
+        revenue: 0,
+        profit: 0,
+        clicks: 0,
+        impressions: 0,
+        conversions: 0,
+        costClicks: 0,
+        cpa: 0,
+        rpc: 0,
+        roi: 0,
+        roas: 0,
+      };
+      revenueByStyleDomain.set(key, entry);
+      return entry;
+    };
+
     for (const rev of adsenseData) {
       totalRevenueItems++;
       totalRevenueValue += rev.earnings;
 
-      // Domain filter: for feed types with a domain allowlist, skip revenue
-      // records that come from a different domain even if the style_id matches.
+      // Domain filter
       if (allowedDomains) {
         const revDomain = (rev.domain_name || '').toLowerCase();
         const domainAllowed = allowedDomains.some(d => revDomain === d || revDomain.endsWith('.' + d));
@@ -1438,75 +1483,58 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Composite-key matching: prefer (style_id|channel_id) when AdSense returned a
-      // channel_id; fall back to style_id-only if the row has no channel or the composite
-      // key is unknown to our cost mapping.
       const styleId = rev.style_id;
-      const compositeKey = buildCompositeKey(styleId, rev.channel_id);
-      const matchKey = styleToCampaignName.has(compositeKey)
-        ? compositeKey
-        : (styleToCampaignName.has(styleId) ? styleId : null);
-      const shouldAllocate = matchKey !== null || currentAccountStyleIds.has(compositeKey) || currentAccountStyleIds.has(styleId);
+      const compositeKeys = styleIdToCompositeKeys.get(styleId);
 
-      // If style_id doesn't belong to current account, skip it
-      if (!shouldAllocate) {
-        skippedRevenueItems++;
-        skippedRevenueValue += rev.earnings;
-
-        // Log first 20 skipped items for debugging
-        if (skippedRevenueItems <= 20) {
-          console.log(`[ADSENSE_COST_REVENUE] SKIPPED #${skippedRevenueItems}: style=${styleId} channel=${rev.channel_id || '-'}, earnings=$${rev.earnings.toFixed(2)}, reason=key not in account`);
+      // Style_id not in any of our campaigns — skip
+      if (!compositeKeys || compositeKeys.length === 0) {
+        if (!currentAccountStyleIds.has(styleId)) {
+          skippedRevenueItems++;
+          skippedRevenueValue += rev.earnings;
+          if (skippedRevenueItems <= 20) {
+            console.log(`[ADSENSE_COST_REVENUE] SKIPPED #${skippedRevenueItems}: style=${styleId}, earnings=$${rev.earnings.toFixed(2)}, reason=style_id not in any account campaign`);
+          }
+          continue;
         }
+        // Bare style_id matched currentAccountStyleIds but no composite — store under bare key
+        const entry = ensureEntry(styleId, styleId, rev);
+        entry.revenue += rev.earnings;
+        entry.clicks += rev.clicks;
+        allocatedRevenueItems++;
+        allocatedRevenueValue += rev.earnings;
         continue;
+      }
+
+      // Apportion revenue across colliding composite keys by Google Ads cost ratio.
+      // Single-key (most common): full amount goes to that one key. Multi-key (collision):
+      // split by cost share; if all keys have $0 cost, split evenly.
+      let totalCostForStyle = 0;
+      for (const ck of compositeKeys) {
+        totalCostForStyle += costByStyleId.get(ck)?.cost ?? 0;
+      }
+
+      for (const ck of compositeKeys) {
+        const keyCost = costByStyleId.get(ck)?.cost ?? 0;
+        const share = totalCostForStyle > 0
+          ? keyCost / totalCostForStyle
+          : 1 / compositeKeys.length;
+        const apportionedRevenue = rev.earnings * share;
+        const apportionedClicks = rev.clicks * share;
+
+        const entry = ensureEntry(ck, styleId, rev);
+        entry.revenue += apportionedRevenue;
+        entry.clicks += apportionedClicks;
       }
 
       allocatedRevenueItems++;
       allocatedRevenueValue += rev.earnings;
-      const aggKey = matchKey ?? compositeKey; // key used in revenueByStyleDomain
 
-      // Log first 5 allocated items for debugging
       if (allocatedRevenueItems <= 5) {
-        console.log(`[ADSENSE_COST_REVENUE] ALLOCATED #${allocatedRevenueItems}: style=${styleId} channel=${rev.channel_id || '-'} key=${aggKey}, earnings=$${rev.earnings.toFixed(2)}`);
+        const splitLabel = compositeKeys.length > 1
+          ? `split ${compositeKeys.length}-ways by cost ratio`
+          : 'single';
+        console.log(`[ADSENSE_COST_REVENUE] ALLOCATED #${allocatedRevenueItems}: style=${styleId} → ${splitLabel}, earnings=$${rev.earnings.toFixed(2)}`);
       }
-
-      if (!revenueByStyleDomain.has(aggKey)) {
-        // Get the campaign name and account ID from our mapping
-        const mapping = styleToCampaignName.get(aggKey);
-        const campaignName = mapping?.campaignName || `Style ${styleId}`;
-        const accountId = mapping?.accountId || 'unknown';
-
-        // Get country from AdSense data for display purposes only (not used in matching)
-        const adsenseCountryRaw = rev.country_name || 'unknown';
-        const countryCode = adsenseCountryRaw !== 'unknown' ? getCountryCode(adsenseCountryRaw) : '';
-
-        revenueByStyleDomain.set(aggKey, {
-          account_id: accountId,
-          campaign_id: styleId,
-          campaign_name: campaignName,
-          style_id: styleId,
-          domain: rev.domain_name || 'N/A',
-          country: countryCode, // For display purposes only
-          article: 'N/A',
-          cost: 0,
-          revenue: 0,
-          profit: 0,
-          clicks: 0,
-          impressions: 0,
-          conversions: 0, // Will be populated from Google Ads data
-          costClicks: 0,
-          cpa: 0, // Cost per conversion (cost / conversions)
-          rpc: 0,
-          roi: 0,
-          roas: 0
-        });
-      }
-
-      const existing = revenueByStyleDomain.get(aggKey)!;
-
-      // Direct revenue allocation - Simple style_id match
-      existing.revenue += rev.earnings;
-      existing.clicks += rev.clicks;
-      // Note: conversions will be populated from Google Ads data, not AdSense clicks
     }
 
     console.log(`[ADSENSE_COST_REVENUE] ===== REVENUE ALLOCATION SUMMARY =====`);

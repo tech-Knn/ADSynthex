@@ -98,9 +98,11 @@ export async function fetchAdSenseRevenueByStyleId(
     url.searchParams.append('metrics', 'CLICKS');
     url.searchParams.append('dimensions', 'DATE');
     url.searchParams.append('dimensions', 'CUSTOM_SEARCH_STYLE_ID');
-    url.searchParams.append('dimensions', 'CUSTOM_CHANNEL_ID');
     url.searchParams.append('dimensions', 'COUNTRY_NAME');
     url.searchParams.append('dimensions', 'DOMAIN_NAME');
+    // Note: CUSTOM_CHANNEL_ID is not combinable with CUSTOM_SEARCH_STYLE_ID per AdSense API
+    // rules. Channel disambiguation for shared style_ids is handled application-side by
+    // apportioning revenue across (style_id, channel_id) cost buckets proportionally to cost.
 
     const response = await fetch(url.toString(), {
       headers: {
@@ -126,24 +128,21 @@ export async function fetchAdSenseRevenueByStyleId(
 
     const revenues: AdSenseRevenue[] = [];
 
-    // Dimension order matches the order added above:
-    // DATE, CUSTOM_SEARCH_STYLE_ID, CUSTOM_CHANNEL_ID, COUNTRY_NAME, DOMAIN_NAME
+    // Dimension order: DATE, CUSTOM_SEARCH_STYLE_ID, COUNTRY_NAME, DOMAIN_NAME
     for (const row of data.rows || []) {
       const cells = row.cells;
       const date = cells[0]?.value || '';
       const styleId = cells[1]?.value || '';
-      const channelId = cells[2]?.value || '';
-      const countryName = cells[3]?.value || '';
-      const domainName = cells[4]?.value || '';
-      const earnings = parseFloat(cells[5]?.value || '0');
-      const impressions = parseInt(cells[6]?.value || '0', 10);
-      const clicks = parseInt(cells[7]?.value || '0', 10);
+      const countryName = cells[2]?.value || '';
+      const domainName = cells[3]?.value || '';
+      const earnings = parseFloat(cells[4]?.value || '0');
+      const impressions = parseInt(cells[5]?.value || '0', 10);
+      const clicks = parseInt(cells[6]?.value || '0', 10);
 
       if (styleId && styleId !== '(not set)') {
         revenues.push({
           date,
           style_id: styleId,
-          channel_id: channelId && channelId !== '(not set)' ? channelId : undefined,
           country_name: countryName === '(not set)' ? undefined : countryName,
           domain_name: domainName === '(not set)' ? undefined : domainName,
           earnings,
