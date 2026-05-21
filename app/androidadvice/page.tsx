@@ -359,9 +359,7 @@ export default function AndroidAdvicePage() {
                                     </Row>
                                     {filteredSummary.unattributedIncluded && (
                                         <div style={{ marginTop: 12, fontSize: 12, color: '#8c8c8c', fontStyle: 'italic' }}>
-                                            Includes unattributed (organic / other) revenue. <Tooltip title="Unattributed revenue has no Google Ads cost, so it lands fully in profit and lifts ROI.">
-                                                <span style={{ borderBottom: '1px dotted #8c8c8c', cursor: 'help' }}>What does this mean?</span>
-                                            </Tooltip>
+                                            Includes unattributed (organic / other) revenue.
                                         </div>
                                     )}
                                 </div>
