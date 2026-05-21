@@ -133,19 +133,24 @@ const CUSTOMER_ACCOUNTS = [
     value: '6499341400'
   },
   {
-    id: 'CID_2052501595',
-    name: 'Predicto - EST - 51',
-    value: '2052501595'
+    id: 'CID_9308336690',
+    name: 'Predicto - EST - 54',
+    value: '9308336690'
   },
   {
-    id: 'CID_8906500043',
-    name: 'Predicto - EST - 52',
-    value: '8906500043'
+    id: 'CID_4337848325',
+    name: 'Predicto - EST - 55',
+    value: '4337848325'
   },
   {
-    id: 'CID_4601371562',
-    name: 'Predicto - EST - 53',
-    value: '4601371562'
+    id: 'CID_8737177088',
+    name: 'Predicto - EST - 56',
+    value: '8737177088'
+  },
+  {
+    id: 'CID_5929198423',
+    name: 'Predicto - EST - 57',
+    value: '5929198423'
   },
   {
     id: 'CID_5079394847',

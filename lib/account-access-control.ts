@@ -203,9 +203,10 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_6855103527': ['predicto'], // Predicto - EST - 48
   'CID_5352884756': ['predicto'], // Predicto - EST - 49
   'CID_6499341400': ['predicto'], // Predicto - EST - 50
-  'CID_2052501595': ['predicto'], // Predicto - EST - 51
-  'CID_8906500043': ['predicto'], // Predicto - EST - 52
-  'CID_4601371562': ['predicto'], // Predicto - EST - 53
+  'CID_9308336690': ['predicto'], // Predicto - EST - 54
+  'CID_4337848325': ['predicto'], // Predicto - EST - 55
+  'CID_8737177088': ['predicto'], // Predicto - EST - 56
+  'CID_5929198423': ['predicto'], // Predicto - EST - 57
 
   // EMERGENCY FIX 2026-02-07: Ads.com accounts DISABLED (not in use, wasting quota)
   // These accounts were consuming click_view queries (1 per account per fetch!)
@@ -400,14 +401,17 @@ export const ACCOUNT_CHANNEL_ACCESS: Record<string, string[]> = {
   // Predicto - EST - 50: No channels assigned
   'CID_6499341400': [],
 
-  // Predicto - EST - 51: No channels assigned
-  'CID_2052501595': [],
+  // Predicto - EST - 54: No channels assigned
+  'CID_9308336690': [],
 
-  // Predicto - EST - 52: No channels assigned
-  'CID_8906500043': [],
+  // Predicto - EST - 55: No channels assigned
+  'CID_4337848325': [],
 
-  // Predicto - EST - 53: No channels assigned
-  'CID_4601371562': [],
+  // Predicto - EST - 56: No channels assigned
+  'CID_8737177088': [],
+
+  // Predicto - EST - 57: No channels assigned
+  'CID_5929198423': [],
 };
 
 /**
