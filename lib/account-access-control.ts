@@ -207,6 +207,7 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_4337848325': ['predicto'], // Predicto - EST - 55
   'CID_8737177088': ['predicto'], // Predicto - EST - 56
   'CID_5929198423': ['predicto'], // Predicto - EST - 57
+  'CID_3540908401': ['predicto'], // Predicto - EST - 61
 
   // EMERGENCY FIX 2026-02-07: Ads.com accounts DISABLED (not in use, wasting quota)
   // These accounts were consuming click_view queries (1 per account per fetch!)
@@ -412,6 +413,9 @@ export const ACCOUNT_CHANNEL_ACCESS: Record<string, string[]> = {
 
   // Predicto - EST - 57: No channels assigned
   'CID_5929198423': [],
+
+  // Predicto - EST - 61: No channels assigned
+  'CID_3540908401': [],
 };
 
 /**

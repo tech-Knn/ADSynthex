@@ -153,6 +153,11 @@ const CUSTOMER_ACCOUNTS = [
     value: '5929198423'
   },
   {
+    id: 'CID_3540908401',
+    name: 'Predicto - EST - 61',
+    value: '3540908401'
+  },
+  {
     id: 'CID_5079394847',
     name: 'CarHp New 02',
     value: '5079394847'
