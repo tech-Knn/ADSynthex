@@ -1405,6 +1405,12 @@ export async function POST(request: NextRequest) {
     // in proportion to each key's Google Ads cost.
     const revenueByStyleDomain = new Map<string, any>();
 
+    // Unattributed revenue: AdSense rows whose domain passes the allowlist but whose
+    // style_id isn't used by any current Google Ads campaign in this request. Surfaced
+    // in the response (admin-only display) so users can see organic/external income
+    // on the feed's domain without inflating any campaign's attributed revenue.
+    const unattributedByStyleId = new Map<string, { revenue: number; clicks: number }>();
+
     // Build bare-style_id -> [composite keys] index from cost map (covers all keys we
     // actually have cost or campaign data for). Used to apportion revenue.
     const styleIdToCompositeKeys = new Map<string, string[]>();
@@ -1486,13 +1492,19 @@ export async function POST(request: NextRequest) {
       const styleId = rev.style_id;
       const compositeKeys = styleIdToCompositeKeys.get(styleId);
 
-      // Style_id not in any of our campaigns — skip
+      // Style_id not in any of our campaigns — skip (but track as unattributed since
+      // the domain already passed the allowlist, so this is real revenue on our feed's
+      // domain that just doesn't have a campaign to attach to).
       if (!compositeKeys || compositeKeys.length === 0) {
         if (!currentAccountStyleIds.has(styleId)) {
           skippedRevenueItems++;
           skippedRevenueValue += rev.earnings;
+          const u = unattributedByStyleId.get(styleId) || { revenue: 0, clicks: 0 };
+          u.revenue += rev.earnings;
+          u.clicks += rev.clicks;
+          unattributedByStyleId.set(styleId, u);
           if (skippedRevenueItems <= 20) {
-            console.log(`[ADSENSE_COST_REVENUE] SKIPPED #${skippedRevenueItems}: style=${styleId}, earnings=$${rev.earnings.toFixed(2)}, reason=style_id not in any account campaign`);
+            console.log(`[ADSENSE_COST_REVENUE] UNATTRIBUTED #${skippedRevenueItems}: style=${styleId}, earnings=$${rev.earnings.toFixed(2)}, reason=style_id not in any account campaign`);
           }
           continue;
         }
@@ -1901,6 +1913,14 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Build unattributed revenue payload (revenue on the feed's domain whose style_ids
+    // don't match any current Google Ads campaign — usually direct/organic/external traffic).
+    const unattributedItems = Array.from(unattributedByStyleId.entries())
+      .map(([style_id, v]) => ({ style_id, revenue: v.revenue, clicks: v.clicks }))
+      .sort((a, b) => b.revenue - a.revenue);
+    const unattributedTotal = unattributedItems.reduce((s, x) => s + x.revenue, 0);
+    const unattributedClicks = unattributedItems.reduce((s, x) => s + x.clicks, 0);
+
     const response = {
       success: true,
       account: adsenseAccountId,
@@ -1909,6 +1929,12 @@ export async function POST(request: NextRequest) {
       adsense_data: { revenues: adsenseData, total: adsenseData.length },
       campaign_aggregated: filteredCampaignAggregated,
       account_level_aggregated: filteredAccountLevelAggregated,
+      unattributed_revenue: {
+        total: unattributedTotal,
+        clicks: unattributedClicks,
+        styleIdCount: unattributedItems.length,
+        items: unattributedItems,
+      },
       summary: {
         totalCost: filteredTotalCost,
         totalRevenue: filteredTotalRevenue,

@@ -217,11 +217,25 @@ export default function AndroidAdvicePage() {
 
     const getFilteredSummary = () => {
         const campaigns = getFilteredCampaigns();
-        return {
-            totalCost: campaigns.reduce((s: number, c: any) => s + (c.cost || 0), 0),
-            totalRevenue: campaigns.reduce((s: number, c: any) => s + (c.revenue || 0), 0),
-            totalProfit: campaigns.reduce((s: number, c: any) => s + (c.profit || 0), 0),
-        };
+        const totalCost = campaigns.reduce((s: number, c: any) => s + (c.cost || 0), 0);
+        let totalRevenue = campaigns.reduce((s: number, c: any) => s + (c.revenue || 0), 0);
+        let totalProfit = campaigns.reduce((s: number, c: any) => s + (c.profit || 0), 0);
+
+        // Include unattributed revenue in the totals only when the row is also visible
+        // in the table: admin user on the All-Accounts view and no campaign search filter.
+        // Unattributed has no cost, so it lands fully in profit.
+        const unattributed = (data as any)?.unattributed_revenue;
+        const includeUnattributed =
+            isAdmin &&
+            selectedAccount === 'all' &&
+            !searchText &&
+            unattributed && unattributed.total > 0;
+        if (includeUnattributed) {
+            totalRevenue += unattributed.total;
+            totalProfit += unattributed.total;
+        }
+
+        return { totalCost, totalRevenue, totalProfit, unattributedIncluded: includeUnattributed };
     };
 
     const filteredSummary = getFilteredSummary();
@@ -343,32 +357,128 @@ export default function AndroidAdvicePage() {
                                             </Col>
                                         ))}
                                     </Row>
+                                    {filteredSummary.unattributedIncluded && (
+                                        <div style={{ marginTop: 12, fontSize: 12, color: '#8c8c8c', fontStyle: 'italic' }}>
+                                            Includes unattributed (organic / other) revenue. <Tooltip title="Unattributed revenue has no Google Ads cost, so it lands fully in profit and lifts ROI.">
+                                                <span style={{ borderBottom: '1px dotted #8c8c8c', cursor: 'help' }}>What does this mean?</span>
+                                            </Tooltip>
+                                        </div>
+                                    )}
                                 </div>
                             </Col>
 
                             {/* Account-Level Table for All Accounts view */}
-                            {selectedAccount === 'all' && data.account_level_aggregated?.length > 0 && (
-                                <Col span={24}>
-                                    <Card title={<Title level={4}>Account-Level Performance</Title>}>
-                                        <Table
-                                            columns={[
-                                                { title: 'Account', dataIndex: 'account_id', key: 'account_id', render: (id: string) => <Text strong>{AA_ACCOUNTS.find(a => a.id === id)?.name || id}</Text> },
-                                                { title: 'Campaigns', dataIndex: 'campaignCount', key: 'campaignCount' },
-                                                { title: 'Cost', dataIndex: 'cost', key: 'cost', render: (v: number) => <Text style={{ color: '#ff4d4f' }}>${(v || 0).toFixed(2)}</Text>, sorter: (a: any, b: any) => a.cost - b.cost },
-                                                { title: 'Revenue', dataIndex: 'revenue', key: 'revenue', render: (v: number) => <Text style={{ color: '#52c41a' }}>${(v || 0).toFixed(2)}</Text>, sorter: (a: any, b: any) => a.revenue - b.revenue },
-                                                { title: 'Profit', dataIndex: 'profit', key: 'profit', render: (v: number) => <Text style={{ color: v >= 0 ? '#52c41a' : '#ff4d4f' }}>${(v || 0).toFixed(2)}</Text>, sorter: (a: any, b: any) => a.profit - b.profit },
-                                                { title: 'ROI', dataIndex: 'roi', key: 'roi', render: (v: number) => <Text style={{ color: v >= 0 ? '#52c41a' : '#ff4d4f' }}>{(v || 0).toFixed(1)}%</Text>, sorter: (a: any, b: any) => a.roi - b.roi },
-                                                { title: 'Conversions', dataIndex: 'conversions', key: 'conversions', render: (v: number) => Math.round(v || 0).toLocaleString() },
-                                            ]}
-                                            dataSource={data.account_level_aggregated}
-                                            rowKey="account_id"
-                                            pagination={false}
-                                            size="middle"
-                                            scroll={{ x: 800 }}
-                                        />
-                                    </Card>
-                                </Col>
-                            )}
+                            {selectedAccount === 'all' && data.account_level_aggregated?.length > 0 && (() => {
+                                const unattributed = (data as any).unattributed_revenue;
+                                const showUnattributed = isAdmin && unattributed && unattributed.total > 0;
+                                const dataSource = showUnattributed
+                                    ? [
+                                        ...data.account_level_aggregated,
+                                        {
+                                            account_id: '__unattributed__',
+                                            campaignCount: unattributed.styleIdCount,
+                                            cost: 0,
+                                            revenue: unattributed.total,
+                                            profit: unattributed.total,
+                                            roi: 0,
+                                            conversions: 0,
+                                            __isUnattributed: true,
+                                            __styleIdCount: unattributed.styleIdCount,
+                                        },
+                                    ]
+                                    : data.account_level_aggregated;
+
+                                return (
+                                    <Col span={24}>
+                                        <Card title={<Title level={4}>Account-Level Performance</Title>}>
+                                            <Table
+                                                columns={[
+                                                    {
+                                                        title: 'Account',
+                                                        dataIndex: 'account_id',
+                                                        key: 'account_id',
+                                                        render: (id: string, row: any) =>
+                                                            row.__isUnattributed
+                                                                ? (
+                                                                    <Tooltip title="Revenue on androidadvices.com from style_ids that don't match any current Google Ads campaign (organic / direct / external traffic). Admin-only.">
+                                                                        <Text strong style={{ color: '#8c8c8c', fontStyle: 'italic' }}>
+                                                                            Unattributed (organic / other)
+                                                                        </Text>
+                                                                    </Tooltip>
+                                                                )
+                                                                : <Text strong>{AA_ACCOUNTS.find(a => a.id === id)?.name || id}</Text>,
+                                                    },
+                                                    {
+                                                        title: 'Campaigns',
+                                                        dataIndex: 'campaignCount',
+                                                        key: 'campaignCount',
+                                                        render: (v: number, row: any) =>
+                                                            row.__isUnattributed
+                                                                ? <Text type="secondary">{row.__styleIdCount} style{row.__styleIdCount === 1 ? '' : 's'}</Text>
+                                                                : v,
+                                                    },
+                                                    {
+                                                        title: 'Cost',
+                                                        dataIndex: 'cost',
+                                                        key: 'cost',
+                                                        render: (v: number, row: any) =>
+                                                            row.__isUnattributed
+                                                                ? <Text type="secondary">—</Text>
+                                                                : <Text style={{ color: '#ff4d4f' }}>${(v || 0).toFixed(2)}</Text>,
+                                                        sorter: (a: any, b: any) => a.cost - b.cost,
+                                                    },
+                                                    {
+                                                        title: 'Revenue',
+                                                        dataIndex: 'revenue',
+                                                        key: 'revenue',
+                                                        render: (v: number) => <Text style={{ color: '#52c41a' }}>${(v || 0).toFixed(2)}</Text>,
+                                                        sorter: (a: any, b: any) => a.revenue - b.revenue,
+                                                    },
+                                                    {
+                                                        title: 'Profit',
+                                                        dataIndex: 'profit',
+                                                        key: 'profit',
+                                                        render: (v: number, row: any) =>
+                                                            row.__isUnattributed
+                                                                ? <Text type="secondary">—</Text>
+                                                                : <Text style={{ color: v >= 0 ? '#52c41a' : '#ff4d4f' }}>${(v || 0).toFixed(2)}</Text>,
+                                                        sorter: (a: any, b: any) => a.profit - b.profit,
+                                                    },
+                                                    {
+                                                        title: 'ROI',
+                                                        dataIndex: 'roi',
+                                                        key: 'roi',
+                                                        render: (v: number, row: any) =>
+                                                            row.__isUnattributed
+                                                                ? <Text type="secondary">—</Text>
+                                                                : <Text style={{ color: v >= 0 ? '#52c41a' : '#ff4d4f' }}>{(v || 0).toFixed(1)}%</Text>,
+                                                        sorter: (a: any, b: any) => a.roi - b.roi,
+                                                    },
+                                                    {
+                                                        title: 'Conversions',
+                                                        dataIndex: 'conversions',
+                                                        key: 'conversions',
+                                                        render: (v: number, row: any) =>
+                                                            row.__isUnattributed
+                                                                ? <Text type="secondary">—</Text>
+                                                                : Math.round(v || 0).toLocaleString(),
+                                                    },
+                                                ]}
+                                                dataSource={dataSource}
+                                                rowKey="account_id"
+                                                pagination={false}
+                                                size="middle"
+                                                scroll={{ x: 800 }}
+                                                rowClassName={(row: any) => row.__isUnattributed ? 'aa-unattributed-row' : ''}
+                                            />
+                                            <style dangerouslySetInnerHTML={{
+                                                __html: `.aa-unattributed-row { background: #fafafa !important; }
+.aa-unattributed-row:hover > td { background: #f0f7ff !important; }`
+                                            }} />
+                                        </Card>
+                                    </Col>
+                                );
+                            })()}
 
                             {/* Campaign Table */}
                             <Col span={24}>

@@ -248,6 +248,25 @@ export default function PredictoCostRevenueMapping({
         </Tooltip>
       ),
     },
+    {
+      title: 'CPA',
+      dataIndex: 'cpa',
+      key: 'cpa',
+      width: 90,
+      render: (cpa: number | undefined, row: any) => {
+        const value = (typeof cpa === 'number' && cpa > 0)
+          ? cpa
+          : (row.conversions > 0 ? (row.cost || 0) / row.conversions : 0);
+        const hasConv = (row.conversions || 0) > 0;
+        return (
+          <Tooltip title="Cost Per Acquisition (cost / conversions)">
+            <Text style={{ color: hasConv ? '#fa8c16' : '#8c8c8c', fontWeight: 600 }}>
+              {hasConv ? `$${value.toFixed(2)}` : '—'}
+            </Text>
+          </Tooltip>
+        );
+      },
+    },
   ];
 
   return (
