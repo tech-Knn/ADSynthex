@@ -153,6 +153,11 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_5418244007': ['androidadvice'], // androidadvices 11
   'CID_1223790856': ['androidadvice'], // androidadvices 12
   'CID_7416756000': ['androidadvice'], // androidadvices 13
+  'CID_2039691127': ['androidadvice'], // androidadvices 14
+  'CID_5193468964': ['androidadvice'], // androidadvices 15
+  'CID_4457984442': ['androidadvice'], // androidadvices 16
+  'CID_9220539746': ['androidadvice'], // androidadvices 17
+  'CID_8693469647': ['androidadvice'], // androidadvices 18
 
   // EMERGENCY FIX 2026-02-07: Compado accounts DISABLED (not in use, wasting quota)
   // 'CID_5416418019': ['compado'],
@@ -207,6 +212,9 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_4337848325': ['predicto'], // Predicto - EST - 55
   'CID_8737177088': ['predicto'], // Predicto - EST - 56
   'CID_5929198423': ['predicto'], // Predicto - EST - 57
+  'CID_5139969741': ['predicto'], // Predicto - EST - 58
+  'CID_2533179401': ['predicto'], // Predicto - EST - 59
+  'CID_8167129629': ['predicto'], // Predicto - EST - 60
   'CID_3540908401': ['predicto'], // Predicto - EST - 61
 
   // EMERGENCY FIX 2026-02-07: Ads.com accounts DISABLED (not in use, wasting quota)
@@ -413,6 +421,15 @@ export const ACCOUNT_CHANNEL_ACCESS: Record<string, string[]> = {
 
   // Predicto - EST - 57: No channels assigned
   'CID_5929198423': [],
+
+  // Predicto - EST - 58: No channels assigned
+  'CID_5139969741': [],
+
+  // Predicto - EST - 59: No channels assigned
+  'CID_2533179401': [],
+
+  // Predicto - EST - 60: No channels assigned
+  'CID_8167129629': [],
 
   // Predicto - EST - 61: No channels assigned
   'CID_3540908401': [],

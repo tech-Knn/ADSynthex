@@ -149,6 +149,21 @@ export const CHANNEL_OWNERSHIP: ChannelOwnershipConfig[] = [
     channel_ids: [],
   },
   {
+    customer_id: '5139969741',
+    account_name: 'Predicto - EST - 58',
+    channel_ids: [],
+  },
+  {
+    customer_id: '2533179401',
+    account_name: 'Predicto - EST - 59',
+    channel_ids: [],
+  },
+  {
+    customer_id: '8167129629',
+    account_name: 'Predicto - EST - 60',
+    channel_ids: [],
+  },
+  {
     customer_id: '3540908401',
     account_name: 'Predicto - EST - 61',
     channel_ids: [],

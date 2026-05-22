@@ -153,6 +153,21 @@ const CUSTOMER_ACCOUNTS = [
     value: '5929198423'
   },
   {
+    id: 'CID_5139969741',
+    name: 'Predicto - EST - 58',
+    value: '5139969741'
+  },
+  {
+    id: 'CID_2533179401',
+    name: 'Predicto - EST - 59',
+    value: '2533179401'
+  },
+  {
+    id: 'CID_8167129629',
+    name: 'Predicto - EST - 60',
+    value: '8167129629'
+  },
+  {
     id: 'CID_3540908401',
     name: 'Predicto - EST - 61',
     value: '3540908401'
