@@ -97,12 +97,21 @@ export async function fetchAdSenseRevenueByStyleId(
     url.searchParams.append('metrics', 'IMPRESSIONS');
     url.searchParams.append('metrics', 'CLICKS');
     url.searchParams.append('dimensions', 'DATE');
-    url.searchParams.append('dimensions', 'CUSTOM_SEARCH_STYLE_ID');
-    url.searchParams.append('dimensions', 'COUNTRY_NAME');
-    url.searchParams.append('dimensions', 'DOMAIN_NAME');
-    // Note: CUSTOM_CHANNEL_ID is not combinable with CUSTOM_SEARCH_STYLE_ID per AdSense API
-    // rules. Channel disambiguation for shared style_ids is handled application-side by
-    // apportioning revenue across (style_id, channel_id) cost buckets proportionally to cost.
+    // AndroidAdvice now keys cost↔revenue on channel_id (which is unique per account);
+    // style_id used to be the unique key but is no longer reliable for this feed. Other
+    // feeds (afs/carhp/thefactrelay) still key on style_id.
+    // AdSense API rejects CUSTOM_CHANNEL_ID combined with DOMAIN_NAME, so for androidadvice
+    // we drop DOMAIN_NAME and synthesize 'androidadvices.com' below (this feed only ever
+    // earns from that one domain — see FEED_ALLOWED_DOMAINS in app/api/adsense-cost-revenue).
+    const useChannelIdKey = adsenseAccountType === 'androidadvice';
+    if (useChannelIdKey) {
+      url.searchParams.append('dimensions', 'CUSTOM_CHANNEL_ID');
+      url.searchParams.append('dimensions', 'COUNTRY_NAME');
+    } else {
+      url.searchParams.append('dimensions', 'CUSTOM_SEARCH_STYLE_ID');
+      url.searchParams.append('dimensions', 'COUNTRY_NAME');
+      url.searchParams.append('dimensions', 'DOMAIN_NAME');
+    }
 
     const response = await fetch(url.toString(), {
       headers: {
@@ -128,23 +137,39 @@ export async function fetchAdSenseRevenueByStyleId(
 
     const revenues: AdSenseRevenue[] = [];
 
-    // Dimension order: DATE, CUSTOM_SEARCH_STYLE_ID, COUNTRY_NAME, DOMAIN_NAME
+    // Dimension order:
+    //   androidadvice: DATE, CUSTOM_CHANNEL_ID, COUNTRY_NAME           (3 dims → metrics start at cells[3])
+    //   other feeds:   DATE, CUSTOM_SEARCH_STYLE_ID, COUNTRY_NAME, DOMAIN_NAME (4 dims → metrics start at cells[4])
+    // For androidadvice we leave domain_name undefined: AdSense API refuses to combine
+    // CUSTOM_CHANNEL_ID with DOMAIN_NAME, and this publisher account also earns from
+    // unrelated domains (e.g. queryvaults.com). The cost-revenue route handles the
+    // domain filter for androidadvice by accepting only channels that appear in the
+    // androidadvice cost URLs (channel_id is unique per domain per your config).
+    const dimCount = useChannelIdKey ? 3 : 4;
     for (const row of data.rows || []) {
       const cells = row.cells;
       const date = cells[0]?.value || '';
-      const styleId = cells[1]?.value || '';
+      const idValue = cells[1]?.value || '';
       const countryName = cells[2]?.value || '';
-      const domainName = cells[3]?.value || '';
-      const earnings = parseFloat(cells[4]?.value || '0');
-      const impressions = parseInt(cells[5]?.value || '0', 10);
-      const clicks = parseInt(cells[6]?.value || '0', 10);
+      const domainName = useChannelIdKey ? '' : (cells[3]?.value || '');
+      const earnings = parseFloat(cells[dimCount]?.value || '0');
+      const impressions = parseInt(cells[dimCount + 1]?.value || '0', 10);
+      const clicks = parseInt(cells[dimCount + 2]?.value || '0', 10);
 
-      if (styleId && styleId !== '(not set)') {
+      if (idValue && idValue !== '(not set)') {
+        // For androidadvice, idValue is the channel_id (unique). We store it as style_id
+        // so the downstream mapping pipeline (which keys on style_id) joins on channel_id
+        // without needing to be aware of the dimension swap. AdSense returns the channel
+        // in `partner-pub-XXX:NNN` form but Google Ads Final URLs carry only the bare
+        // numeric NNN — strip the prefix so the join works.
+        const normalizedId = useChannelIdKey && idValue.includes(':')
+          ? idValue.split(':').pop()!
+          : idValue;
         revenues.push({
           date,
-          style_id: styleId,
+          style_id: normalizedId,
           country_name: countryName === '(not set)' ? undefined : countryName,
-          domain_name: domainName === '(not set)' ? undefined : domainName,
+          domain_name: domainName && domainName !== '(not set)' ? domainName : undefined,
           earnings,
           impressions,
           clicks,
@@ -158,6 +183,48 @@ export async function fetchAdSenseRevenueByStyleId(
     console.error('[ADSENSE_API] Failed:', error.message);
     throw error;
   }
+}
+
+// Returns per-domain earnings totals for a publisher. Used by androidadvice to find
+// the true androidadvices.com revenue total since CUSTOM_CHANNEL_ID can't be combined
+// with DOMAIN_NAME in a single report.
+export async function fetchAdSenseDomainEarnings(
+  accountId: string,
+  startDate: string,
+  endDate: string,
+  customerId?: string,
+  adsenseAccountType?: AdSenseAccountType
+): Promise<Record<string, number>> {
+  const token = await getAccessToken(customerId, adsenseAccountType);
+  const startParts = startDate.split('-');
+  const endParts = endDate.split('-');
+  const url = new URL(`https://adsense.googleapis.com/v2/${accountId}/reports:generate`);
+  url.searchParams.set('dateRange', 'CUSTOM');
+  url.searchParams.set('startDate.year', startParts[0]);
+  url.searchParams.set('startDate.month', startParts[1]);
+  url.searchParams.set('startDate.day', startParts[2]);
+  url.searchParams.set('endDate.year', endParts[0]);
+  url.searchParams.set('endDate.month', endParts[1]);
+  url.searchParams.set('endDate.day', endParts[2]);
+  url.searchParams.append('metrics', 'ESTIMATED_EARNINGS');
+  url.searchParams.append('dimensions', 'DOMAIN_NAME');
+
+  const r = await fetch(url.toString(), {
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+  });
+  if (!r.ok) {
+    const err = await r.text();
+    throw new Error(`AdSense domain query failed (${r.status}): ${err.substring(0, 200)}`);
+  }
+  const data = await r.json();
+  const out: Record<string, number> = {};
+  for (const row of data.rows || []) {
+    const domain = (row.cells[0]?.value || '').toLowerCase();
+    const earnings = parseFloat(row.cells[1]?.value || '0');
+    if (domain && domain !== '(not set)') out[domain] = (out[domain] || 0) + earnings;
+  }
+  console.log(`[ADSENSE_API] Domain earnings (${startDate}→${endDate}):`, out);
+  return out;
 }
 
 export function extractStyleIdFromUrl(url: string): string | null {

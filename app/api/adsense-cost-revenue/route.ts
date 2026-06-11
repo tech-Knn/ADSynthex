@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   fetchAdSenseRevenueByStyleId,
+  fetchAdSenseDomainEarnings,
   extractStyleIdFromUrl,
   extractChannelIdFromUrl,
   extractDomainFromUrl,
@@ -540,14 +541,32 @@ export async function POST(request: NextRequest) {
       throw new Error('No Google Ads account specified');
     }
 
-    const promisesToSettle = [
+    // For androidadvice we also pull a domain-level earnings total so we can report the
+    // true androidadvices.com revenue even when per-channel attribution is partial (a
+    // channel may exist on AdSense but not yet be wired into a Google Ads campaign URL).
+    const isAndroidadvice = requiredFeedType === 'androidadvice';
+    const promisesToSettle: Promise<any>[] = [
       googleAdsDataPromises,
-      fetchAdSenseRevenueByStyleId(adsenseAccountId, startDate, endDate, customerId, adsenseAccountType)
+      fetchAdSenseRevenueByStyleId(adsenseAccountId, startDate, endDate, customerId, adsenseAccountType),
     ];
+    if (isAndroidadvice) {
+      promisesToSettle.push(
+        fetchAdSenseDomainEarnings(adsenseAccountId, startDate, endDate, customerId, adsenseAccountType)
+      );
+    }
 
     const results = await Promise.allSettled(promisesToSettle);
     const googleAdsResult = results[0];
     const adsenseRevenue = results[1];
+    const domainEarningsResult = isAndroidadvice ? results[2] : null;
+    const androidadviceDomainTotal: number = (
+      isAndroidadvice && domainEarningsResult?.status === 'fulfilled'
+        ? ((domainEarningsResult.value as Record<string, number>)['androidadvices.com'] ?? 0)
+        : 0
+    );
+    if (isAndroidadvice) {
+      console.log(`[ADSENSE_COST_REVENUE] androidadvices.com domain total: $${androidadviceDomainTotal.toFixed(2)}`);
+    }
 
     const fetchTime = Date.now() - fetchStartTime;
 
@@ -961,13 +980,21 @@ export async function POST(request: NextRequest) {
       const mapping = campaignToStyleMap.get(campaignKey)!;
 
       for (const url of finalUrls) {
-        const styleId = extractStyleIdFromUrl(url);
-        const channelId = extractChannelIdFromUrl(url);
+        const urlStyleId = extractStyleIdFromUrl(url);
+        const urlChannelId = extractChannelIdFromUrl(url);
         let domain = extractDomainFromUrl(url);
         if (domain) domain = normalizeDomain(domain); // Normalize domain
-        if (styleId) {
-          mapping.styleIds.add(styleId);
-          if (channelId) mapping.styleChannelMap.set(styleId, channelId);
+        // For androidadvice, channel_id is the unique key (style_id is shared across
+        // accounts). Store channel_id under the styleIds set so the rest of the pipeline,
+        // which keys cost↔revenue by what it calls "style_id", actually joins on channel_id.
+        // Leaving styleChannelMap unset means buildCompositeKey collapses to channel_id alone
+        // — no composite-key apportionment is needed because channel_id is already unique.
+        const matchKey = requiredFeedType === 'androidadvice' ? urlChannelId : urlStyleId;
+        if (matchKey) {
+          mapping.styleIds.add(matchKey);
+          if (requiredFeedType !== 'androidadvice' && urlChannelId) {
+            mapping.styleChannelMap.set(matchKey, urlChannelId);
+          }
         }
         if (domain) mapping.domains.add(domain);
       }
@@ -1006,8 +1033,11 @@ export async function POST(request: NextRequest) {
 
     // Build composite-key (style_id|channel_id) -> campaign name and account mapping.
     // Channel_id disambiguates accounts that share a style_id (style_id alone is not unique
-    // across accounts in some feeds, e.g. androidadvice). Falls back to style_id-only when
-    // the URL has no channel_id (e.g. older feeds).
+    // across accounts in some feeds). Falls back to style_id-only when the URL has no
+    // channel_id (e.g. older feeds).
+    // For androidadvice the match key has already been switched to channel_id (see URL
+    // extraction loop above) — channel_id is unique for that feed so no compositing/
+    // apportionment is needed; the composite key collapses to channel_id alone.
     const styleToCampaignName = new Map<string, { campaignName: string; accountId: string; styleId: string; channelId?: string }>();
 
     // Track composite keys (and bare style_ids) that belong to the current account scope
@@ -1476,7 +1506,23 @@ export async function POST(request: NextRequest) {
       totalRevenueValue += rev.earnings;
 
       // Domain filter
-      if (allowedDomains) {
+      // For androidadvice we cannot ask AdSense for both channel_id and domain in a single
+      // call, and the publisher account also earns from unrelated domains. Instead we
+      // accept only channels that appear in androidadvice cost URLs — per the configured
+      // setup, every channel_id is unique to a single domain, so a channel that shows up
+      // in androidadvice Google Ads is guaranteed to be on androidadvices.com. Channels
+      // not in the cost set (e.g. queryvaults.com) are dropped here, not counted as
+      // unattributed.
+      if (requiredFeedType === 'androidadvice') {
+        if (!currentAccountStyleIds.has(rev.style_id)) {
+          skippedRevenueItems++;
+          skippedRevenueValue += rev.earnings;
+          if (skippedRevenueItems <= 20) {
+            console.log(`[ADSENSE_COST_REVENUE] DROPPED #${skippedRevenueItems}: channel_id=${rev.style_id}, earnings=$${rev.earnings.toFixed(2)}, reason=channel not in any androidadvice cost URL (likely a different publisher product)`);
+          }
+          continue;
+        }
+      } else if (allowedDomains) {
         const revDomain = (rev.domain_name || '').toLowerCase();
         const domainAllowed = allowedDomains.some(d => revDomain === d || revDomain.endsWith('.' + d));
         if (!domainAllowed) {
@@ -1619,14 +1665,18 @@ export async function POST(request: NextRequest) {
       const finalUrls = ad.final_urls || [];
 
       for (const url of finalUrls) {
-        const styleId = extractStyleIdFromUrl(url);
-        const channelId = extractChannelIdFromUrl(url);
+        const urlStyleId = extractStyleIdFromUrl(url);
+        const urlChannelId = extractChannelIdFromUrl(url);
         const article = extractArticleFromUrl(url);
 
-        if (styleId) {
-          // Try composite key first, then fall back to bare style_id for older feeds
-          const compositeKey = buildCompositeKey(styleId, channelId);
-          const existing = revenueByStyleDomain.get(compositeKey) ?? revenueByStyleDomain.get(styleId);
+        // androidadvice: match key is channel_id alone. Other feeds: composite (style|channel)
+        // with bare style_id fallback for older URL formats.
+        const matchKey = requiredFeedType === 'androidadvice' ? urlChannelId : urlStyleId;
+        if (matchKey) {
+          const compositeKey = requiredFeedType === 'androidadvice'
+            ? matchKey
+            : buildCompositeKey(urlStyleId!, urlChannelId);
+          const existing = revenueByStyleDomain.get(compositeKey) ?? revenueByStyleDomain.get(matchKey);
           if (existing && article !== 'N/A') {
             if (existing.article === 'N/A') {
               existing.article = article;
@@ -1920,6 +1970,17 @@ export async function POST(request: NextRequest) {
       .sort((a, b) => b.revenue - a.revenue);
     const unattributedTotal = unattributedItems.reduce((s, x) => s + x.revenue, 0);
     const unattributedClicks = unattributedItems.reduce((s, x) => s + x.clicks, 0);
+
+    // For androidadvice we still pull the androidadvices.com domain total in parallel
+    // (it's useful as a reference figure showing the whole-feed AdSense earnings across
+    // all 18 accounts), but it is NOT used in summary.totalRevenue. Summary stays as the
+    // sum of per-campaign matched revenue so the summary card and the per-row table
+    // agree, single-account and multi-account views are internally consistent, and
+    // profit/ROI are computed against the actually-earned-by-our-campaigns number.
+    if (isAndroidadvice && androidadviceDomainTotal > 0) {
+      const attributed = filteredCampaignAggregated.reduce((s: number, c: any) => s + (c.revenue || 0), 0);
+      console.log(`[ADSENSE_COST_REVENUE] androidadvice — domain(all-accounts)=$${androidadviceDomainTotal.toFixed(2)}, attributed(this view)=$${attributed.toFixed(2)}`);
+    }
 
     const response = {
       success: true,
