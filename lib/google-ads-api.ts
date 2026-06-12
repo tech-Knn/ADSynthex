@@ -6,7 +6,7 @@ import * as utils from './google-ads-utils';
 import { ACCOUNT_FEED_ACCESS, FeedType } from './account-access-control';
 import { googleAdsRateLimiter } from './redis-rate-limiter';
 import { customer } from 'google-ads-api/build/src/protos/autogen/resourceNames';
-import { getMCCForAccount, getDefaultMCC, MCCCredentials } from './mcc-config';
+import { getMCCForAccount, getDefaultMCC, MCCCredentials } from './mcc-config'
 
 // Target accounts configuration
 const TARGET_ACCOUNTS = config.TARGET_ACCOUNTS;
@@ -224,6 +224,7 @@ function buildAllCampaignsQuery(startDate: string, endDate: string) {
 }
 
 // Build active ad query
+
 function buildActiveAdGroupAdQuery(startDate: string, endDate: string) {
   // Replace date placeholders with actual dates
   return config.queries.activeAdGroupAdQuery
@@ -866,6 +867,17 @@ export async function fetchGoogleAdsData(
       ]);
 
       console.log(`[GOOGLE_ADS_API] Account ${account.id}: ${activeCampaignResponse?.length || 0} campaigns, ${allAdResponse?.length || 0} ads, ${assetGroupResponse?.length || 0} asset groups`);
+
+      // Refuse to return campaigns without ads. final_urls (and the channel_id/style_id
+      // inside them) only come from ads — if ads failed while campaigns succeeded, the
+      // upstream allocator sees cost with no revenue and shows -100% ROI. Throw fast so
+      // the route's per-account retry refetches this account with priority 10 instead of
+      // caching a broken payload.
+      const adsFailed = allAdResponse === null;
+      const hasCampaigns = !!(activeCampaignResponse && activeCampaignResponse.length > 0);
+      if (adsFailed && hasCampaigns && (feedType === 'androidadvice' || feedType === 'adsense' || feedType === 'carhp')) {
+        throw new Error(`Ads query failed for ${account.id} on ${feedType} feed (campaigns: ${activeCampaignResponse.length}) — abort account to trigger retry`);
+      }
 
       // Process campaigns and attach geo targets
       if (activeCampaignResponse && activeCampaignResponse.length > 0) {

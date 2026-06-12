@@ -117,9 +117,11 @@ export class BulletproofGoogleAdsAPI {
       // CRITICAL FIX: Invalidate cache if it has campaigns but NO ads
       // Both adsense and carhp feeds rely on ads to extract style_ids for revenue matching.
       // If ads are missing (e.g. ads query failed and was cached), $0 revenue results.
-      if ((feedType === 'adsense' || feedType === 'carhp') && cached.data.campaigns?.length > 0 && (!cached.data.ads || cached.data.ads.length === 0)) {
+      if ((feedType === 'adsense' || feedType === 'carhp' || feedType === 'androidadvice') && cached.data.campaigns?.length > 0 && (!cached.data.ads || cached.data.ads.length === 0)) {
         console.warn(`[BULLETPROOF_API] Cache has ${cached.data.campaigns.length} campaigns but 0 ads - INVALIDATING for ${feedType} feed`);
-        // Don't return cached data - fetch fresh data instead
+        // Null the cached payload so later error-fallback paths (rate limit / API failure)
+        // can't resurrect this broken cache and re-serve campaigns-without-ads.
+        cached.data = null;
       } else {
         console.log(`[BULLETPROOF_API] ${cached.source} cache hit, age: ${Math.round(cached.age / 1000)}s`);
 
@@ -252,6 +254,16 @@ export class BulletproofGoogleAdsAPI {
 
     if (!apiData || !apiData.ads) {
       throw new Error('Invalid API response structure');
+    }
+
+    // Empty-response detection: an account scoped fetch that returns campaigns:[] AND ads:[]
+    // is indistinguishable from "ads query failed and was swallowed". For feeds that need
+    // ads to extract channel_id/style_id (androidadvice, adsense, carhp), force the caller
+    // into the failure path so the per-account retry logic kicks in rather than silently
+    // caching empty data and producing -100% ROI.
+    const isStyleIdFeed = feedType === 'androidadvice' || feedType === 'adsense' || feedType === 'carhp';
+    if (customerId && isStyleIdFeed && apiData.campaigns.length === 0 && apiData.ads.length === 0) {
+      throw new Error(`Empty response for account ${customerId} on ${feedType} feed — likely ads query failed`);
     }
 
     // Store in Redis cache (memory + Redis layers)
