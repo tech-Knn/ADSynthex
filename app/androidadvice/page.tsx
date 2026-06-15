@@ -417,7 +417,7 @@ export default function AndroidAdvicePage() {
                                                         key: 'campaignCount',
                                                         render: (v: number, row: any) =>
                                                             row.__isUnattributed
-                                                                ? <Text type="secondary">{row.__styleIdCount} style{row.__styleIdCount === 1 ? '' : 's'}</Text>
+                                                                ? <Text type="secondary">{row.__styleIdCount > 0 ? `${row.__styleIdCount} style${row.__styleIdCount === 1 ? '' : 's'}` : '—'}</Text>
                                                                 : v,
                                                     },
                                                     {

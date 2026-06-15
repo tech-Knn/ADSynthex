@@ -1965,21 +1965,27 @@ export async function POST(request: NextRequest) {
 
     // Build unattributed revenue payload (revenue on the feed's domain whose style_ids
     // don't match any current Google Ads campaign — usually direct/organic/external traffic).
-    const unattributedItems = Array.from(unattributedByStyleId.entries())
+    let unattributedItems = Array.from(unattributedByStyleId.entries())
       .map(([style_id, v]) => ({ style_id, revenue: v.revenue, clicks: v.clicks }))
       .sort((a, b) => b.revenue - a.revenue);
-    const unattributedTotal = unattributedItems.reduce((s, x) => s + x.revenue, 0);
-    const unattributedClicks = unattributedItems.reduce((s, x) => s + x.clicks, 0);
+    let unattributedTotal = unattributedItems.reduce((s, x) => s + x.revenue, 0);
+    let unattributedClicks = unattributedItems.reduce((s, x) => s + x.clicks, 0);
 
-    // For androidadvice we still pull the androidadvices.com domain total in parallel
-    // (it's useful as a reference figure showing the whole-feed AdSense earnings across
-    // all 18 accounts), but it is NOT used in summary.totalRevenue. Summary stays as the
-    // sum of per-campaign matched revenue so the summary card and the per-row table
-    // agree, single-account and multi-account views are internally consistent, and
-    // profit/ROI are computed against the actually-earned-by-our-campaigns number.
-    if (isAndroidadvice && androidadviceDomainTotal > 0) {
+    // For androidadvice we can't break unattributed down per-channel: the AdSense
+    // channel_id report doesn't tell us which channels are on androidadvices.com vs the
+    // publisher's other domains (queryvaults etc.). The domain-name report does give us
+    // the androidadvices.com total though, so we surface the gap (domain total −
+    // attributed-to-campaigns) as an aggregate unattributed line. Only meaningful in the
+    // multi-account / All-Accounts view since the domain total spans every AA account.
+    if (isAndroidadvice && requestedAccountIds.length > 1 && androidadviceDomainTotal > 0) {
       const attributed = filteredCampaignAggregated.reduce((s: number, c: any) => s + (c.revenue || 0), 0);
-      console.log(`[ADSENSE_COST_REVENUE] androidadvice — domain(all-accounts)=$${androidadviceDomainTotal.toFixed(2)}, attributed(this view)=$${attributed.toFixed(2)}`);
+      const gap = androidadviceDomainTotal - attributed;
+      console.log(`[ADSENSE_COST_REVENUE] androidadvice — domain(all-accounts)=$${androidadviceDomainTotal.toFixed(2)}, attributed(this view)=$${attributed.toFixed(2)}, unattributed=$${gap.toFixed(2)}`);
+      if (gap > 0) {
+        unattributedTotal = gap;
+        unattributedClicks = 0;
+        unattributedItems = [];
+      }
     }
 
     const response = {
