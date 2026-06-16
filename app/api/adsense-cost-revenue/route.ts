@@ -366,6 +366,16 @@ export async function POST(request: NextRequest) {
 
     const fetchStartTime = Date.now();
 
+    // Track per-account data-quality issues so the response can flag inconsistent cost
+    // even when the request technically "succeeded". Two distinct buckets:
+    //  - dq_failedAccountIds:      account returned no campaigns/ads at all (after retries)
+    //  - dq_partialCostAccountIds: account returned campaigns but cost looks broken
+    //                              (clicks > 0 yet metrics.cost summed to 0 — impossible
+    //                              in a healthy Google Ads response, so the cost query
+    //                              almost certainly failed for this account)
+    const dq_failedAccountIds: string[] = [];
+    const dq_partialCostAccountIds: string[] = [];
+
     // Determine if we're viewing a single account or multiple
     const isMultiAccount = accountIds && accountIds.length > 0;
 
@@ -410,10 +420,19 @@ export async function POST(request: NextRequest) {
       if (uncachedAccountIds.length > 0) {
         console.log(`[ADSENSE_COST_REVENUE] Fetching ${uncachedAccountIds.length} uncached accounts: ${uncachedAccountIds.join(', ')}`);
 
-        // Batch size tuned for parallelism vs rate limit safety
-        // Normal fetch: batch of 10 (faster, most accounts will be cached)
-        // Force refresh: batch of 5 (more reliable under fresh-fetch load)
-        const BATCH_SIZE = forceLive ? 5 : 10;
+        // Batch size MUST respect the downstream rate limiter: googleAdsRateLimiter is
+        // configured at QPS=2 (lib/redis-rate-limiter.ts). Each per-account fetch ALSO
+        // fans out 4 parallel queries (campaigns, ads, geo, asset groups) inside
+        // fetchGoogleAdsData, so even 2 accounts in parallel can burst 8 simultaneous
+        // queries against the limiter — which causes silent denials and the $0-cost
+        // jitter we saw on AndroidAdvice.
+        //   - Force Refresh: 1 account at a time (correctness > speed). 18 AA accounts
+        //     × ~1.5s = ~27s, which is acceptable when the user explicitly asked for
+        //     fresh data.
+        //   - Normal fetch: 2 at a time (fast, mostly served from cache anyway).
+        // INTER_BATCH_DELAY_MS = 600ms ensures we stay under QPS=2 across batches.
+        const BATCH_SIZE = forceLive ? 1 : 2;
+        const INTER_BATCH_DELAY_MS = 600;
         const MAX_RETRIES = 3;
         const batches: string[][] = [];
         for (let i = 0; i < uncachedAccountIds.length; i += BATCH_SIZE) {
@@ -457,30 +476,43 @@ export async function POST(request: NextRequest) {
 
           console.log(`[ADSENSE_COST_REVENUE] Batch ${i + 1}/${batches.length}: ${allResults.size} total successes, ${failedAccountIds.length} failures`);
 
-          // Small delay between batches only for force refresh to let API recover
-          if (i < batches.length - 1 && forceLive) {
-            await new Promise(resolve => setTimeout(resolve, 200));
+          // Always wait between batches so the next 2 calls don't collide with the
+          // limiter's QPS window. (Was previously only honored on force-refresh, which
+          // is what allowed the silent rate-limit failures on normal fetches too.)
+          if (i < batches.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, INTER_BATCH_DELAY_MS));
           }
         }
 
-        // CRITICAL: Retry failed accounts to ensure data consistency
+        // CRITICAL: Retry failed accounts to ensure data consistency.
+        // Retry path must ALSO respect QPS=2 — firing Promise.all on every still-failed
+        // account is exactly what caused the original problem on the first pass.
         for (let retry = 0; retry < MAX_RETRIES && failedAccountIds.length > 0; retry++) {
           console.log(`[ADSENSE_COST_REVENUE] Retry ${retry + 1}/${MAX_RETRIES}: Retrying ${failedAccountIds.length} failed accounts: ${failedAccountIds.join(', ')}`);
 
-          // Increasing backoff: 1s, 1.5s, 2s (reduced from 3s/5s/7s to avoid long waits)
+          // Increasing backoff before the retry batch starts: 1s, 1.5s, 2s
           await new Promise(resolve => setTimeout(resolve, (retry + 1) * 500 + 500));
 
-          const retryResults = await Promise.all(
-            failedAccountIds.map(async (accId: string) => {
-              const result = await bulletproofAPI.getData(startDate, endDate, accId, {
-                priority: 10, // Highest priority for retries
-                allowStale: true, // Accept any data on retry
-                maxWait: 90000, // Very long timeout for retries
-                feedType: requiredFeedType as FeedType
-              });
-              return { accId, result };
-            })
-          );
+          const retryResults: Array<{ accId: string; result: any }> = [];
+          // Same QPS-aware micro-batching as the first pass.
+          for (let j = 0; j < failedAccountIds.length; j += BATCH_SIZE) {
+            const microBatch = failedAccountIds.slice(j, j + BATCH_SIZE);
+            const microResults = await Promise.all(
+              microBatch.map(async (accId: string) => {
+                const result = await bulletproofAPI.getData(startDate, endDate, accId, {
+                  priority: 10, // Highest priority for retries
+                  allowStale: true, // Accept any data on retry
+                  maxWait: 90000, // Very long timeout for retries
+                  feedType: requiredFeedType as FeedType
+                });
+                return { accId, result };
+              })
+            );
+            retryResults.push(...microResults);
+            if (j + BATCH_SIZE < failedAccountIds.length) {
+              await new Promise(resolve => setTimeout(resolve, INTER_BATCH_DELAY_MS));
+            }
+          }
 
           // Process retry results
           const stillFailedIds: string[] = [];
@@ -498,6 +530,8 @@ export async function POST(request: NextRequest) {
 
         if (failedAccountIds.length > 0) {
           console.error(`[ADSENSE_COST_REVENUE] CRITICAL: ${failedAccountIds.length} accounts failed after all retries: ${failedAccountIds.join(', ')}`);
+          // Surface in API response so the UI can warn the user that cost is incomplete.
+          dq_failedAccountIds.push(...failedAccountIds);
         }
 
         console.log(`[ADSENSE_COST_REVENUE] Final: ${allResults.size}/${uncachedAccountIds.length} accounts fetched successfully`);
@@ -682,14 +716,35 @@ export async function POST(request: NextRequest) {
             const adCount = accData.ads?.length || 0;
             console.log(`[ADSENSE_COST_REVENUE] Account ${accountId}: ${campaignCount} campaigns, ${adCount} ads tagged`);
 
-            // CRITICAL: Only cache if ads are present (or account has no campaigns).
+            // Cost-completeness check: clicks > 0 with zero cost is impossible in a healthy
+            // Google Ads response (CPC always charges for clicks), so we treat that as the
+            // cost query having silently failed for this account. Skip caching so the next
+            // load can retry, and surface the account in the response for the UI banner.
+            // The symmetric ad-side guard is below (campaigns > 0 && ads == 0).
+            let sumCost = 0;
+            let sumClicks = 0;
+            if (campaignCount > 0) {
+              for (const c of accData.campaigns) {
+                sumCost += c.metrics?.cost || 0;
+                sumClicks += c.metrics?.clicks || 0;
+              }
+            }
+            const costLooksBroken = campaignCount > 0 && sumClicks > 0 && sumCost === 0;
+
+            // Only cache if ads are present (or account has no campaigns).
             // Accounts with campaigns but 0 ads had their ads query fail — caching would
             // permanently store broken data and return $0 revenue on every subsequent load.
-            const hasIncompleteData = campaignCount > 0 && adCount === 0;
-            if (!hasIncompleteData) {
+            const adsLookBroken = campaignCount > 0 && adCount === 0;
+
+            if (!adsLookBroken && !costLooksBroken) {
               cacheAccountData(accountId, { googleAdsData: accData });
-            } else {
+            } else if (adsLookBroken) {
               console.warn(`[ADSENSE_COST_REVENUE] Account ${accountId}: skipping cache — ${campaignCount} campaigns but 0 ads (ads query likely failed)`);
+            }
+
+            if (costLooksBroken) {
+              console.warn(`[ADSENSE_COST_REVENUE] Account ${accountId}: cost looks broken — ${sumClicks} clicks but $0 cost across ${campaignCount} campaigns. Skipping cache; flagging as partial.`);
+              dq_partialCostAccountIds.push(accountId);
             }
           } else {
             // Account failed
@@ -703,6 +758,8 @@ export async function POST(request: NextRequest) {
 
         if (failedAccounts.length > 0) {
           console.error(`[ADSENSE_COST_REVENUE]  PARTIAL DATA! ${failedAccounts.length}/${accountIds.length} accounts failed: ${failedAccounts.join(', ')}`);
+          // Surface in API response so the UI can warn the user that cost is incomplete.
+          dq_failedAccountIds.push(...failedAccounts);
 
           // CRITICAL: If more than 50% of accounts failed, return error instead of partial data
           const failureRate = failedAccounts.length / accountIds.length;
@@ -1988,6 +2045,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Deduplicate the data-quality buckets — an account could land in both lists across
+    // retries (e.g. failed on first batch, partial-cost on the retry).
+    const dq_failedUnique = Array.from(new Set(dq_failedAccountIds));
+    const dq_partialCostUnique = Array.from(new Set(dq_partialCostAccountIds));
+    const dq_partial = dq_failedUnique.length > 0 || dq_partialCostUnique.length > 0;
+
     const response = {
       success: true,
       account: adsenseAccountId,
@@ -1996,6 +2059,12 @@ export async function POST(request: NextRequest) {
       adsense_data: { revenues: adsenseData, total: adsenseData.length },
       campaign_aggregated: filteredCampaignAggregated,
       account_level_aggregated: filteredAccountLevelAggregated,
+      data_quality: {
+        partial: dq_partial,
+        total_accounts_requested: requestedAccountIds.length,
+        failed_account_ids: dq_failedUnique,
+        partial_cost_account_ids: dq_partialCostUnique,
+      },
       unattributed_revenue: {
         total: unattributedTotal,
         clicks: unattributedClicks,

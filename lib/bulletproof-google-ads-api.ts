@@ -117,10 +117,16 @@ export class BulletproofGoogleAdsAPI {
       // CRITICAL FIX: Invalidate cache if it has campaigns but NO ads
       // Both adsense and carhp feeds rely on ads to extract style_ids for revenue matching.
       // If ads are missing (e.g. ads query failed and was cached), $0 revenue results.
-      if ((feedType === 'adsense' || feedType === 'carhp' || feedType === 'androidadvice') && cached.data.campaigns?.length > 0 && (!cached.data.ads || cached.data.ads.length === 0)) {
-        console.warn(`[BULLETPROOF_API] Cache has ${cached.data.campaigns.length} campaigns but 0 ads - INVALIDATING for ${feedType} feed`);
+      const isCostAttrFeed = feedType === 'adsense' || feedType === 'carhp' || feedType === 'androidadvice';
+      const campaignsWithoutAds = isCostAttrFeed && cached.data.campaigns?.length > 0 && (!cached.data.ads || cached.data.ads.length === 0);
+      // Symmetric guard: ads cached without campaigns means the campaigns query had
+      // failed when the cache was written — the account would show ads/revenue but
+      // $0 cost. Invalidate so the next fetch re-queries campaigns properly.
+      const adsWithoutCampaigns = isCostAttrFeed && cached.data.ads?.length > 0 && (!cached.data.campaigns || cached.data.campaigns.length === 0);
+      if (campaignsWithoutAds || adsWithoutCampaigns) {
+        console.warn(`[BULLETPROOF_API] Cache invalid for ${feedType} feed: ${campaignsWithoutAds ? `${cached.data.campaigns.length} campaigns but 0 ads` : `${cached.data.ads.length} ads but 0 campaigns`} - INVALIDATING`);
         // Null the cached payload so later error-fallback paths (rate limit / API failure)
-        // can't resurrect this broken cache and re-serve campaigns-without-ads.
+        // can't resurrect this broken cache and re-serve the half-broken payload.
         cached.data = null;
       } else {
         console.log(`[BULLETPROOF_API] ${cached.source} cache hit, age: ${Math.round(cached.age / 1000)}s`);

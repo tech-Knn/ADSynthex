@@ -874,9 +874,24 @@ export async function fetchGoogleAdsData(
       // the route's per-account retry refetches this account with priority 10 instead of
       // caching a broken payload.
       const adsFailed = allAdResponse === null;
+      const campaignsFailed = activeCampaignResponse === null;
       const hasCampaigns = !!(activeCampaignResponse && activeCampaignResponse.length > 0);
-      if (adsFailed && hasCampaigns && (feedType === 'androidadvice' || feedType === 'adsense' || feedType === 'carhp')) {
+      const hasAds = !!(allAdResponse && allAdResponse.length > 0);
+      const isCostAttributionFeed = feedType === 'androidadvice' || feedType === 'adsense' || feedType === 'carhp';
+
+      if (adsFailed && hasCampaigns && isCostAttributionFeed) {
         throw new Error(`Ads query failed for ${account.id} on ${feedType} feed (campaigns: ${activeCampaignResponse.length}) — abort account to trigger retry`);
+      }
+
+      // Symmetric guard: if the CAMPAIGNS query silently returned null while the ADS
+      // query succeeded, the account would pass through with ads but no campaigns/cost.
+      // route.ts treats `result.data.campaigns || result.data.ads` as success (and `[]`
+      // is truthy in JS), so without this throw the user sees ads/revenue but $0 cost
+      // for the account — the exact jitter that showed up in AndroidAdvice screenshots
+      // where the same account's cost flipped between a real number and $0 across
+      // refreshes. Throw to force the retry path.
+      if (campaignsFailed && hasAds && isCostAttributionFeed) {
+        throw new Error(`Campaigns query failed for ${account.id} on ${feedType} feed (ads: ${allAdResponse.length}) — abort account to trigger retry`);
       }
 
       // Process campaigns and attach geo targets

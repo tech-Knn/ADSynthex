@@ -45,6 +45,12 @@ interface AdSenseCostRevenueResponse {
     campaign_aggregated: any[];
     account_level_aggregated: any[];
     summary: any;
+    data_quality?: {
+        partial: boolean;
+        total_accounts_requested: number;
+        failed_account_ids: string[];
+        partial_cost_account_ids: string[];
+    };
     _source: string;
     _timestamp: string;
     _message: string;
@@ -339,6 +345,7 @@ export default function AndroidAdvicePage() {
                     {error && !data && (
                         <Alert message="Error" description={error} type="error" showIcon style={{ marginBottom: 24 }} />
                     )}
+
 
                     {(loading || loadingForce) && !data && <DashboardSkeleton />}
 
