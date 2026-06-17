@@ -420,18 +420,18 @@ export async function POST(request: NextRequest) {
       if (uncachedAccountIds.length > 0) {
         console.log(`[ADSENSE_COST_REVENUE] Fetching ${uncachedAccountIds.length} uncached accounts: ${uncachedAccountIds.join(', ')}`);
 
-        // Batch size MUST respect the downstream rate limiter: googleAdsRateLimiter is
-        // configured at QPS=2 (lib/redis-rate-limiter.ts). Each per-account fetch ALSO
-        // fans out 4 parallel queries (campaigns, ads, geo, asset groups) inside
-        // fetchGoogleAdsData, so even 2 accounts in parallel can burst 8 simultaneous
-        // queries against the limiter — which causes silent denials and the $0-cost
-        // jitter we saw on AndroidAdvice.
-        //   - Force Refresh: 1 account at a time (correctness > speed). 18 AA accounts
-        //     × ~1.5s = ~27s, which is acceptable when the user explicitly asked for
-        //     fresh data.
-        //   - Normal fetch: 2 at a time (fast, mostly served from cache anyway).
-        // INTER_BATCH_DELAY_MS = 600ms ensures we stay under QPS=2 across batches.
-        const BATCH_SIZE = forceLive ? 1 : 2;
+        // Concurrency tuning. The QPS=2 rate limiter check is non-atomic (single
+        // "last request" timestamp in redis), so bursts within the same JS tick
+        // don't actually get denied — the real ceiling is Google Ads' upstream
+        // hourly/daily quota. The symmetric campaigns/ads guards in
+        // lib/google-ads-api.ts now throw on partial failures, and the stale-cache
+        // fallback in bulletproof-google-ads-api.ts handles cooldowns, so we no
+        // longer need 1-at-a-time pacing for correctness.
+        //   - 4 accounts in parallel: 18 accounts / 4 = 5 batches × ~600ms gap +
+        //     API latency ≈ 10–15s for Force Refresh (was 1–2 minutes at batch=1).
+        //   - Normal fetch reuses the same pacing; with most accounts cached the
+        //     parallelism doesn't matter much there.
+        const BATCH_SIZE = 4;
         const INTER_BATCH_DELAY_MS = 600;
         const MAX_RETRIES = 3;
         const batches: string[][] = [];
