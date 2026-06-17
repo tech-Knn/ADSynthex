@@ -149,20 +149,53 @@ export class BulletproofGoogleAdsAPI {
     if (!rateLimitCheck.allowed) {
       console.warn(`[BULLETPROOF_API] Rate limit blocked: ${rateLimitCheck.reason}`);
 
-      // CRITICAL FIX: In Force Refresh mode (allowStale=false), do NOT serve stale cache
-      // Instead, wait for rate limiter and retry
-      if (!allowStale) {
-        console.warn(`[BULLETPROOF_API] Force Refresh mode - waiting ${rateLimitCheck.waitTime || 1000}ms for rate limiter to reset`);
-        await new Promise(resolve => setTimeout(resolve, rateLimitCheck.waitTime || 1000));
+      // Cap how long we'll ever block the request waiting for the limiter.
+      // Previously this awaited the FULL waitTime, which during a Google Ads
+      // cooldown (~600s) meant the page hung for 10 minutes with $0 cost shown.
+      // Wait at most 15s — long enough for QPS-window recovery, short enough that
+      // a deep cooldown falls through to the stale-cache fallback below.
+      const MAX_WAIT_MS = 15000;
+      const waitMs = Math.min(rateLimitCheck.waitTime || 1000, MAX_WAIT_MS);
 
-        // Retry once after waiting
+      if (!allowStale) {
+        // Force Refresh path
+        console.warn(`[BULLETPROOF_API] Force Refresh mode - waiting ${waitMs}ms (limiter asked for ${rateLimitCheck.waitTime}ms) before recheck`);
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+
         const retryCheck = await googleAdsRateLimiter.canMakeRequest(customerId || undefined);
-        if (!retryCheck.allowed) {
-          throw new Error(`Rate limit still active after waiting. Please try again in ${Math.ceil((retryCheck.waitTime || 1000) / 1000)}s`);
+        if (retryCheck.allowed) {
+          // Continue to Step 3 below — limiter freed up during our short wait.
+        } else {
+          // Still blocked. Don't make the user stare at a spinner for 10 minutes:
+          // try the stale cache as a last resort, even on Force Refresh. Better
+          // to show "data from N min ago" than nothing.
+          const staleRead = await redisCacheManager.get(cacheKey, {
+            dataType: 'google-ads',
+            forceRefresh: false
+          });
+          if (staleRead.data) {
+            const quotaStatus = await googleAdsRateLimiter.getQuotaStatus();
+            console.warn(`[BULLETPROOF_API] Force Refresh blocked by cooldown, falling back to stale cache (age: ${Math.round(staleRead.age / 1000)}s)`);
+            return {
+              data: staleRead.data,
+              source: 'stale',
+              age: staleRead.age,
+              message: `Stale data (API in cooldown for ~${Math.ceil((retryCheck.waitTime || 0) / 1000)}s; showing cached snapshot)`,
+              quotaStatus
+            };
+          }
+          // No cache at all → bail clearly instead of hanging.
+          const quotaStatus = await googleAdsRateLimiter.getQuotaStatus();
+          console.error(`[BULLETPROOF_API] Force Refresh blocked by cooldown and no stale cache available for ${customerId || 'all'}`);
+          return {
+            data: null,
+            source: 'fallback',
+            message: `API in cooldown for ~${Math.ceil((retryCheck.waitTime || 0) / 1000)}s and no cached data available. Retry shortly or POST /api/reset-cooldown?secret=… to clear the cooldown.`,
+            quotaStatus
+          };
         }
-        // If allowed after waiting, continue to Step 3 below
       } else if (cached.data && allowStale) {
-        // Only serve stale cache if allowStale=true (normal mode)
+        // Normal mode: serve stale cache immediately, no waiting.
         const quotaStatus = await googleAdsRateLimiter.getQuotaStatus();
 
         console.log(`[BULLETPROOF_API] Serving stale cache due to rate limit, age: ${Math.round(cached.age / 1000)}s`);
