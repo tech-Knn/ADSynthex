@@ -2103,17 +2103,37 @@ export async function POST(request: NextRequest) {
       _dataQualityPassed: true
     };
 
-    // CRITICAL: Only cache if data quality is good
-    // Next request will get this exact same data until cache expires
-    try {
-      await redisCacheManager.set(aggregatedCacheKey, response, {
-        ttl: AGGREGATED_CACHE_TTL,
-        dataType: 'unified',
-        priority: 'high'
-      });
-      console.log(`[ADSENSE_REVENUE] Data quality passed - Saved aggregated result to cache (TTL: ${AGGREGATED_CACHE_TTL}s)`);
-    } catch (err) {
-      console.warn('[ADSENSE_REVENUE] Failed to save aggregated cache:', err);
+    // Cache write must respect data quality, otherwise a temporary upstream failure
+    // (e.g., Google Ads cooldown blocking every account) gets stored for the full
+    // 2-hour TTL and every subsequent reader sees $0 cost long after the upstream
+    // recovers. That's exactly the "yesterday is broken" symptom we hit on AndroidAdvice.
+    //
+    //   - All accounts failed  → DO NOT cache. Let the next request retry fresh.
+    //   - Some accounts failed → cache for a short window (60s) so we don't hammer
+    //                             upstream, but recover quickly when it heals.
+    //   - All accounts healthy → cache for the full TTL as before.
+    const totalAccountsRequested = requestedAccountIds.length;
+    const allAccountsFailed = totalAccountsRequested > 0 && dq_failedUnique.length >= totalAccountsRequested;
+    const POISON_GUARD_TTL = 60; // seconds — short window for partial-failure caching
+
+    if (allAccountsFailed) {
+      console.warn(`[ADSENSE_REVENUE] Skipping cache write: ${dq_failedUnique.length}/${totalAccountsRequested} accounts failed. Next request will retry fresh.`);
+    } else {
+      const writeTtl = dq_partial ? POISON_GUARD_TTL : AGGREGATED_CACHE_TTL;
+      try {
+        await redisCacheManager.set(aggregatedCacheKey, response, {
+          ttl: writeTtl,
+          dataType: 'unified',
+          priority: 'high'
+        });
+        if (dq_partial) {
+          console.warn(`[ADSENSE_REVENUE] Partial data (${dq_failedUnique.length} failed, ${dq_partialCostUnique.length} partial-cost) — cached with short TTL ${writeTtl}s for quick recovery.`);
+        } else {
+          console.log(`[ADSENSE_REVENUE] Data quality passed - Saved aggregated result to cache (TTL: ${writeTtl}s)`);
+        }
+      } catch (err) {
+        console.warn('[ADSENSE_REVENUE] Failed to save aggregated cache:', err);
+      }
     }
 
     // Disable HTTP caching (Redis cache is used above)
