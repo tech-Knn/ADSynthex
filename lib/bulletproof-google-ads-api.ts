@@ -331,6 +331,21 @@ export class BulletproofGoogleAdsAPI {
    */
   private isRateLimitError(error: any): boolean {
     const errorStr = JSON.stringify(error).toLowerCase();
+    // Explicitly EXCLUDE transient network errors. OAuth token endpoint blips
+    // (ERR_STREAM_PREMATURE_CLOSE, socket hang up, etc.) are NOT rate limits —
+    // they're upstream connection issues. Misclassifying them was triggering
+    // unnecessary cooldowns and killing every cost fetch.
+    const isTransientNetwork =
+      errorStr.includes('err_stream_premature_close') ||
+      errorStr.includes('premature close') ||
+      errorStr.includes('econnreset') ||
+      errorStr.includes('etimedout') ||
+      errorStr.includes('socket hang up') ||
+      errorStr.includes('eai_again') ||
+      errorStr.includes('enotfound') ||
+      errorStr.includes('econnrefused');
+    if (isTransientNetwork) return false;
+
     return errorStr.includes('too many requests') ||
       errorStr.includes('rate limit') ||
       errorStr.includes('429') ||

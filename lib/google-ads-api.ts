@@ -829,11 +829,33 @@ export async function fetchGoogleAdsData(
             console.log(`[GOOGLE_ADS_API] ${operationName} response: ${response?.length || 0} items`);
             return response;
           } catch (error: any) {
-            // Handle rate limit errors by recording in Redis
             const errorStr = JSON.stringify(error).toLowerCase();
-            if (errorStr.includes('rate') || errorStr.includes('429') || errorStr.includes('resource_exhausted')) {
+            // Exclude transient network errors (OAuth premature close, socket
+            // resets, DNS hiccups). These are NOT rate limits — they're upstream
+            // connection blips and shouldn't trigger our cooldown.
+            const isTransientNetwork =
+              errorStr.includes('err_stream_premature_close') ||
+              errorStr.includes('premature close') ||
+              errorStr.includes('econnreset') ||
+              errorStr.includes('etimedout') ||
+              errorStr.includes('socket hang up') ||
+              errorStr.includes('eai_again') ||
+              errorStr.includes('enotfound') ||
+              errorStr.includes('econnrefused');
+            // Also tightened the rate-limit pattern — was matching ANY occurrence
+            // of "rate" (which appears in retryDelayMultiplier etc.), now requires
+            // an actual rate-limit phrase.
+            const looksLikeRateLimit = !isTransientNetwork && (
+              errorStr.includes('rate limit') ||
+              errorStr.includes('too many requests') ||
+              errorStr.includes('429') ||
+              errorStr.includes('resource_exhausted')
+            );
+            if (looksLikeRateLimit) {
               console.error(`[GOOGLE_ADS_API] Rate limit error detected in ${operationName}`);
               await googleAdsRateLimiter.handleRateLimitError(error);
+            } else if (isTransientNetwork) {
+              console.warn(`[GOOGLE_ADS_API] Transient network error in ${operationName} (not a rate limit, no cooldown): ${error?.code || error?.message?.substring(0, 100)}`);
             }
             throw error;
           }
