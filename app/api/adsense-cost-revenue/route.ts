@@ -11,6 +11,7 @@ import {
 import { cookies } from 'next/headers';
 import { bulletproofAPI } from '@/lib/bulletproof-google-ads-api';
 import { redisCacheManager } from '@/lib/redis-cache-manager';
+import { filterAccountsByFeed } from '@/lib/google-ads-api';
 import { ACCOUNT_FEED_ACCESS, hasAccessToFeed, type FeedType } from '@/lib/account-access-control';
 import { getAccountCurrency } from '@/lib/currency-converter';
 import { convertToUsd } from '@/lib/currency-service';
@@ -85,13 +86,15 @@ export async function POST(request: NextRequest) {
     if (forceLive) {
       console.log('[ADSENSE_REVENUE] FORCE LIVE MODE - ALL CACHES BYPASSED ');
     }
-    // AGGRESSIVE CACHING OPTIMIZATION: Dramatically increased TTLs to reduce API quota usage
-    // AFS data doesn't change frequently - hourly refresh is sufficient for most use cases
-    // Previous: 15 min = 96 potential refreshes/day × 140 API calls = 13,440 calls/day
-    // New: 2 hour aggregated, 1 hour individual = ~12 refreshes/day × 140 = 1,680 calls/day
-    // Savings: 11,760 API calls/day (87% reduction!)
-    const ACCOUNT_CACHE_TTL = 60 * 60 * 1000; // 1 hour (3600 seconds) - individual accounts
-    const AGGREGATED_CACHE_TTL = 2 * 60 * 60; // 2 hours (7200 seconds) - "All Accounts" view 
+    // FRESHNESS TARGET: dashboards must show data at most ~15 min old. Longer caches
+    // were masking intraday cost changes (the "morning value still showing in the
+    // afternoon" symptom). Force Refresh remains available for immediate live fetches.
+    const ACCOUNT_CACHE_TTL = 15 * 60 * 1000; // 15 min — individual accounts
+    const AGGREGATED_CACHE_TTL = 15 * 60;     // 15 min — "All Accounts" view (seconds)
+    // Stale fallback window: if the fresh fetch fails (upstream cooldown) but a
+    // recent-ish cached entry exists, we'd rather show 15–30 min old data with a
+    // clear marker than $0 / "No data". Capped at 30 min per freshness policy.
+    const STALE_FALLBACK_TTL = 30 * 60;       // 30 min (seconds)
 
     // Generate aggregated cache key with feed type isolation
     const accountsKey = accountIds?.length > 0
@@ -104,7 +107,10 @@ export async function POST(request: NextRequest) {
       : 'afs';
     const aggregatedCacheKey = `${feedPrefix}_aggregated:${accountsKey}:${adsenseAccountId}:${startDate}:${endDate}`;
 
-    // Check aggregated cache FIRST (unless force refresh)
+    // Read the aggregated cache once and keep it in scope. If it's fresh (<15 min),
+    // return it immediately. If it's stale-but-recent (<30 min), keep it as a
+    // fallback we can return if the fresh fetch below also fails (cooldown).
+    let staleAggregatedFallback: { data: any; ageSeconds: number } | null = null;
     if (!forceLive) {
       try {
         const cachedResult = await redisCacheManager.get(aggregatedCacheKey, {
@@ -112,20 +118,88 @@ export async function POST(request: NextRequest) {
           forceRefresh: false
         });
 
-        if (cachedResult.data && cachedResult.age < AGGREGATED_CACHE_TTL * 1000) {
+        if (cachedResult.data) {
           const cacheAgeSeconds = Math.round(cachedResult.age / 1000);
-          console.log(`[ADSENSE_REVENUE] AGGREGATED CACHE HIT! Age: ${cacheAgeSeconds}s, returning consistent data`);
+          if (cachedResult.age < AGGREGATED_CACHE_TTL * 1000) {
+            console.log(`[ADSENSE_REVENUE] AGGREGATED CACHE HIT! Age: ${cacheAgeSeconds}s, returning consistent data`);
 
-          return NextResponse.json({
-            ...cachedResult.data,
-            _source: 'aggregated_cache',
-            _cacheAge: `${cacheAgeSeconds}s`,
-            _message: `Served from cache (${cacheAgeSeconds}s old). Use Force Refresh for live data.`
-          });
+            return NextResponse.json({
+              ...cachedResult.data,
+              _source: 'aggregated_cache',
+              _cacheAge: `${cacheAgeSeconds}s`,
+              _message: `Served from cache (${cacheAgeSeconds}s old). Use Force Refresh for live data.`
+            });
+          }
+          if (cachedResult.age < STALE_FALLBACK_TTL * 1000) {
+            staleAggregatedFallback = { data: cachedResult.data, ageSeconds: cacheAgeSeconds };
+            console.log(`[ADSENSE_REVENUE] Stale aggregated cache available as fallback (age: ${cacheAgeSeconds}s) — will use only if fresh fetch fails.`);
+          }
         }
         console.log(`[ADSENSE_REVENUE] Aggregated cache miss or stale, fetching fresh data...`);
       } catch (err) {
         console.warn('[ADSENSE_REVENUE] Aggregated cache check failed:', err);
+      }
+    }
+
+    // FALLBACK: single-account view can be served from the All-Accounts cache.
+    // Individual-account requests routinely fail when Google Ads is in cooldown (each
+    // account ID hits the limiter independently and there's no per-account cached
+    // fallback). The All-Accounts view is usually still cached, so we slice the
+    // requested account's row out of it instead of returning $0. This keeps
+    // individual-account views consistent with what the team sees in All-Accounts.
+    if (!forceLive && accountIds && accountIds.length === 1 && requiredFeedType) {
+      try {
+        const feedAccounts = filterAccountsByFeed(requiredFeedType);
+        if (feedAccounts.length > 1) {
+          const allAccountsKey = `${feedPrefix}_aggregated:${feedAccounts.map(a => a.id).sort().join(',')}:${adsenseAccountId}:${startDate}:${endDate}`;
+          const allCached = await redisCacheManager.get(allAccountsKey, {
+            dataType: 'unified',
+            forceRefresh: false
+          });
+          if (allCached.data && allCached.age < AGGREGATED_CACHE_TTL * 1000) {
+            const targetAccountId = accountIds[0];
+            const sourceData: any = allCached.data;
+            const cacheAgeSeconds = Math.round(allCached.age / 1000);
+
+            const filteredCampaigns = (sourceData.campaign_aggregated || []).filter((c: any) => c.account_id === targetAccountId);
+            const filteredAccountLevel = (sourceData.account_level_aggregated || []).filter((a: any) => a.account_id === targetAccountId);
+            const filteredGoogleAdsCampaigns = (sourceData.google_ads_data?.campaigns || []).filter((c: any) => c.account_id === targetAccountId);
+
+            const totalCost = filteredCampaigns.reduce((s: number, c: any) => s + (c.cost || 0), 0);
+            const totalRevenue = filteredCampaigns.reduce((s: number, c: any) => s + (c.revenue || 0), 0);
+            const totalProfit = totalRevenue - totalCost;
+            const totalConversions = filteredCampaigns.reduce((s: number, c: any) => s + (c.conversions || 0), 0);
+
+            console.log(`[ADSENSE_REVENUE] ALL-ACCOUNTS FALLBACK HIT for single account ${targetAccountId} (age: ${cacheAgeSeconds}s) — sliced ${filteredCampaigns.length} campaigns, ${filteredAccountLevel.length} account row(s)`);
+
+            return NextResponse.json({
+              ...sourceData,
+              campaign_aggregated: filteredCampaigns,
+              account_level_aggregated: filteredAccountLevel,
+              google_ads_data: { campaigns: filteredGoogleAdsCampaigns, total: filteredGoogleAdsCampaigns.length },
+              // Unattributed and AdSense raw revenue are publisher-level and can't be
+              // sliced per account meaningfully; zero them out for single-account view
+              // so the dashboard doesn't double-count.
+              unattributed_revenue: { total: 0, clicks: 0, styleIdCount: 0, items: [] },
+              summary: {
+                ...(sourceData.summary || {}),
+                totalCost,
+                totalRevenue,
+                totalProfit,
+                totalConversions,
+                overallROI: totalCost > 0 ? (totalProfit / totalCost) * 100 : 0,
+                overallROAS: totalCost > 0 ? totalRevenue / totalCost : 0,
+                totalCampaigns: filteredCampaigns.length,
+                totalAccounts: filteredAccountLevel.length,
+              },
+              _source: 'all_accounts_cache_filtered',
+              _cacheAge: `${cacheAgeSeconds}s`,
+              _message: `Served from All-Accounts cache (${cacheAgeSeconds}s old) — individual-account fetch unavailable. Use Force Refresh for live data.`
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('[ADSENSE_REVENUE] All-Accounts fallback check failed:', err);
       }
     }
 
@@ -2118,6 +2192,25 @@ export async function POST(request: NextRequest) {
 
     if (allAccountsFailed) {
       console.warn(`[ADSENSE_REVENUE] Skipping cache write: ${dq_failedUnique.length}/${totalAccountsRequested} accounts failed. Next request will retry fresh.`);
+
+      // STALE FALLBACK: rather than returning $0 cost when Google Ads is in cooldown,
+      // serve the most recent cached entry if it's within 30 min (freshness policy
+      // upper bound). Better to show data from 20 min ago with a clear marker than
+      // a misleading $0.
+      if (staleAggregatedFallback) {
+        console.warn(`[ADSENSE_REVENUE] Returning stale aggregated cache as fallback (age: ${staleAggregatedFallback.ageSeconds}s) because all accounts failed`);
+        return NextResponse.json({
+          ...staleAggregatedFallback.data,
+          _source: 'stale_fallback',
+          _cacheAge: `${staleAggregatedFallback.ageSeconds}s`,
+          _message: `Showing ${Math.round(staleAggregatedFallback.ageSeconds / 60)}-min-old data — Google Ads is currently throttling. Retry Force Refresh in a few minutes.`,
+        }, {
+          headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate',
+            'X-Data-Source': 'stale-fallback'
+          }
+        });
+      }
     } else {
       const writeTtl = dq_partial ? POISON_GUARD_TTL : AGGREGATED_CACHE_TTL;
       try {

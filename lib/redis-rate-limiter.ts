@@ -47,7 +47,11 @@ export class RedisRateLimiter {
       dailyLimit: 10000, // ~67% of 15K daily quota (more conservative)
       hourlyLimit: 3000,  // Max 3000 requests per hour (allows bursts, stays under daily)
       qps: 2,            // 2 queries per second (increased for multiple concurrent feeds)
-      cooldownBuffer: 600, // 10 minutes safety buffer (increased from 5)
+      // No extra padding on top of Google's retry-after. We respect exactly what
+      // Google asks for. The previous +600s buffer was turning every transient
+      // throttle into a 10-minute extra lockout, compounding into 60+ min cooldowns
+      // when multiple errors occurred. Trust Google's instruction, no more.
+      cooldownBuffer: 0,
       ...config
     };
 
@@ -221,8 +225,12 @@ export class RedisRateLimiter {
     try {
       console.error('[REDIS_RATE_LIMITER] Rate limit error detected:', error);
 
-      // Parse retry time from error (Google Ads specific format)
-      let retrySeconds = 3600; // Default 1 hour
+      // Parse retry time from error (Google Ads specific format).
+      // Default is intentionally short (60s) so an error without a parseable
+      // retry-after costs us 1 minute, not 1 hour. The old 3600s default was
+      // silently giving us hour-long lockouts on vague errors.
+      let retrySeconds = 60;
+      let retryWasExplicit = false;
       const errorString = JSON.stringify(error);
 
       // Try multiple patterns to extract retry time
@@ -236,9 +244,14 @@ export class RedisRateLimiter {
         const match = errorString.match(pattern);
         if (match) {
           retrySeconds = parseInt(match[1]);
-          console.log(`[REDIS_RATE_LIMITER] EXTRACTED COOLDOWN: ${retrySeconds}s (~${Math.round(retrySeconds / 3600)} hours)`);
+          retryWasExplicit = true;
+          console.log(`[REDIS_RATE_LIMITER] EXTRACTED COOLDOWN: ${retrySeconds}s (~${Math.round(retrySeconds / 60)} min) — from Google's retry-after`);
           break;
         }
+      }
+
+      if (!retryWasExplicit) {
+        console.warn(`[REDIS_RATE_LIMITER] No retry-after found in error; defaulting to ${retrySeconds}s. Error: ${errorString.substring(0, 300)}`);
       }
 
       // Log the full error for debugging

@@ -17,7 +17,7 @@ const TARGET_ACCOUNTS = config.TARGET_ACCOUNTS;
  * @returns Filtered list of accounts belonging to the specified feed
  * EMERGENCY FIX 2026-02-07: Returns empty array if feed is globally disabled
  */
-function filterAccountsByFeed(feedType?: FeedType | null): typeof TARGET_ACCOUNTS {
+export function filterAccountsByFeed(feedType?: FeedType | null): typeof TARGET_ACCOUNTS {
   // If no feed type specified, return all accounts (backward compatibility)
   if (!feedType) {
     return TARGET_ACCOUNTS;
@@ -840,31 +840,33 @@ export async function fetchGoogleAdsData(
         }, RETRY_CONFIG.maxRetries, 1000);
       };
 
-      // PERFORMANCE: Run all independent queries in parallel per account.
-      // campaigns, geo_targets, ads, and asset_groups are all independent — no ordering required.
-      // This reduces per-account wall time from 4× serial API latency to 1× (parallel batch).
+      // Run the four per-account queries SEQUENTIALLY rather than Promise.all.
+      // Parallel fan-out bursts 4 calls/account against Google in the same tick;
+      // with batched accounts at the route layer that becomes 16 simultaneous calls,
+      // which trips Google's per-MCC rate limit and triggers a long cooldown.
+      // Sequential keeps the at-most-in-flight count equal to the batch size, at the
+      // cost of ~1× more per-account wall time. Net latency improves in practice
+      // because we stop incurring cooldown waits and retry cycles.
       const activeCampaignQuery = buildActiveCampaignQuery(startDate, endDate);
       const allAdQuery = buildAllAdGroupAdQuery(startDate, endDate);
       const assetGroupQuery = buildAssetGroupQuery(startDate, endDate);
 
-      const [activeCampaignResponse, geoTargetMap, allAdResponse, assetGroupResponse] = await Promise.all([
-        makeApiCall(activeCampaignQuery, 'Active Campaigns').catch((err: any) => {
-          console.warn(`[GOOGLE_ADS_API] Campaigns query failed for ${account.id}:`, err?.message);
-          return null;
-        }),
-        fetchCampaignGeoTargets(accountCustomer, account).catch((err: any) => {
-          console.warn(`[GOOGLE_ADS_API] Geo-targeting failed for ${account.id}:`, err?.message);
-          return new Map<string, string[]>();
-        }),
-        makeApiCall(allAdQuery, 'All Ads').catch((err: any) => {
-          console.warn(`[GOOGLE_ADS_API] Ads query failed for ${account.id}:`, err?.message);
-          return null;
-        }),
-        makeApiCall(assetGroupQuery, 'Asset Groups').catch((err: any) => {
-          console.warn(`[GOOGLE_ADS_API] Asset groups query failed for ${account.id}:`, err?.message);
-          return null;
-        }),
-      ]);
+      const activeCampaignResponse = await makeApiCall(activeCampaignQuery, 'Active Campaigns').catch((err: any) => {
+        console.warn(`[GOOGLE_ADS_API] Campaigns query failed for ${account.id}:`, err?.message);
+        return null;
+      });
+      const geoTargetMap = await fetchCampaignGeoTargets(accountCustomer, account).catch((err: any) => {
+        console.warn(`[GOOGLE_ADS_API] Geo-targeting failed for ${account.id}:`, err?.message);
+        return new Map<string, string[]>();
+      });
+      const allAdResponse = await makeApiCall(allAdQuery, 'All Ads').catch((err: any) => {
+        console.warn(`[GOOGLE_ADS_API] Ads query failed for ${account.id}:`, err?.message);
+        return null;
+      });
+      const assetGroupResponse = await makeApiCall(assetGroupQuery, 'Asset Groups').catch((err: any) => {
+        console.warn(`[GOOGLE_ADS_API] Asset groups query failed for ${account.id}:`, err?.message);
+        return null;
+      });
 
       console.log(`[GOOGLE_ADS_API] Account ${account.id}: ${activeCampaignResponse?.length || 0} campaigns, ${allAdResponse?.length || 0} ads, ${assetGroupResponse?.length || 0} asset groups`);
 
