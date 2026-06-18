@@ -1,6 +1,7 @@
 import { E } from '@upstash/redis/zmscore-DWj9Vh1g';
 import { OAuth2Client } from 'google-auth-library';
 import { getMCCForAccount, getDefaultMCC } from './mcc-config';
+import { redisClient } from './redis-client';
 
 export type AdSenseAccountType = 'afs' | 'carhp' | 'thefactrelay' | 'androidadvice';
 
@@ -68,7 +69,58 @@ function isTransientNetworkError(err: any): boolean {
   return msg.includes('premature close') || msg.includes('socket hang up') || msg.includes('network');
 }
 
+// In-memory token cache (per server process). Backed by Redis so multiple
+// server instances share the same token and we don't hit OAuth N× per request.
+// Google access tokens are valid for ~60 min; we cache for 50 to keep a buffer.
+const TOKEN_CACHE_TTL_SECONDS = 50 * 60;
+const memoryTokenCache: Map<string, { token: string; expiresAt: number }> = new Map();
+
+function getTokenCacheKey(customerId?: string, adsenseAccountType?: AdSenseAccountType): string {
+  // Each feed has its own OAuth credentials, so they need separate cache entries.
+  // For AFS / default (no adsenseAccountType passed), key by customer.
+  if (adsenseAccountType) {
+    return `adsense_token:${adsenseAccountType}`;
+  }
+  return `adsense_token:default:${customerId || 'unknown'}`;
+}
+
+async function readTokenFromCache(key: string): Promise<string | null> {
+  // Memory first (fastest, no Redis round-trip)
+  const mem = memoryTokenCache.get(key);
+  if (mem && mem.expiresAt > Date.now()) return mem.token;
+  if (mem) memoryTokenCache.delete(key);
+
+  if (!redisClient.isRedisConnected()) return null;
+  try {
+    const cached = await redisClient.get(key);
+    if (!cached) return null;
+    const ttl = await redisClient.ttl(key);
+    if (ttl > 0) {
+      memoryTokenCache.set(key, { token: cached, expiresAt: Date.now() + ttl * 1000 });
+    }
+    return cached;
+  } catch {
+    return null;
+  }
+}
+
+async function writeTokenToCache(key: string, token: string): Promise<void> {
+  memoryTokenCache.set(key, { token, expiresAt: Date.now() + TOKEN_CACHE_TTL_SECONDS * 1000 });
+  if (!redisClient.isRedisConnected()) return;
+  try {
+    await redisClient.setex(key, TOKEN_CACHE_TTL_SECONDS, token);
+  } catch (err) {
+    console.warn('[ADSENSE_API] Failed to write token to Redis cache:', err);
+  }
+}
+
 async function getAccessToken(customerId?: string, adsenseAccountType?: AdSenseAccountType): Promise<string> {
+  const cacheKey = getTokenCacheKey(customerId, adsenseAccountType);
+
+  // Cache hit — return immediately without touching Google's OAuth endpoint.
+  const cached = await readTokenFromCache(cacheKey);
+  if (cached) return cached;
+
   const MAX_ATTEMPTS = 3;
   let lastErr: any;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -76,6 +128,7 @@ async function getAccessToken(customerId?: string, adsenseAccountType?: AdSenseA
       const client = getOAuthClient(customerId, adsenseAccountType);
       const { token } = await client.getAccessToken();
       if (!token) throw new Error('Failed to get AdSense access token');
+      await writeTokenToCache(cacheKey, token);
       return token;
     } catch (err: any) {
       lastErr = err;

@@ -99,9 +99,22 @@ function analyzeApiError(error: any): { shouldRetry: boolean; errorType: string;
     };
   }
 
-  // Network errors
-  if (errorMessage.includes('network') || errorMessage.includes('timeout') ||
-    errorMessage.includes('ECONNRESET') || errorMessage.includes('ENOTFOUND')) {
+  // Network errors — these are TRANSIENT, retry them. Includes the OAuth-token-
+  // endpoint premature-close errors that have been killing fetches today.
+  const lowerMsg = errorMessage.toLowerCase();
+  if (
+    lowerMsg.includes('network') ||
+    lowerMsg.includes('timeout') ||
+    lowerMsg.includes('econnreset') ||
+    lowerMsg.includes('enotfound') ||
+    lowerMsg.includes('etimedout') ||
+    lowerMsg.includes('econnrefused') ||
+    lowerMsg.includes('eai_again') ||
+    lowerMsg.includes('socket hang up') ||
+    lowerMsg.includes('premature close') ||
+    lowerMsg.includes('err_stream_premature_close') ||
+    lowerMsg.includes('invalid response body')
+  ) {
     return {
       shouldRetry: true,
       errorType: 'NETWORK_ERROR',
