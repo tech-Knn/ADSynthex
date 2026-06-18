@@ -56,11 +56,38 @@ export interface AdSenseRevenue {
   clicks: number;
 }
 
+// Transient OAuth errors we want to retry past gaxios's built-in attempts.
+// Premature stream closes from https://oauth2.googleapis.com/token surface as
+// ERR_STREAM_PREMATURE_CLOSE and Google's library only retries them 2× before
+// bubbling up — which manifests as the "AdSense API failed" error on the dashboard.
+function isTransientNetworkError(err: any): boolean {
+  const code: string | undefined = err?.code || err?.error?.code;
+  if (code === 'ERR_STREAM_PREMATURE_CLOSE') return true;
+  if (code === 'ECONNRESET' || code === 'ETIMEDOUT' || code === 'EAI_AGAIN') return true;
+  const msg = String(err?.message || '').toLowerCase();
+  return msg.includes('premature close') || msg.includes('socket hang up') || msg.includes('network');
+}
+
 async function getAccessToken(customerId?: string, adsenseAccountType?: AdSenseAccountType): Promise<string> {
-  const client = getOAuthClient(customerId, adsenseAccountType);
-  const { token } = await client.getAccessToken();
-  if (!token) throw new Error('Failed to get AdSense access token');
-  return token;
+  const MAX_ATTEMPTS = 3;
+  let lastErr: any;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const client = getOAuthClient(customerId, adsenseAccountType);
+      const { token } = await client.getAccessToken();
+      if (!token) throw new Error('Failed to get AdSense access token');
+      return token;
+    } catch (err: any) {
+      lastErr = err;
+      if (attempt === MAX_ATTEMPTS || !isTransientNetworkError(err)) {
+        throw err;
+      }
+      const backoffMs = 500 * attempt; // 500ms, 1000ms
+      console.warn(`[ADSENSE_API] OAuth token attempt ${attempt}/${MAX_ATTEMPTS} failed (${err?.code || err?.message?.substring(0, 80)}); retrying in ${backoffMs}ms`);
+      await new Promise(resolve => setTimeout(resolve, backoffMs));
+    }
+  }
+  throw lastErr;
 }
 
 export async function fetchAdSenseRevenueByStyleId(
