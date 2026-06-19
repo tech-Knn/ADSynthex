@@ -66,6 +66,8 @@ export async function GET(request: NextRequest) {
                     _source: 'redis_cache_fresh',
                     _cacheAgeSeconds: cachedAgeSeconds,
                     _loadTimeMs: Date.now() - startTime,
+                }, {
+                    headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache', 'Content-Type': 'application/json' }
                 });
             }
             // Stale-but-available: hold onto it as fallback if fresh fetch fails below.
@@ -102,7 +104,9 @@ export async function GET(request: NextRequest) {
             console.warn('[AA_REVENUE_ONLY] Cache write failed (continuing):', cacheErr);
         }
 
-        return NextResponse.json({ ...payload, _loadTimeMs: elapsed });
+        return NextResponse.json({ ...payload, _loadTimeMs: elapsed }, {
+            headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache', 'Content-Type': 'application/json' }
+        });
     } catch (err: any) {
         console.error('[AA_REVENUE_ONLY] AdSense fetch failed:', err?.message);
 
@@ -116,6 +120,8 @@ export async function GET(request: NextRequest) {
                 _cacheAgeSeconds: cachedAgeSeconds,
                 _staleReason: err?.message?.substring(0, 200) || 'AdSense fetch failed',
                 _loadTimeMs: Date.now() - startTime,
+            }, {
+                headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache', 'Content-Type': 'application/json' }
             });
         }
 
