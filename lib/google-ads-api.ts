@@ -25,7 +25,7 @@ export function filterAccountsByFeed(feedType?: FeedType | null): typeof TARGET_
 
   // EMERGENCY FIX: Check if feed is globally disabled (ads.com, compado, inuvo not in use)
   if (ACCOUNT_FEED_ACCESS && typeof ACCOUNT_FEED_ACCESS === 'object') {
-    const disabledFeeds: FeedType[] = ['adscom', 'compado'];
+    const disabledFeeds: FeedType[] = ['compado'];
     if (disabledFeeds.includes(feedType)) {
       console.log(`[GOOGLE_ADS_API] ⚠️  Feed ${feedType} is DISABLED (not in use - saving quota)`);
       console.log(`[GOOGLE_ADS_API] Returning 0 accounts for ${feedType} feed (quota saving measure)`);
@@ -945,9 +945,13 @@ export async function fetchGoogleAdsData(
         data.campaigns.push(...processedCampaigns);
       }
 
-      // For non-adsense/non-carhp feeds, merge "All Campaigns" (includes REMOVED) into the data.
-      // adsense and carhp only need ENABLED+PAUSED (style_id matching ignores REMOVED campaigns).
-      if (feedType && feedType !== 'adsense' && feedType !== 'carhp') {
+      // For non-AFS-style feeds, merge "All Campaigns" (includes REMOVED) into the data.
+      // AFS-style feeds (adsense, carhp, thefactrelay, androidadvice) use style_id
+      // matching which ignores REMOVED campaigns, so this query is pure overhead — 1
+      // wasted call per account per fetch. Skipping it on androidadvice alone saves
+      // 18 calls per dashboard load (~25% of androidadvice's GAds quota burn).
+      const AFS_STYLE_FEEDS = new Set(['adsense', 'carhp', 'thefactrelay', 'androidadvice']);
+      if (feedType && !AFS_STYLE_FEEDS.has(feedType)) {
         // For other feeds (adscom, compado, inuvo), fetch all campaigns if needed
         try {
           const allCampaignsQuery = buildAllCampaignsQuery(startDate, endDate);
@@ -1004,7 +1008,7 @@ export async function fetchGoogleAdsData(
       // This saves ~301 API calls per fetch (43 accounts × 7 = massive quota savings!)
       const shouldFetchClickViews = includeClickViews || process.env.ENABLE_CLICK_VIEW_QUERIES === 'true';
 
-      if (shouldFetchClickViews && (feedType === 'adscom' || feedType === 'compado' || feedType === 'inuvo')) {
+      if (shouldFetchClickViews && (feedType === 'compado' || feedType === 'inuvo')) {
         console.log(`[GOOGLE_ADS_API] Fetching click_view data (GCLIDs) for ${feedType} feed...`);
         try {
           // OPTIMIZATION: Fetch entire date range in ONE query instead of day-by-day
@@ -1032,7 +1036,7 @@ export async function fetchGoogleAdsData(
         } catch (error: any) {
           console.warn(`[GOOGLE_ADS_API] Click view fetch failed for ${account.name}:`, error?.message || 'Unknown error');
         }
-      } else if (!shouldFetchClickViews && (feedType === 'adscom' || feedType === 'compado' || feedType === 'inuvo')) {
+      } else if (!shouldFetchClickViews && (feedType === 'compado' || feedType === 'inuvo')) {
         console.log(`[GOOGLE_ADS_API] Skipping click_view data (disabled to save quota - set ENABLE_CLICK_VIEW_QUERIES=true or pass includeClickViews=true to enable)`);
       } else {
         console.log(`[GOOGLE_ADS_API] Skipping click_view data (not needed for ${feedType || 'this'} feed)`);
@@ -1052,7 +1056,7 @@ export async function fetchGoogleAdsData(
     }
   }
 
-  const clicksMsg = (feedType === 'adscom' || feedType === 'compado' || feedType === 'inuvo') ? `, ${data.clicks?.length || 0} clicks with GCLIDs` : '';
+  const clicksMsg = (feedType === 'compado' || feedType === 'inuvo') ? `, ${data.clicks?.length || 0} clicks with GCLIDs` : '';
   console.log(`Google Ads API fetch completed for ${feedType || 'all'} feed. Total: ${data.campaigns.length} campaigns, ${data.ads.length} ads${clicksMsg}`);
 
   return data;

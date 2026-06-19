@@ -70,9 +70,7 @@ export default function LoginPage() {
           // Redirect to the first allowed feed
           const firstFeed = allowedFeeds[0];
 
-          if (firstFeed === 'adscom') {
-            router.push(`/dashboard?account=${accountId}`);
-          } else if (firstFeed === 'compado') {
+          if (firstFeed === 'compado') {
             router.push('/compado');
           } else if (firstFeed === 'inuvo') {
             router.push('/inuvo-dashboard');
@@ -87,12 +85,12 @@ export default function LoginPage() {
           } else if (firstFeed === 'androidadvice') {
             router.push('/androidadvice');
           } else {
-            // Fallback
-            router.push('/dashboard');
+            // Fallback — only feed currently active
+            router.push('/androidadvice');
           }
         } else {
-          // No feeds allowed - redirect to dashboard (will be blocked by middleware)
-          router.push('/dashboard');
+          // No feeds allowed — send to login (middleware will keep them out)
+          router.push('/androidadvice');
         }
       } else {
         antdMessage.error('Invalid account ID');

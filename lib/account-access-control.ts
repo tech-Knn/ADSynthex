@@ -6,7 +6,7 @@
  * Regular users only have access to specific feeds based on their account type.
  */
 
-export type FeedType = 'adscom' | 'compado' | 'inuvo' | 'adsense' | 'predicto' | 'carhp' | 'thefactrelay' | 'androidadvice';
+export type FeedType = 'compado' | 'inuvo' | 'adsense' | 'predicto' | 'carhp' | 'thefactrelay' | 'androidadvice';
 
 export interface AccountAccessConfig {
   accountId: string;
@@ -18,7 +18,11 @@ export interface AccountAccessConfig {
  * EMERGENCY FIX 2026-02-07: Disabled feeds to prevent quota exhaustion
  * Set to empty array to disable a feed entirely
  */
-export const DISABLED_FEEDS: FeedType[] = ['adscom', 'compado'];
+// Only androidadvice is active; everything else is disabled to dedicate the
+// Google Ads daily quota (15K/day Basic Access) to the 18 androidadvice accounts.
+// Other feeds remain in the codebase but the routes refuse to call upstream APIs
+// for them, so they show "feed disabled" rather than burning quota.
+export const DISABLED_FEEDS: FeedType[] = ['compado', 'inuvo', 'adsense', 'predicto', 'carhp', 'thefactrelay'];
 
 /**
  * Map of account IDs to their allowed feeds
@@ -250,7 +254,6 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
  * Feed route paths mapping
  */
 export const FEED_ROUTES: Record<FeedType, string[]> = {
-  adscom: ['/dashboard', '/api/adscom'],
   compado: ['/compado', '/api/compado', '/api/compado-cost-revenue'],
   inuvo: ['/inuvo-dashboard', '/api/inuvo'],
   adsense: ['/adsense', '/adsense-test', '/api/adsense', '/api/adsense-cost-revenue', '/api/adsense-test-revenue'],

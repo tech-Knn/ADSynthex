@@ -85,17 +85,6 @@ export function middleware(request: NextRequest) {
         }
       }
 
-      // For Ads.com dashboard, enforce account parameter
-      if (pathname.includes('/dashboard')) {
-        const params = new URL(request.url).searchParams;
-        const requestedAccount = params.get('account');
-
-        // If no account requested or different account requested, redirect to user's account
-        if (!requestedAccount || requestedAccount !== accountId) {
-          const accountUrl = new URL(`/dashboard?account=${accountId}`, request.url);
-          return NextResponse.redirect(accountUrl);
-        }
-      }
     }
   }
 

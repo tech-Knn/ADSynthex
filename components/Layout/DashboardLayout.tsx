@@ -589,7 +589,6 @@ const sortAccounts = (accounts: typeof CUSTOMER_ACCOUNTS) => {
  * Get current feed type based on pathname
  */
 const getFeedTypeFromPathname = (pathname: string): FeedType | null => {
-  if (pathname === '/dashboard') return 'adscom';
   if (pathname === '/compado') return 'compado';
   if (pathname === '/inuvo-dashboard') return 'inuvo';
   if (pathname === '/adsense') return 'adsense';
@@ -695,7 +694,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         console.log(`[DashboardLayout] User ${accountId} has access to feeds:`, feeds);
       } else if (authType === 'admin') {
         // Admin has access to all feeds
-        setAllowedFeeds(['adscom', 'compado', 'inuvo', 'adsense', 'predicto', 'carhp', 'thefactrelay', 'androidadvice']);
+        setAllowedFeeds(['compado', 'inuvo', 'adsense', 'predicto', 'carhp', 'thefactrelay', 'androidadvice']);
       }
 
       // If not admin and we have an account ID, select it by default
@@ -838,12 +837,6 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
               borderRight: 'none'
             }}
             items={[
-              // Ads.com Dashboard - Only show if user has 'adscom' access
-              ...(allowedFeeds.includes('adscom') ? [{
-                key: '1',
-                icon: <DashboardOutlined />,
-                label: <Link href="/dashboard">Ads.com</Link>,
-              }] : []),
               // Inuvo Cost vs Revenue - Only show if user has 'inuvo' access
               ...(allowedFeeds.includes('inuvo') ? [{
                 key: '2',
