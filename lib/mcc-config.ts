@@ -77,7 +77,7 @@ export const ACCOUNT_TO_MCC: Record<string, keyof typeof MCC_CONFIGS> = {
   '7974960490': 'primary', // Predicto EST-38
   '8683194652': 'primary', // Predicto EST-39
   '5947639623': 'primary', // Predicto EST-40
-  '1191411049': 'primary', // Predicto EST-41
+  '1191411049': 'founderzest', // Predicto EST-41 (actually linked under Founderzest, was returning PERMISSION_DENIED via primary)
   '7080789309': 'primary', // Predicto EST-42
   '7292070150': 'primary', // Predicto EST-43
   '5813682086': 'primary', // Predicto EST-44

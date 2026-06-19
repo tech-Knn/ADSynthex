@@ -6,7 +6,8 @@ import * as utils from './google-ads-utils';
 import { ACCOUNT_FEED_ACCESS, FeedType } from './account-access-control';
 import { googleAdsRateLimiter } from './redis-rate-limiter';
 import { customer } from 'google-ads-api/build/src/protos/autogen/resourceNames';
-import { getMCCForAccount, getDefaultMCC, MCCCredentials } from './mcc-config'
+import { getMCCForAccount, getDefaultMCC, MCCCredentials } from './mcc-config';
+import { getGoogleAdsAccessToken } from './google-ads-token-cache';
 
 // Target accounts configuration
 const TARGET_ACCOUNTS = config.TARGET_ACCOUNTS;
@@ -209,8 +210,15 @@ function getOrCreateApiClient(mccCreds: MCCCredentials): any {
 
 /**
  * Get (or create + cache) the Customer instance for a specific account.
- * Reusing this preserves the underlying OAuth access-token cache between calls,
- * avoiding redundant token refreshes for the same account.
+ *
+ * Critical override: the google-ads-api library's default getAccessToken() uses
+ * google-auth-library, which fetches https://oauth2.googleapis.com/token directly.
+ * From Render that fetch is unreliable and produces the "Premature close" errors
+ * we kept seeing. We swap getAccessToken with our own Redis-cached, raw-HTTP
+ * implementation so:
+ *   - Token is shared across processes via Redis (no thundering herd at refresh)
+ *   - Raw fetch with retries handles the flaky Render → Google OAuth network
+ *   - In-process + Redis caching means the OAuth endpoint is hit ~once/hour total
  */
 function getOrCreateCustomer(accountId: string, mccCreds: MCCCredentials): any {
   const key = `${mccCreds.mccId}:${accountId}`;
@@ -222,6 +230,10 @@ function getOrCreateCustomer(accountId: string, mccCreds: MCCCredentials): any {
     refresh_token: mccCreds.googleAds.refreshToken,
     login_customer_id: mccCreds.mccId,
   });
+  // Replace the library's OAuth path with our Redis-cached raw-HTTP one.
+  // The library calls getAccessToken() before every REST call; this override
+  // makes that lookup a fast Redis read in steady state.
+  customer.getAccessToken = async () => getGoogleAdsAccessToken(mccCreds);
   __customerByAccount.set(key, customer);
   return customer;
 }
