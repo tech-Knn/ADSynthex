@@ -15,6 +15,7 @@ import { redisClient } from '@/lib/redis-client';
 
 const CACHE_TTL_SECONDS = 24 * 60 * 60; // 24h Redis retention
 const FRESH_THRESHOLD_SECONDS = 15 * 60; // <15 min = fresh
+const CHANNEL_WHITELIST_KEY = 'aa_channel_whitelist';
 
 function isAuthorized(request: NextRequest): boolean {
     const secret = new URL(request.url).searchParams.get('secret');
@@ -78,6 +79,23 @@ export async function GET(request: NextRequest) {
     } catch { /* cache read failed; continue to fresh fetch */ }
 
     try {
+        // Load the AdSense channel_id whitelist (channels that belong to the
+        // androidadvices.com domain, derived from Google Ads ad URLs). If the
+        // whitelist exists in Redis we filter to only those channels — that's
+        // what makes this endpoint "AndroidAdvice ONLY". If it's missing, we
+        // fall back to returning everything (clearly marked) so the response is
+        // never empty.
+        let allowedChannelIds: Set<string> | null = null;
+        try {
+            const whitelistRaw = await redisClient.get(CHANNEL_WHITELIST_KEY);
+            if (whitelistRaw) {
+                const list = JSON.parse(whitelistRaw) as string[];
+                if (Array.isArray(list) && list.length > 0) {
+                    allowedChannelIds = new Set(list.map(String));
+                }
+            }
+        } catch { /* whitelist read failed; continue unfiltered */ }
+
         // fetchAdSenseRevenueByStyleId returns per-row revenue with channel_id +
         // country for the androidadvice feed (uses CUSTOM_CHANNEL_ID dimension).
         const rows = await fetchAdSenseRevenueByStyleId(
@@ -90,9 +108,14 @@ export async function GET(request: NextRequest) {
 
         // Aggregate by channel_id, keep per-country breakdown nested.
         const byChannel = new Map<string, ChannelRow>();
+        let skippedNonAA = 0;
         for (const r of rows as any[]) {
             // For androidadvice, the channel_id is stored where style_id usually is.
             const channelId = r.channel_id || r.style_id || 'unknown';
+            if (allowedChannelIds && !allowedChannelIds.has(String(channelId))) {
+                skippedNonAA++;
+                continue;
+            }
             const country = r.country_name || 'unknown';
             if (!byChannel.has(channelId)) {
                 byChannel.set(channelId, {
@@ -131,6 +154,9 @@ export async function GET(request: NextRequest) {
             totalRevenue: Number(totalRevenue.toFixed(2)),
             channelCount: channels.length,
             channels,
+            _filter: allowedChannelIds
+                ? `filtered to ${allowedChannelIds.size} known AndroidAdvice channel_ids (${skippedNonAA} non-AA rows skipped)`
+                : 'UNFILTERED — channel whitelist not in cache; run prewarm script to enable filtering',
             _source: 'adsense_channel_breakdown',
         };
 
