@@ -509,107 +509,77 @@ export async function POST(request: NextRequest) {
         //     API latency ≈ 10–15s for Force Refresh (was 1–2 minutes at batch=1).
         //   - Normal fetch reuses the same pacing; with most accounts cached the
         //     parallelism doesn't matter much there.
+        // Restructured for 18+ account feeds: enforce a wall-clock budget so we always
+        // beat the Render HTTP timeout. Each batch runs in parallel; once the budget is
+        // hit, we stop launching new batches and return whatever we have. The retry loop
+        // is intentionally removed from the request path — a single failed account no
+        // longer blocks the whole page. Stale-cache fallback still kicks in for any
+        // account that fails, so the UI almost always renders.
         const BATCH_SIZE = 4;
-        const INTER_BATCH_DELAY_MS = 600;
-        const MAX_RETRIES = 3;
+        const INTER_BATCH_DELAY_MS = 400;
+        const PER_CALL_MAX_WAIT_MS = forceLive ? 25000 : 15000;
+        // Total budget for the multi-account fetch loop. Must leave headroom for the
+        // AdSense fetch + aggregation + JSON serialization that runs after.
+        const TOTAL_BUDGET_MS = forceLive ? 55000 : 40000;
+        const fetchLoopStart = Date.now();
+
         const batches: string[][] = [];
         for (let i = 0; i < uncachedAccountIds.length; i += BATCH_SIZE) {
           batches.push(uncachedAccountIds.slice(i, i + BATCH_SIZE));
         }
+        console.log(`[ADSENSE_COST_REVENUE] Processing ${batches.length} batches of max ${BATCH_SIZE} (budget ${TOTAL_BUDGET_MS}ms, per-call ${PER_CALL_MAX_WAIT_MS}ms)`);
 
-        console.log(`[ADSENSE_COST_REVENUE] Processing ${batches.length} batches of max ${BATCH_SIZE} accounts each`);
-
-        // Process batches sequentially with results tracking
         const allResults: Map<string, any> = new Map();
-        let failedAccountIds: string[] = [];
+        const failedAccountIds: string[] = [];
+        const skippedAccountIds: string[] = [];
+        let budgetExceeded = false;
 
         for (let i = 0; i < batches.length; i++) {
+          const elapsed = Date.now() - fetchLoopStart;
+          if (elapsed >= TOTAL_BUDGET_MS) {
+            // Out of budget: every remaining account is skipped (stale cache fallback
+            // will fill in for cached accounts; the rest surface as failed in the response).
+            budgetExceeded = true;
+            for (let k = i; k < batches.length; k++) skippedAccountIds.push(...batches[k]);
+            console.warn(`[ADSENSE_COST_REVENUE] Budget exceeded at batch ${i + 1}/${batches.length} (${elapsed}ms). Skipping ${skippedAccountIds.length} accounts.`);
+            break;
+          }
+
           const batch = batches[i];
-          console.log(`[ADSENSE_COST_REVENUE] Batch ${i + 1}/${batches.length}: Fetching ${batch.length} accounts: ${batch.join(', ')}`);
+          console.log(`[ADSENSE_COST_REVENUE] Batch ${i + 1}/${batches.length} (elapsed ${elapsed}ms): ${batch.join(', ')}`);
 
           const batchResults = await Promise.all(
             batch.map(async (accId: string) => {
               const result = await bulletproofAPI.getData(startDate, endDate, accId, {
                 priority: isToday ? 9 : 8,
-                // CRITICAL FIX: Respect forceLive flag to bypass Google Ads cache
-                // When forceLive=true, allowStale=false forces fresh API fetch with geo_targets
-                // When forceLive=false, allowStale=true allows stale cache fallback for reliability
                 allowStale: !forceLive,
-                maxWait: forceLive ? 60000 : 45000,
-                feedType: requiredFeedType as FeedType
+                maxWait: PER_CALL_MAX_WAIT_MS,
+                feedType: requiredFeedType as FeedType,
               });
               return { accId, result };
             })
           );
 
-          // Track successes and failures
           batchResults.forEach(({ accId, result }) => {
             if (result.data?.campaigns || result.data?.ads) {
               allResults.set(accId, result);
             } else {
               failedAccountIds.push(accId);
-              console.warn(`[ADSENSE_COST_REVENUE] Account ${accId} failed in batch ${i + 1}: ${result.message}`);
+              console.warn(`[ADSENSE_COST_REVENUE] Account ${accId} returned no data: ${result.message || 'unknown'}`);
             }
           });
 
-          console.log(`[ADSENSE_COST_REVENUE] Batch ${i + 1}/${batches.length}: ${allResults.size} total successes, ${failedAccountIds.length} failures`);
+          console.log(`[ADSENSE_COST_REVENUE] Batch ${i + 1}: ${allResults.size} ok, ${failedAccountIds.length} failed so far`);
 
-          // Always wait between batches so the next 2 calls don't collide with the
-          // limiter's QPS window. (Was previously only honored on force-refresh, which
-          // is what allowed the silent rate-limit failures on normal fetches too.)
           if (i < batches.length - 1) {
             await new Promise(resolve => setTimeout(resolve, INTER_BATCH_DELAY_MS));
           }
         }
 
-        // CRITICAL: Retry failed accounts to ensure data consistency.
-        // Retry path must ALSO respect QPS=2 — firing Promise.all on every still-failed
-        // account is exactly what caused the original problem on the first pass.
-        for (let retry = 0; retry < MAX_RETRIES && failedAccountIds.length > 0; retry++) {
-          console.log(`[ADSENSE_COST_REVENUE] Retry ${retry + 1}/${MAX_RETRIES}: Retrying ${failedAccountIds.length} failed accounts: ${failedAccountIds.join(', ')}`);
-
-          // Increasing backoff before the retry batch starts: 1s, 1.5s, 2s
-          await new Promise(resolve => setTimeout(resolve, (retry + 1) * 500 + 500));
-
-          const retryResults: Array<{ accId: string; result: any }> = [];
-          // Same QPS-aware micro-batching as the first pass.
-          for (let j = 0; j < failedAccountIds.length; j += BATCH_SIZE) {
-            const microBatch = failedAccountIds.slice(j, j + BATCH_SIZE);
-            const microResults = await Promise.all(
-              microBatch.map(async (accId: string) => {
-                const result = await bulletproofAPI.getData(startDate, endDate, accId, {
-                  priority: 10, // Highest priority for retries
-                  allowStale: true, // Accept any data on retry
-                  maxWait: 90000, // Very long timeout for retries
-                  feedType: requiredFeedType as FeedType
-                });
-                return { accId, result };
-              })
-            );
-            retryResults.push(...microResults);
-            if (j + BATCH_SIZE < failedAccountIds.length) {
-              await new Promise(resolve => setTimeout(resolve, INTER_BATCH_DELAY_MS));
-            }
-          }
-
-          // Process retry results
-          const stillFailedIds: string[] = [];
-          retryResults.forEach(({ accId, result }) => {
-            if (result.data?.campaigns || result.data?.ads) {
-              allResults.set(accId, result);
-              console.log(`[ADSENSE_COST_REVENUE] Retry succeeded for account ${accId}`);
-            } else {
-              stillFailedIds.push(accId);
-            }
-          });
-
-          failedAccountIds = stillFailedIds;
-        }
-
-        if (failedAccountIds.length > 0) {
-          console.error(`[ADSENSE_COST_REVENUE] CRITICAL: ${failedAccountIds.length} accounts failed after all retries: ${failedAccountIds.join(', ')}`);
-          // Surface in API response so the UI can warn the user that cost is incomplete.
-          dq_failedAccountIds.push(...failedAccountIds);
+        if (failedAccountIds.length > 0 || skippedAccountIds.length > 0) {
+          const totalIncomplete = failedAccountIds.length + skippedAccountIds.length;
+          console.warn(`[ADSENSE_COST_REVENUE] Incomplete: ${totalIncomplete}/${uncachedAccountIds.length} accounts (${failedAccountIds.length} failed, ${skippedAccountIds.length} skipped, budget exceeded=${budgetExceeded})`);
+          dq_failedAccountIds.push(...failedAccountIds, ...skippedAccountIds);
         }
 
         console.log(`[ADSENSE_COST_REVENUE] Final: ${allResults.size}/${uncachedAccountIds.length} accounts fetched successfully`);
