@@ -413,7 +413,13 @@ export class RedisRateLimiter {
     const key = `rate:${this.apiName}:customer:${customerId}:${hour}`;
     const count = await redisClient.get(key);
 
-    const limit = 100; // Max 100 requests per customer per hour
+    // Each Force Refresh on a feed fires 4 queries per account (campaigns,
+    // ads, geo, asset_groups). With multiple users / multiple feeds touching
+    // the same MCC customer, 100/hr was getting blown through quickly and
+    // blocking the entire dashboard. Bumped to 2000/hr — that's still well
+    // under Google's actual per-customer ceiling, but gives ~500 Force
+    // Refreshes per hour per account before we artificially throttle.
+    const limit = 2000;
     const used = count ? parseInt(count) : 0;
 
     if (used >= limit) {
