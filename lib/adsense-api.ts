@@ -176,44 +176,47 @@ async function getAccessToken(customerId?: string, adsenseAccountType?: AdSenseA
   const cached = await readTokenFromCache(cacheKey);
   if (cached) return cached;
 
-  // 5 attempts with exponential backoff: 1s, 2s, 4s, 8s, 16s = ~31s total wait.
-  // Google's OAuth endpoint has been having sustained flakes today, so a longer
-  // ride-through window dramatically improves first-fetch success rate.
-  const MAX_ATTEMPTS = 5;
-  let lastErr: any;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+  // RAW-HTTP FIRST. The google-auth-library / gaxios path has been failing
+  // every time on Render with ERR_STREAM_PREMATURE_CLOSE. The library used
+  // to be tried 5 times (≈31s of backoff) before we'd fall through to raw
+  // HTTP — which is exactly the latency that produced "AdSense API failed"
+  // / "Failed to fetch" client-side.
+  // Now we go straight to raw HTTP with retries; the library is only a
+  // backup for the (unlikely) case where Node's fetch is broken but gaxios
+  // works.
+  const creds = getOAuthCredentials(customerId, adsenseAccountType);
+  const RAW_HTTP_ATTEMPTS = 4;
+  let rawErr: any;
+  for (let attempt = 1; attempt <= RAW_HTTP_ATTEMPTS; attempt++) {
     try {
-      const client = getOAuthClient(customerId, adsenseAccountType);
-      const { token } = await client.getAccessToken();
-      if (!token) throw new Error('Failed to get AdSense access token');
+      const token = await fetchAccessTokenViaRawHttp(creds);
       await writeTokenToCache(cacheKey, token);
+      if (attempt > 1) console.log(`[ADSENSE_API] Raw-HTTP OAuth succeeded on attempt ${attempt}/${RAW_HTTP_ATTEMPTS}`);
       return token;
     } catch (err: any) {
-      lastErr = err;
-      if (attempt === MAX_ATTEMPTS || !isTransientNetworkError(err)) {
-        throw err;
-      }
-      const backoffMs = 1000 * Math.pow(2, attempt - 1); // 1s, 2s, 4s, 8s, 16s
-      console.warn(`[ADSENSE_API] OAuth token attempt ${attempt}/${MAX_ATTEMPTS} failed (${err?.code || err?.message?.substring(0, 80)}); retrying in ${backoffMs}ms`);
+      rawErr = err;
+      if (attempt === RAW_HTTP_ATTEMPTS) break;
+      const backoffMs = 1000 + (attempt - 1) * 2000; // 1s, 3s, 5s
+      console.warn(`[ADSENSE_API] Raw-HTTP OAuth attempt ${attempt}/${RAW_HTTP_ATTEMPTS} failed (${err?.message?.substring(0, 80)}); retrying in ${backoffMs}ms`);
       await new Promise(resolve => setTimeout(resolve, backoffMs));
     }
   }
 
-  // Last-resort: bypass google-auth-library entirely and call Google's token
-  // endpoint via Node fetch. Different HTTP stack, different connection pool —
-  // sometimes goes through when gaxios can't establish a clean connection.
+  // Last-resort: try the library. If our raw-HTTP fetch failed every retry,
+  // the library probably will too — but stack-different code paths sometimes
+  // disagree, so we give it one shot before throwing.
   try {
-    console.warn('[ADSENSE_API] All library OAuth attempts failed — trying raw HTTP fetch as last resort');
-    const creds = getOAuthCredentials(customerId, adsenseAccountType);
-    const token = await fetchAccessTokenViaRawHttp(creds);
+    console.warn('[ADSENSE_API] Raw-HTTP exhausted — trying google-auth-library as fallback');
+    const client = getOAuthClient(customerId, adsenseAccountType);
+    const { token } = await client.getAccessToken();
+    if (!token) throw new Error('Failed to get AdSense access token');
     await writeTokenToCache(cacheKey, token);
-    console.log('[ADSENSE_API] Raw-HTTP OAuth fallback succeeded');
     return token;
-  } catch (rawErr: any) {
-    console.error(`[ADSENSE_API] Raw-HTTP OAuth fallback also failed: ${rawErr?.message?.substring(0, 200)}`);
+  } catch (libErr: any) {
+    console.error(`[ADSENSE_API] Library fallback also failed: ${libErr?.message?.substring(0, 200)}`);
   }
 
-  throw lastErr;
+  throw rawErr;
 }
 
 export async function fetchAdSenseRevenueByStyleId(
