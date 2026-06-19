@@ -26,6 +26,13 @@ const publicPaths = [
   '/api/adsense-accounts',  // Get AdSense accounts
   '/api/debug-gads', // For diagnosing Google Ads
   '/api/afs-unmapped-revenue',  // Get unmapped AFS revenue
+  // Public read endpoints — protected by their own ?secret=<CRON_SECRET> auth.
+  // Without these, the middleware redirects unauthenticated callers to /login
+  // (returns HTML), which is why team members were seeing the dashboard page
+  // instead of JSON when the user (with admin cookie) saw JSON.
+  '/api/androidadvice-revenue-only',
+  '/api/androidadvice-revenue-by-channel',
+  '/api/reset-cooldown',
   '/logout'
 ];
 
