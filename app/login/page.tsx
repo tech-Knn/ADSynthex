@@ -10,6 +10,15 @@ import {
   LineChartOutlined 
 } from '@ant-design/icons';
 import AntdProvider from '../../components/Providers/AntdProvider';
+import { FEED_ROUTES, type FeedType } from '../../lib/account-access-control';
+
+// Resolve the first page-route for a given feed (skip API paths).
+// Centralized in FEED_ROUTES so adding a new feed never requires touching login.
+const DEFAULT_LANDING = '/androidadvice';
+function resolveLandingFor(feed: FeedType): string {
+  const routes = FEED_ROUTES[feed] || [];
+  return routes.find((r) => !r.startsWith('/api/')) ?? DEFAULT_LANDING;
+}
 
 const { Title, Text } = Typography;
 
@@ -33,7 +42,7 @@ export default function LoginPage() {
 
       if (response.ok) {
         antdMessage.success('Login successful!');
-        router.push('/dashboard');
+        router.push(DEFAULT_LANDING);
       } else {
         antdMessage.error('Invalid admin key');
       }
@@ -63,35 +72,12 @@ export default function LoginPage() {
         const data = await response.json();
         antdMessage.success('Login successful!');
 
-        // Redirect based on allowed feeds for this account
-        const { allowedFeeds, accountId } = data;
-
-        if (allowedFeeds && allowedFeeds.length > 0) {
-          // Redirect to the first allowed feed
-          const firstFeed = allowedFeeds[0];
-
-          if (firstFeed === 'compado') {
-            router.push('/compado');
-          } else if (firstFeed === 'inuvo') {
-            router.push('/inuvo-dashboard');
-          } else if (firstFeed === 'adsense') {
-            router.push('/adsense');
-          } else if (firstFeed === 'predicto') {
-            router.push('/predicto');
-          } else if (firstFeed === 'carhp') {
-            router.push('/carhp');
-          } else if (firstFeed === 'thefactrelay') {
-            router.push('/thefactrelay');
-          } else if (firstFeed === 'androidadvice') {
-            router.push('/androidadvice');
-          } else {
-            // Fallback — only feed currently active
-            router.push('/androidadvice');
-          }
-        } else {
-          // No feeds allowed — send to login (middleware will keep them out)
-          router.push('/androidadvice');
-        }
+        // Redirect to the first allowed feed's landing page.
+        // The mapping lives in lib/account-access-control.FEED_ROUTES so this stays
+        // generic — adding a new feed there automatically works here.
+        const { allowedFeeds } = data;
+        const firstFeed = allowedFeeds?.[0] as FeedType | undefined;
+        router.push(firstFeed ? resolveLandingFor(firstFeed) : DEFAULT_LANDING);
       } else {
         antdMessage.error('Invalid account ID');
       }
