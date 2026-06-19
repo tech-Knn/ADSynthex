@@ -92,7 +92,6 @@ export async function GET(request: NextRequest) {
             dateRange: { startDate, endDate },
             revenue: Number(revenue.toFixed(2)),
             domain: 'androidadvices.com',
-            allDomainBreakdown: domainEarnings,
             _source: 'adsense_domain_earnings_direct',
         };
 

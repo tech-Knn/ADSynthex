@@ -33,7 +33,6 @@ async function prewarmRevenueOnly(date: string) {
         dateRange: { startDate: date, endDate: date },
         revenue: Number(revenue.toFixed(2)),
         domain: 'androidadvices.com',
-        allDomainBreakdown: earnings,
         _source: 'adsense_domain_earnings_direct',
         _prewarmedAt: new Date().toISOString(),
     };
