@@ -80,13 +80,13 @@ async function refreshAccessTokenRawHttp(mccCreds: MCCCredentials): Promise<Cach
 
       const expiresIn = Math.max(60, (data.expires_in ?? 3600));
       const expiresAt = Date.now() + expiresIn * 1000;
-      console.log(`[GADS_TOKEN] Refreshed token for MCC ${mccCreds.mccId} (attempt ${attempt}/${MAX_ATTEMPTS}), expires in ${expiresIn}s`);
+      console.log(`[GADS_TOKEN] Refreshed token (attempt ${attempt}/${MAX_ATTEMPTS}), expires in ${expiresIn}s`);
       return { accessToken: data.access_token, expiresAt };
     } catch (err: any) {
       lastErr = err;
       const msg = err?.message || String(err);
       const isLast = attempt === MAX_ATTEMPTS;
-      console.warn(`[GADS_TOKEN] Refresh attempt ${attempt}/${MAX_ATTEMPTS} for MCC ${mccCreds.mccId} failed${isLast ? ' (giving up)' : ', will retry'}: ${msg.substring(0, 200)}`);
+      console.warn(`[GADS_TOKEN] Refresh attempt ${attempt}/${MAX_ATTEMPTS} failed${isLast ? ' (giving up)' : ', will retry'}: ${msg.substring(0, 200)}`);
       if (!isLast) {
         // Backoff: 1s, 3s, 7s
         await new Promise((r) => setTimeout(r, 1000 + (attempt - 1) * 2000));
@@ -94,7 +94,7 @@ async function refreshAccessTokenRawHttp(mccCreds: MCCCredentials): Promise<Cach
     }
   }
 
-  throw new Error(`OAuth refresh exhausted retries for MCC ${mccCreds.mccId}: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`);
+  throw new Error(`OAuth refresh exhausted retries: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`);
 }
 
 /**
@@ -115,7 +115,7 @@ export async function getGoogleAdsAccessToken(mccCreds: MCCCredentials): Promise
       }
     }
   } catch (err) {
-    console.warn(`[GADS_TOKEN] Cache read failed for ${mccCreds.mccId}, will refresh:`, err);
+    console.warn(`[GADS_TOKEN] Cache read failed, will refresh:`, err);
   }
 
   // Refresh & store
@@ -128,7 +128,7 @@ export async function getGoogleAdsAccessToken(mccCreds: MCCCredentials): Promise
     );
     await redisClient.setex(key, ttlSeconds, JSON.stringify(fresh));
   } catch (err) {
-    console.warn(`[GADS_TOKEN] Cache write failed for ${mccCreds.mccId}:`, err);
+    console.warn(`[GADS_TOKEN] Cache write failed:`, err);
   }
   return fresh.accessToken;
 }
@@ -141,6 +141,6 @@ export async function invalidateGoogleAdsAccessToken(mccCreds: MCCCredentials): 
   try {
     await redisClient.del(`${TOKEN_CACHE_PREFIX}${mccCreds.mccId}`);
   } catch (err) {
-    console.warn(`[GADS_TOKEN] Cache del failed for ${mccCreds.mccId}:`, err);
+    console.warn(`[GADS_TOKEN] Cache del failed:`, err);
   }
 }
