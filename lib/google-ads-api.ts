@@ -182,6 +182,50 @@ async function retryWithBackoff<T>(
 }
 
 // Google Ads client initialization with multi-MCC support
+// Memoize one GoogleAdsApi client per MCC and one Customer per account so we
+// stop creating fresh OAuth contexts on every fetch. Each Customer's underlying
+// auth caches its access token for ~1 hour; previously we threw it away every
+// call, which meant 18 concurrent OAuth refreshes hitting oauth2.googleapis.com
+// in parallel — that's what was producing the "Premature close" errors on Render.
+const __apiClientByMcc: Map<string, any> = new Map();
+const __customerByAccount: Map<string, any> = new Map();
+
+/**
+ * Get (or create + cache) the GoogleAdsApi client for an MCC.
+ * Reused across all accounts that share the same MCC.
+ */
+function getOrCreateApiClient(mccCreds: MCCCredentials): any {
+  const key = mccCreds.mccId;
+  const cached = __apiClientByMcc.get(key);
+  if (cached) return cached;
+  const client = new GoogleAdsApi({
+    client_id: mccCreds.googleAds.clientId,
+    client_secret: mccCreds.googleAds.clientSecret,
+    developer_token: mccCreds.googleAds.developerToken,
+  });
+  __apiClientByMcc.set(key, client);
+  return client;
+}
+
+/**
+ * Get (or create + cache) the Customer instance for a specific account.
+ * Reusing this preserves the underlying OAuth access-token cache between calls,
+ * avoiding redundant token refreshes for the same account.
+ */
+function getOrCreateCustomer(accountId: string, mccCreds: MCCCredentials): any {
+  const key = `${mccCreds.mccId}:${accountId}`;
+  const cached = __customerByAccount.get(key);
+  if (cached) return cached;
+  const client = getOrCreateApiClient(mccCreds);
+  const customer = client.Customer({
+    customer_id: accountId,
+    refresh_token: mccCreds.googleAds.refreshToken,
+    login_customer_id: mccCreds.mccId,
+  });
+  __customerByAccount.set(key, customer);
+  return customer;
+}
+
 export function initializeGoogleAdsClient(customerId?: string | null) {
   try {
     let mccCreds: MCCCredentials;
@@ -797,16 +841,12 @@ export async function fetchGoogleAdsData(
 
       console.log(`[GOOGLE_ADS_API] Processing account ${i + 1}/${accountsToProcess.length}: ${account.id} (${account.name})`);
 
-      // Get MCC credentials for this account
-      const { client, customer: mccCustomer } = initializeGoogleAdsClient(account.id);
+      // Get MCC credentials and the cached customer for this account.
+      // The Customer instance is memoized, so the underlying OAuth context (and
+      // its cached access token) survives across dashboard refreshes — no more
+      // 18 concurrent token refreshes per fetch.
       const mccCreds = getMCCForAccount(account.id) || getDefaultMCC();
-
-      // Create account-specific customer with correct MCC credentials
-      const accountCustomer = client.Customer({
-        customer_id: account.id,
-        refresh_token: mccCreds.googleAds.refreshToken,
-        login_customer_id: mccCreds.mccId,
-      });
+      const accountCustomer = getOrCreateCustomer(account.id, mccCreds);
 
       // Helper function to make API calls with rate limiting protection
       const makeApiCall = async (query: string, operationName: string) => {
@@ -834,11 +874,12 @@ export async function fetchGoogleAdsData(
         return await retryWithBackoff(async () => {
           console.log(`[GOOGLE_ADS_API] Making ${operationName} call for account ${account.id}`);
 
-          // Record the request BEFORE making it
-          await googleAdsRateLimiter.recordRequest(account.id);
-
           try {
             const response = await accountCustomer.query(query);
+            // Only record AFTER a successful query so failed OAuth refreshes /
+            // transient network errors no longer burn through the daily quota.
+            // Each failed retry used to count, multiplying real usage 4-8x.
+            await googleAdsRateLimiter.recordRequest(account.id);
             console.log(`[GOOGLE_ADS_API] ${operationName} response: ${response?.length || 0} items`);
             return response;
           } catch (error: any) {

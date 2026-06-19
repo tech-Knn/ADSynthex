@@ -515,8 +515,12 @@ export async function POST(request: NextRequest) {
         // is intentionally removed from the request path — a single failed account no
         // longer blocks the whole page. Stale-cache fallback still kicks in for any
         // account that fails, so the UI almost always renders.
-        const BATCH_SIZE = 4;
-        const INTER_BATCH_DELAY_MS = 400;
+        // 2 concurrent accounts: fewer simultaneous OAuth refreshes hitting
+        // oauth2.googleapis.com (was causing "Premature close" errors on Render
+        // when 4 accounts authed at once). With the Customer cache hits, this is
+        // a no-op after warm-up anyway.
+        const BATCH_SIZE = 2;
+        const INTER_BATCH_DELAY_MS = 300;
         const PER_CALL_MAX_WAIT_MS = forceLive ? 25000 : 15000;
         // Total budget for the multi-account fetch loop. Must leave headroom for the
         // AdSense fetch + aggregation + JSON serialization that runs after.
