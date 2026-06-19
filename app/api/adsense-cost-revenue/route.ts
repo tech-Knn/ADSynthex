@@ -515,16 +515,19 @@ export async function POST(request: NextRequest) {
         // is intentionally removed from the request path — a single failed account no
         // longer blocks the whole page. Stale-cache fallback still kicks in for any
         // account that fails, so the UI almost always renders.
-        // 2 concurrent accounts: fewer simultaneous OAuth refreshes hitting
-        // oauth2.googleapis.com (was causing "Premature close" errors on Render
-        // when 4 accounts authed at once). With the Customer cache hits, this is
-        // a no-op after warm-up anyway.
-        const BATCH_SIZE = 2;
-        const INTER_BATCH_DELAY_MS = 300;
-        const PER_CALL_MAX_WAIT_MS = forceLive ? 25000 : 15000;
+        // Now that OAuth tokens are Redis-cached, the per-account batches don't
+        // each trigger a fresh OAuth refresh — they reuse the cached token. So we
+        // can fan out more aggressively without overloading oauth2.googleapis.com.
+        // With 18 androidadvice accounts we need to clear them all inside the
+        // Render HTTP timeout (~100s).
+        //   18 accounts / 6 per batch = 3 batches × ~7s each ≈ 21s typical
+        //   Worst case with one slow call: 3 batches × 20s = 60s
+        const BATCH_SIZE = 6;
+        const INTER_BATCH_DELAY_MS = 200;
+        const PER_CALL_MAX_WAIT_MS = forceLive ? 30000 : 20000;
         // Total budget for the multi-account fetch loop. Must leave headroom for the
         // AdSense fetch + aggregation + JSON serialization that runs after.
-        const TOTAL_BUDGET_MS = forceLive ? 55000 : 40000;
+        const TOTAL_BUDGET_MS = forceLive ? 80000 : 60000;
         const fetchLoopStart = Date.now();
 
         const batches: string[][] = [];
