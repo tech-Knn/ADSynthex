@@ -44,7 +44,7 @@ export class RedisRateLimiter {
   constructor(apiName: string = 'google', config?: Partial<RateLimiterConfig>) {
     this.apiName = apiName;
     this.config = {
-      dailyLimit: 10000, // ~67% of 15K daily quota (more conservative)
+      dailyLimit: 14500, // ~97% of 15K daily Google Ads Basic-Access quota; leaves 500 buffer
       hourlyLimit: 3000,  // Max 3000 requests per hour (allows bursts, stays under daily)
       qps: 2,            // 2 queries per second (increased for multiple concurrent feeds)
       // No extra padding on top of Google's retry-after. We respect exactly what
