@@ -121,7 +121,10 @@ async function getAccessToken(customerId?: string, adsenseAccountType?: AdSenseA
   const cached = await readTokenFromCache(cacheKey);
   if (cached) return cached;
 
-  const MAX_ATTEMPTS = 3;
+  // 5 attempts with exponential backoff: 1s, 2s, 4s, 8s, 16s = ~31s total wait.
+  // Google's OAuth endpoint has been having sustained flakes today, so a longer
+  // ride-through window dramatically improves first-fetch success rate.
+  const MAX_ATTEMPTS = 5;
   let lastErr: any;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
@@ -135,7 +138,7 @@ async function getAccessToken(customerId?: string, adsenseAccountType?: AdSenseA
       if (attempt === MAX_ATTEMPTS || !isTransientNetworkError(err)) {
         throw err;
       }
-      const backoffMs = 500 * attempt; // 500ms, 1000ms
+      const backoffMs = 1000 * Math.pow(2, attempt - 1); // 1s, 2s, 4s, 8s, 16s
       console.warn(`[ADSENSE_API] OAuth token attempt ${attempt}/${MAX_ATTEMPTS} failed (${err?.code || err?.message?.substring(0, 80)}); retrying in ${backoffMs}ms`);
       await new Promise(resolve => setTimeout(resolve, backoffMs));
     }
