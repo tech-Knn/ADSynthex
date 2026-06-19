@@ -86,15 +86,19 @@ export async function POST(request: NextRequest) {
     if (forceLive) {
       console.log('[ADSENSE_REVENUE] FORCE LIVE MODE - ALL CACHES BYPASSED ');
     }
-    // FRESHNESS TARGET: dashboards must show data at most ~15 min old. Longer caches
-    // were masking intraday cost changes (the "morning value still showing in the
-    // afternoon" symptom). Force Refresh remains available for immediate live fetches.
-    const ACCOUNT_CACHE_TTL = 15 * 60 * 1000; // 15 min — individual accounts
-    const AGGREGATED_CACHE_TTL = 15 * 60;     // 15 min — "All Accounts" view (seconds)
-    // Stale fallback window: if the fresh fetch fails (upstream cooldown) but a
-    // recent-ish cached entry exists, we'd rather show 15–30 min old data with a
-    // clear marker than $0 / "No data". Capped at 30 min per freshness policy.
-    const STALE_FALLBACK_TTL = 30 * 60;       // 30 min (seconds)
+    // TEMPORARY SETUP (2026-06-19): Google's OAuth endpoint is having sustained
+    // ERR_STREAM_PREMATURE_CLOSE issues, killing fresh fetches intermittently.
+    // To keep the dashboard usable while we build the background-worker restructure,
+    // we extend the stale-fallback window so any successful fetch persists for the
+    // rest of the day. Page shows fresh data when possible, falls back to "data as
+    // of HH:MM" when upstream is unreachable. Once the worker pattern is in place,
+    // we can revert these TTLs to the 15-min freshness target.
+    const ACCOUNT_CACHE_TTL = 15 * 60 * 1000; // 15 min — individual accounts (unchanged)
+    const AGGREGATED_CACHE_TTL = 15 * 60;     // 15 min FRESH threshold (seconds)
+    // Stale fallback now extends to 24 h so the page always has something to show
+    // even during a multi-hour upstream outage. Redis write TTL also uses this so
+    // entries don't get evicted before the fallback can use them.
+    const STALE_FALLBACK_TTL = 24 * 60 * 60;  // 24 h (seconds)
 
     // Generate aggregated cache key with feed type isolation
     const accountsKey = accountIds?.length > 0
@@ -2188,7 +2192,10 @@ export async function POST(request: NextRequest) {
     //   - All accounts healthy → cache for the full TTL as before.
     const totalAccountsRequested = requestedAccountIds.length;
     const allAccountsFailed = totalAccountsRequested > 0 && dq_failedUnique.length >= totalAccountsRequested;
-    const POISON_GUARD_TTL = 60; // seconds — short window for partial-failure caching
+    // Bumped from 60s. During the OAuth-outage temporary setup, partial data is
+    // better than nothing for the next 15 min — gives the fresh-cache check a
+    // window to serve, and the stale fallback a much longer window.
+    const POISON_GUARD_TTL = 15 * 60; // 15 min
 
     if (allAccountsFailed) {
       console.warn(`[ADSENSE_REVENUE] Skipping cache write: ${dq_failedUnique.length}/${totalAccountsRequested} accounts failed. Next request will retry fresh.`);
@@ -2212,7 +2219,11 @@ export async function POST(request: NextRequest) {
         });
       }
     } else {
-      const writeTtl = dq_partial ? POISON_GUARD_TTL : AGGREGATED_CACHE_TTL;
+      // Redis TTL = STALE_FALLBACK_TTL (24 h during the temporary setup), so the
+      // entry survives long enough for the stale-fallback path to use it during
+      // an upstream outage. The "fresh" age check is still AGGREGATED_CACHE_TTL
+      // (15 min) so users see fresh data when available.
+      const writeTtl = dq_partial ? POISON_GUARD_TTL : STALE_FALLBACK_TTL;
       try {
         await redisCacheManager.set(aggregatedCacheKey, response, {
           ttl: writeTtl,
