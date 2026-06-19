@@ -7,7 +7,7 @@ import { fetchGoogleAdsData, getMockGoogleAdsData } from './google-ads-api';
 import { redisCacheManager } from './redis-cache-manager';
 import { googleAdsRateLimiter } from './redis-rate-limiter';
 import { redisClient } from './redis-client';
-import { FeedType } from './account-access-control';
+import { FeedType, isFeedDisabled } from './account-access-control';
 
 interface ApiRequest {
   startDate: string;
@@ -19,7 +19,7 @@ interface ApiRequest {
 
 interface ApiResponse {
   data: any;
-  source: 'cache' | 'api' | 'stale' | 'fallback';
+  source: 'cache' | 'api' | 'stale' | 'fallback' | 'disabled';
   age?: number;
   message: string;
   quotaStatus: any;
@@ -49,6 +49,21 @@ export class BulletproofGoogleAdsAPI {
     } = {}
   ): Promise<ApiResponse> {
     const { priority = 5, allowStale = true, maxWait = 30000, feedType = null, cacheKeySuffix } = options;
+
+    // Hard guard: refuse upstream calls for any disabled feed regardless of
+    // which route triggered us. Older feed routes (inuvo, predicto, carhp, etc.)
+    // still exist and call bulletproofAPI directly; this central check ensures
+    // they can't bypass DISABLED_FEEDS and burn quota that's now reserved for
+    // androidadvice.
+    if (feedType && isFeedDisabled(feedType)) {
+      console.warn(`[BULLETPROOF_API] Feed '${feedType}' is disabled — refusing upstream call`);
+      return {
+        data: null,
+        source: 'disabled',
+        message: `Feed '${feedType}' is currently disabled to preserve Google Ads quota for active feeds.`,
+        quotaStatus: await googleAdsRateLimiter.getQuotaStatus(),
+      };
+    }
 
     // Step 0: Request deduplication - Check if same request is already in-flight
     // Include feedType (and optional suffix) in cache key to prevent cross-feed cache pollution
