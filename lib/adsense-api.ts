@@ -114,6 +114,61 @@ async function writeTokenToCache(key: string, token: string): Promise<void> {
   }
 }
 
+// Resolve the OAuth credentials a given feed uses, so we can do the token
+// exchange directly with fetch() as a fallback when google-auth-library fails.
+function getOAuthCredentials(customerId?: string, adsenseAccountType?: AdSenseAccountType):
+  { clientId?: string; clientSecret?: string; refreshToken?: string } {
+  if (adsenseAccountType === 'carhp') {
+    return {
+      clientId: process.env.CARHP_ADSENSE_CLIENT_ID,
+      clientSecret: process.env.CARHP_ADSENSE_CLIENT_SECRET,
+      refreshToken: process.env.CARHP_ADSENSE_REFRESH_TOKEN,
+    };
+  }
+  if (adsenseAccountType === 'androidadvice') {
+    return {
+      clientId: process.env.ANDROIDADVICE_ADSENSE_CLIENT_ID,
+      clientSecret: process.env.ANDROIDADVICE_ADSENSE_CLIENT_SECRET,
+      refreshToken: process.env.ANDROIDADVICE_ADSENSE_REFRESH_TOKEN,
+    };
+  }
+  const mccCreds = customerId ? (getMCCForAccount(customerId) || getDefaultMCC()) : getDefaultMCC();
+  return {
+    clientId: process.env.ADSENSE_CLIENT_ID || mccCreds.googleAds.clientId,
+    clientSecret: process.env.ADSENSE_CLIENT_SECRET || mccCreds.googleAds.clientSecret,
+    refreshToken: mccCreds.adSense?.refreshToken || mccCreds.googleAds.refreshToken,
+  };
+}
+
+// Fallback OAuth token fetch using Node's built-in fetch instead of
+// google-auth-library/gaxios. Different HTTP stack, different connection
+// pooling — sometimes succeeds when the library can't connect.
+async function fetchAccessTokenViaRawHttp(creds: ReturnType<typeof getOAuthCredentials>): Promise<string> {
+  if (!creds.clientId || !creds.clientSecret || !creds.refreshToken) {
+    throw new Error('Missing OAuth credentials for raw-HTTP token fetch');
+  }
+  const body = new URLSearchParams({
+    client_id: creds.clientId,
+    client_secret: creds.clientSecret,
+    refresh_token: creds.refreshToken,
+    grant_type: 'refresh_token',
+  });
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Raw-HTTP OAuth ${res.status}: ${text.substring(0, 200)}`);
+  }
+  const json: any = await res.json();
+  if (!json.access_token) {
+    throw new Error(`Raw-HTTP OAuth: response missing access_token (${JSON.stringify(json).substring(0, 200)})`);
+  }
+  return json.access_token as string;
+}
+
 async function getAccessToken(customerId?: string, adsenseAccountType?: AdSenseAccountType): Promise<string> {
   const cacheKey = getTokenCacheKey(customerId, adsenseAccountType);
 
@@ -143,6 +198,21 @@ async function getAccessToken(customerId?: string, adsenseAccountType?: AdSenseA
       await new Promise(resolve => setTimeout(resolve, backoffMs));
     }
   }
+
+  // Last-resort: bypass google-auth-library entirely and call Google's token
+  // endpoint via Node fetch. Different HTTP stack, different connection pool —
+  // sometimes goes through when gaxios can't establish a clean connection.
+  try {
+    console.warn('[ADSENSE_API] All library OAuth attempts failed — trying raw HTTP fetch as last resort');
+    const creds = getOAuthCredentials(customerId, adsenseAccountType);
+    const token = await fetchAccessTokenViaRawHttp(creds);
+    await writeTokenToCache(cacheKey, token);
+    console.log('[ADSENSE_API] Raw-HTTP OAuth fallback succeeded');
+    return token;
+  } catch (rawErr: any) {
+    console.error(`[ADSENSE_API] Raw-HTTP OAuth fallback also failed: ${rawErr?.message?.substring(0, 200)}`);
+  }
+
   throw lastErr;
 }
 
