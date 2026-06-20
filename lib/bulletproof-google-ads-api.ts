@@ -138,8 +138,19 @@ export class BulletproofGoogleAdsAPI {
       // failed when the cache was written — the account would show ads/revenue but
       // $0 cost. Invalidate so the next fetch re-queries campaigns properly.
       const adsWithoutCampaigns = isCostAttrFeed && cached.data.ads?.length > 0 && (!cached.data.campaigns || cached.data.campaigns.length === 0);
-      if (campaignsWithoutAds || adsWithoutCampaigns) {
-        console.warn(`[BULLETPROOF_API] Cache invalid for ${feedType} feed: ${campaignsWithoutAds ? `${cached.data.campaigns.length} campaigns but 0 ads` : `${cached.data.ads.length} ads but 0 campaigns`} - INVALIDATING`);
+      // ALSO: a totally-empty payload means BOTH queries failed (or the account had
+      // zero data when cached). Treat as a miss so we retry rather than permanently
+      // serving $0 for the account until TTL expires.
+      const fullyEmpty = isCostAttrFeed
+        && (!cached.data.campaigns || cached.data.campaigns.length === 0)
+        && (!cached.data.ads || cached.data.ads.length === 0);
+      if (campaignsWithoutAds || adsWithoutCampaigns || fullyEmpty) {
+        const why = campaignsWithoutAds
+          ? `${cached.data.campaigns.length} campaigns but 0 ads`
+          : adsWithoutCampaigns
+            ? `${cached.data.ads.length} ads but 0 campaigns`
+            : 'fully empty (0 campaigns, 0 ads — earlier fetch likely failed)';
+        console.warn(`[BULLETPROOF_API] Cache invalid for ${feedType} feed: ${why} - INVALIDATING`);
         // Null the cached payload so later error-fallback paths (rate limit / API failure)
         // can't resurrect this broken cache and re-serve the half-broken payload.
         cached.data = null;

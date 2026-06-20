@@ -399,9 +399,22 @@ export async function POST(request: NextRequest) {
         });
 
         if (cached.data && !cached.isStale && cached.age < CACHE_TTL) {
-          const ageMinutes = Math.round(cached.age / 60000);
-          console.log(`[ADSENSE_COST_REVENUE] Cache HIT for account ${accountId}: Age ${Math.round(cached.age / 1000)}s (${ageMinutes} min)`);
-          return cached.data;
+          // Reject EMPTY-data cache entries. Earlier failed fetches (OAuth /
+          // network errors) were writing { campaigns: [], ads: [] } into Redis,
+          // and every subsequent request returned that as a "hit" — masking real
+          // cost permanently until the TTL expired. Treat empty-data as a miss
+          // so the upstream re-fetch can repair it.
+          const d: any = cached.data;
+          const hasCampaigns = Array.isArray(d?.campaigns) && d.campaigns.length > 0;
+          const hasAds = Array.isArray(d?.ads) && d.ads.length > 0;
+          const hasMeaningfulData = hasCampaigns || hasAds;
+          if (hasMeaningfulData) {
+            const ageMinutes = Math.round(cached.age / 60000);
+            console.log(`[ADSENSE_COST_REVENUE] Cache HIT for account ${accountId}: Age ${Math.round(cached.age / 1000)}s (${ageMinutes} min)`);
+            return cached.data;
+          }
+          console.log(`[ADSENSE_COST_REVENUE] Cache MISS for account ${accountId}: cached entry is empty (campaigns=${d?.campaigns?.length ?? 0}, ads=${d?.ads?.length ?? 0}) — will refetch`);
+          return null;
         }
 
         // Cache miss or stale
