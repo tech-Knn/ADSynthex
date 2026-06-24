@@ -61,8 +61,13 @@ export default function AndroidAdvicePage() {
     const [loadingForce, setLoadingForce] = useState(false);
     const [data, setData] = useState<AdSenseCostRevenueResponse | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [selectedAccount, setSelectedAccount] = useState<string>('all');
+    // selectedAccount starts as null until we've identified the user. The first
+    // useEffect below sets it to either 'all' (admin) or the user's own account.
+    // This prevents a brief flash of 'all' data for non-admin users while the
+    // auth cookies are being read.
+    const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
     const [isAdmin, setIsAdmin] = useState(false);
+    const [authReady, setAuthReady] = useState(false);
     const [isFromCache, setIsFromCache] = useState(false);
     const [cacheAge, setCacheAge] = useState<number | null>(null);
     const [isRefreshing, setIsRefreshing] = useState(false);
@@ -109,6 +114,9 @@ export default function AndroidAdvicePage() {
 
     const isFirstMount = useRef(true);
 
+    // Phase 1: read auth cookies and decide which account this user is allowed to see.
+    // Nothing renders or fetches until this completes — prevents the all-accounts
+    // flash that previously leaked admin-cached data to regular users.
     useEffect(() => {
         const authType = getCookie('auth_type');
         const accountIdCookie = getCookie('account_id');
@@ -116,40 +124,41 @@ export default function AndroidAdvicePage() {
 
         setIsAdmin(isAdminUser);
 
-        if (!isAdminUser && accountIdCookie) {
+        if (isAdminUser) {
+            setSelectedAccount('all');
+        } else if (accountIdCookie) {
             const numericAccountId = accountIdCookie.replace('CID_', '');
             const isValidAccount = AA_ACCOUNTS.some(acc => acc.id === numericAccountId);
             if (isValidAccount) {
                 setSelectedAccount(numericAccountId);
             } else {
                 setError(`Invalid account ID: ${numericAccountId} is not an AndroidAdvice account`);
+                setSelectedAccount(null); // explicit "no access"
             }
+        } else {
+            // No auth cookie at all — don't fetch anything; middleware should redirect.
+            setSelectedAccount(null);
         }
+
+        setAuthReady(true);
+    }, []);
+
+    // Phase 2: only fetch data once auth is resolved AND we know which account.
+    // The selectedAccount/dateRange dependency catches subsequent user-driven changes.
+    useEffect(() => {
+        if (!authReady || !selectedAccount) return;
 
         const cached = loadCachedData(selectedAccount, dateRange);
         if (cached) {
             setData(cached);
             setIsFromCache(true);
             setIsRefreshing(true);
+        } else if (!isFirstMount.current) {
+            setData(null);
         }
-    }, []);
-
-    useEffect(() => {
-        if (isFirstMount.current) {
-            fetchData(false, selectedAccount);
-            isFirstMount.current = false;
-        } else {
-            const cached = loadCachedData(selectedAccount, dateRange);
-            if (cached) {
-                setData(cached);
-                setIsFromCache(true);
-                setIsRefreshing(true);
-            } else {
-                setData(null);
-            }
-            fetchData(false, selectedAccount);
-        }
-    }, [selectedAccount, dateRange]);
+        fetchData(false, selectedAccount);
+        isFirstMount.current = false;
+    }, [authReady, selectedAccount, dateRange]);
 
     const fetchData = async (forceLive = false, accountOverride?: string) => {
         const account = accountOverride ?? selectedAccount;
@@ -184,7 +193,7 @@ export default function AndroidAdvicePage() {
             if (!response.ok) throw new Error(result.error || result.message || 'Failed to fetch data');
 
             setData(result);
-            saveCacheData(account, dateRange, result);
+            if (account) saveCacheData(account, dateRange, result);
             setIsFromCache(false);
             setIsRefreshing(false);
             setCacheAge(0);
