@@ -160,6 +160,7 @@ export const ACCOUNT_TO_MCC: Record<string, keyof typeof MCC_CONFIGS> = {
   '4457984442': 'primary',  // androidadvices 16
   '9220539746': 'primary',  // androidadvices 17
   '8693469647': 'primary',  // androidadvices 18
+  '9722524142': 'primary',  // androidadvices 19
 };
 
 export function getMCCForAccount(customerId: string): MCCCredentials | null {

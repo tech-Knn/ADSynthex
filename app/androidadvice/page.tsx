@@ -32,6 +32,7 @@ const AA_ACCOUNTS = [
     { id: '4457984442', name: 'androidadvices 16 (4457984442)', descriptiveName: 'androidadvices 16 — 4457984442' },
     { id: '9220539746', name: 'androidadvices 17 (9220539746)', descriptiveName: 'androidadvices 17 — 9220539746' },
     { id: '8693469647', name: 'androidadvices 18 (8693469647)', descriptiveName: 'androidadvices 18 — 8693469647' },
+    { id: '9722524142', name: 'androidadvices 19 (9722524142)', descriptiveName: 'androidadvices 19 — 9722524142' },
 ];
 
 const AA_PUBLISHER_DISPLAY_NAME = 'AndroidAdvice';

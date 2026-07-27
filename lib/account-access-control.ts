@@ -162,6 +162,7 @@ export const ACCOUNT_FEED_ACCESS: Record<string, FeedType[]> = {
   'CID_4457984442': ['androidadvice'], // androidadvices 16
   'CID_9220539746': ['androidadvice'], // androidadvices 17
   'CID_8693469647': ['androidadvice'], // androidadvices 18
+  'CID_9722524142': ['androidadvice'], // androidadvices 19
 
   // EMERGENCY FIX 2026-02-07: Compado accounts DISABLED (not in use, wasting quota)
   // 'CID_5416418019': ['compado'],
