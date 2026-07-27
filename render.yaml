@@ -22,40 +22,20 @@ services:
       - key: ADSCOM_API_SECRET
         sync: false
 
-  # Background Worker: MongoDB Sync Worker
-  # Syncs data from APIs to MongoDB every 15 minutes
-  - type: worker
-    name: mongodb-sync-worker
+  # Cron Job: AndroidAdvice Cache Warmer
+  # Keeps androidadvice_aggregated:* Redis fresh so the dashboard reads
+  # from cache (~300ms) instead of doing a 30-90s cold fan-out across
+  # 18 accounts. 12-min interval sits under the 15-min freshness window.
+  - type: cron
+    name: androidadvice-cache-warmer
     env: node
+    schedule: "*/12 * * * *"
     buildCommand: npm install
-    startCommand: node scripts/mongodb-sync-worker.js
-    healthCheckPath: /health
+    startCommand: node scripts/warm-androidadvice.js
     envVars:
-      - key: MONGODB_URI
+      - key: APP_URL
         sync: false
-      - key: NEXT_PUBLIC_APP_URL
-        sync: false
-      - key: GOOGLE_ADS_CLIENT_ID
-        sync: false
-      - key: GOOGLE_ADS_CLIENT_SECRET
-        sync: false
-      - key: GOOGLE_ADS_DEVELOPER_TOKEN
-        sync: false
-      - key: GOOGLE_ADS_REFRESH_TOKEN
-        sync: false
-      - key: GOOGLE_ADS_MANAGER_ID
-        sync: false
-      - key: ADSENSE_REFRESH_TOKEN
-        sync: false
-      - key: COMPADO_API_USER
-        sync: false
-      - key: COMPADO_API_PASSWORD
-        sync: false
-      - key: ADSCOM_API_KEY
-        sync: false
-      - key: UPSTASH_REDIS_REST_URL
-        sync: false
-      - key: UPSTASH_REDIS_REST_TOKEN
+      - key: CRON_SECRET
         sync: false
       - key: NODE_ENV
         value: production
