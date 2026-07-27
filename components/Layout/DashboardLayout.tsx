@@ -1,20 +1,12 @@
 import React, { ReactNode, useState, useEffect } from 'react';
 import { Layout, Menu, Typography, Select, Divider, Button, Tooltip, App, Switch } from 'antd';
 import {
-  DashboardOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   UserOutlined,
   TeamOutlined,
   LogoutOutlined,
   LockOutlined,
-  DollarOutlined,
-  RocketOutlined,
-  ThunderboltOutlined,
-  GoogleOutlined,
-  FileSearchOutlined,
-  CarOutlined,
-  FileTextOutlined,
   AndroidOutlined
 } from '@ant-design/icons';
 import Link from 'next/link';
@@ -589,12 +581,6 @@ const sortAccounts = (accounts: typeof CUSTOMER_ACCOUNTS) => {
  * Get current feed type based on pathname
  */
 const getFeedTypeFromPathname = (pathname: string): FeedType | null => {
-  if (pathname === '/compado') return 'compado';
-  if (pathname === '/inuvo-dashboard') return 'inuvo';
-  if (pathname === '/adsense') return 'adsense';
-  if (pathname === '/predicto') return 'predicto';
-  if (pathname === '/carhp') return 'carhp';
-  if (pathname === '/thefactrelay') return 'thefactrelay';
   if (pathname === '/androidadvice') return 'androidadvice';
   return null;
 };
@@ -654,16 +640,10 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
 
   // Get current active menu key based on pathname
   const getActiveMenuKey = () => {
-    if (typeof window === 'undefined') return '1';
+    if (typeof window === 'undefined') return '10';
     const pathname = window.location.pathname;
-    if (pathname === '/inuvo-dashboard') return '2';
-    if (pathname === '/compado') return '4';
-    if (pathname === '/adsense') return '7';
-    if (pathname === '/predicto') return '5';
-    if (pathname === '/carhp') return '8';
-    if (pathname === '/thefactrelay') return '9';
     if (pathname === '/androidadvice') return '10';
-    return '1';
+    return '10';
   };
 
   // Helper function to get cookie value
@@ -693,8 +673,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         setAllowedFeeds(feeds);
         console.log(`[DashboardLayout] User ${accountId} has access to feeds:`, feeds);
       } else if (authType === 'admin') {
-        // Admin has access to all feeds
-        setAllowedFeeds(['compado', 'inuvo', 'adsense', 'predicto', 'carhp', 'thefactrelay', 'androidadvice']);
+        // Only androidadvice remains active — every other feed is in DISABLED_FEEDS.
+        setAllowedFeeds(['androidadvice']);
       }
 
       // If not admin and we have an account ID, select it by default
@@ -837,53 +817,11 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
               borderRight: 'none'
             }}
             items={[
-              // Inuvo Cost vs Revenue - Only show if user has 'inuvo' access
-              ...(allowedFeeds.includes('inuvo') ? [{
-                key: '2',
-                icon: <DollarOutlined />,
-                label: <Link href="/inuvo-dashboard">Inuvo</Link>,
-              }] : []),
-              // Compado - Only show if user has 'compado' access
-              ...(allowedFeeds.includes('compado') ? [{
-                key: '4',
-                icon: <ThunderboltOutlined />,
-                label: <Link href="/compado">Compado</Link>,
-              }] : []),
-              // AdSense for Search (AFS / TRT) - Only show if user has 'adsense' access
-              ...(allowedFeeds.includes('adsense') ? [{
-                key: '7',
-                icon: <FileSearchOutlined />,
-                label: <Link href="/adsense">AFS</Link>,
-              }] : []),
-              // CarHp - Only show if user has 'carhp' access
-              ...(allowedFeeds.includes('carhp') ? [{
-                key: '8',
-                icon: <CarOutlined />,
-                label: <Link href="/carhp">CarHp</Link>,
-              }] : []),
-              // Predicto - Only show if user has 'predicto' access
-              ...(allowedFeeds.includes('predicto') ? [{
-                key: '5',
-                icon: <GoogleOutlined />,
-                label: <Link href="/predicto">Predicto</Link>,
-              }] : []),
-              // TheFactRelay - Only show if user has 'thefactrelay' access
-              ...(allowedFeeds.includes('thefactrelay') ? [{
-                key: '9',
-                icon: <FileTextOutlined />,
-                label: <Link href="/thefactrelay">TheFactRelay</Link>,
-              }] : []),
-              // AndroidAdvice - Only show if user has 'androidadvice' access
               ...(allowedFeeds.includes('androidadvice') ? [{
                 key: '10',
                 icon: <AndroidOutlined />,
                 label: <Link href="/androidadvice">AndroidAdvice</Link>,
               }] : []),
-              // {
-              //   key: '6',
-              //   icon: <RocketOutlined />,
-              //   label: <Link href="/google-ads-launcher">🚀 Google Ads Launcher</Link>,
-              // }
             ]}
           />
         </Sider>
