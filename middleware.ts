@@ -55,7 +55,21 @@ export function middleware(request: NextRequest) {
   if (isPublicPath(pathname)) {
     return NextResponse.next();
   }
-  
+
+  // Server-to-server bypass: the AA cache-warmer cron POSTs directly to
+  // /api/adsense-cost-revenue with the shared CRON_SECRET so the aggregated
+  // Redis cache stays hot. Cron containers can't carry user cookies, so we
+  // allow the bearer through here rather than importing the huge route
+  // handler into an intermediate /api/cron/* endpoint (that pattern OOMs the
+  // Next.js build).
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret) {
+    const bearer = request.headers.get('authorization');
+    if (bearer === `Bearer ${cronSecret}`) {
+      return NextResponse.next();
+    }
+  }
+
   // Check for authentication cookie
   const authType = request.cookies.get('auth_type')?.value;
   const sessionId = request.cookies.get('session_id')?.value;
