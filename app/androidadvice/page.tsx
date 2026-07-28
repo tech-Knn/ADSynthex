@@ -38,6 +38,10 @@ const AA_ACCOUNTS = [
 const AA_PUBLISHER_DISPLAY_NAME = 'AndroidAdvice';
 const CACHE_PREFIX = 'aa_data_';
 const CACHE_TTL_MS = 5 * 60 * 1000;
+// Background auto-refresh every 5 min. The server-side Redis cache is warmed
+// every 12 min by androidadvice-cache-warmer cron, so most polls resolve in
+// ~350ms and cost nothing. Removes the need for a manual Force Refresh button.
+const AUTO_REFRESH_MS = 5 * 60 * 1000;
 
 interface AdSenseCostRevenueResponse {
     google_ads_data: any;
@@ -59,7 +63,6 @@ interface AdSenseCostRevenueResponse {
 
 export default function AndroidAdvicePage() {
     const [loading, setLoading] = useState(false);
-    const [loadingForce, setLoadingForce] = useState(false);
     const [data, setData] = useState<AdSenseCostRevenueResponse | null>(null);
     const [error, setError] = useState<string | null>(null);
     // selectedAccount starts as null until we've identified the user. The first
@@ -157,16 +160,29 @@ export default function AndroidAdvicePage() {
         } else if (!isFirstMount.current) {
             setData(null);
         }
-        fetchData(false, selectedAccount);
+        fetchData(selectedAccount);
         isFirstMount.current = false;
     }, [authReady, selectedAccount, dateRange]);
 
-    const fetchData = async (forceLive = false, accountOverride?: string) => {
+    // Background auto-refresh: poll every 5 min so users always see near-fresh
+    // data without touching a Refresh button. Silent mode = no spinner, no error
+    // banner if the poll fails; the existing data stays on screen. Server-side
+    // Redis is warmed by the cron every 12 min, so most polls resolve in <500ms.
+    useEffect(() => {
+        if (!authReady || !selectedAccount) return;
+        const interval = setInterval(() => {
+            fetchData(selectedAccount, true);
+        }, AUTO_REFRESH_MS);
+        return () => clearInterval(interval);
+    }, [authReady, selectedAccount, dateRange]);
+
+    // silent=true means "background auto-refresh" — no spinner, no error banner
+    // on failure. Keeps existing data on screen if the poll hiccups.
+    const fetchData = async (accountOverride?: string, silent = false) => {
         const account = accountOverride ?? selectedAccount;
 
-        if (forceLive) setLoadingForce(true);
-        else setLoading(true);
-        setError(null);
+        if (!silent) setLoading(true);
+        if (!silent) setError(null);
 
         try {
             // Publisher ID is resolved server-side from ANDROIDADVICE_PUBLISHER_ID env;
@@ -175,7 +191,7 @@ export default function AndroidAdvicePage() {
                 startDate: dateRange[0].format('YYYY-MM-DD'),
                 endDate: dateRange[1].format('YYYY-MM-DD'),
                 adsenseAccountType: 'androidadvice',
-                forceLive,
+                forceLive: false,
             };
 
             if (account === 'all') {
@@ -199,11 +215,10 @@ export default function AndroidAdvicePage() {
             setIsRefreshing(false);
             setCacheAge(0);
         } catch (err: any) {
-            setError(err.message || 'Failed to fetch AndroidAdvice data');
+            if (!silent) setError(err.message || 'Failed to fetch AndroidAdvice data');
             setIsRefreshing(false);
         } finally {
-            setLoading(false);
-            setLoadingForce(false);
+            if (!silent) setLoading(false);
         }
     };
 
@@ -277,7 +292,7 @@ export default function AndroidAdvicePage() {
                                     <Title level={3} style={{ margin: 0 }}>
                                         <AndroidOutlined /> AndroidAdvice
                                     </Title>
-                                    <CacheIndicator isFromCache={isFromCache} isRefreshing={isRefreshing || loading || loadingForce} cacheAge={cacheAge} />
+                                    <CacheIndicator isFromCache={isFromCache} isRefreshing={isRefreshing || loading} cacheAge={cacheAge} />
                                 </div>
                             </div>
                         </Col>
@@ -332,22 +347,14 @@ export default function AndroidAdvicePage() {
                                 <Button
                                     type="primary"
                                     icon={<ReloadOutlined />}
-                                    onClick={() => fetchData(false)}
+                                    onClick={() => fetchData()}
                                     loading={loading}
-                                    disabled={loadingForce}
                                 >
-                                    Fetch Data
+                                    Refresh
                                 </Button>
-                                <Button
-                                    type="default"
-                                    icon={<ReloadOutlined />}
-                                    onClick={() => fetchData(true)}
-                                    loading={loadingForce}
-                                    disabled={loading}
-                                    danger
-                                >
-                                    Force Refresh
-                                </Button>
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                    Auto-refreshes every 5 min. Server cache warmed every 12 min.
+                                </Text>
                             </div>
                         </Col>
                     </Row>
@@ -357,7 +364,7 @@ export default function AndroidAdvicePage() {
                     )}
 
 
-                    {(loading || loadingForce) && !data && <DashboardSkeleton />}
+                    {loading && !data && <DashboardSkeleton />}
 
                     {data && (() => (
                         <Row gutter={[16, 16]}>
