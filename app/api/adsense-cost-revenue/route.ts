@@ -399,22 +399,18 @@ export async function POST(request: NextRequest) {
         });
 
         if (cached.data && !cached.isStale && cached.age < CACHE_TTL) {
-          // Reject EMPTY-data cache entries. Earlier failed fetches (OAuth /
-          // network errors) were writing { campaigns: [], ads: [] } into Redis,
-          // and every subsequent request returned that as a "hit" — masking real
-          // cost permanently until the TTL expired. Treat empty-data as a miss
-          // so the upstream re-fetch can repair it.
+          // Trust cached entries even when they're empty: the write path in
+          // bulletproof-google-ads-api.ts now only caches empties when the
+          // underlying Google Ads query actually succeeded. An empty payload
+          // therefore means "account has no active campaigns for this range" —
+          // valid data, cheap to serve, and re-fetching every time was what
+          // caused the aggregated cache to churn on POISON_GUARD_TTL.
           const d: any = cached.data;
-          const hasCampaigns = Array.isArray(d?.campaigns) && d.campaigns.length > 0;
-          const hasAds = Array.isArray(d?.ads) && d.ads.length > 0;
-          const hasMeaningfulData = hasCampaigns || hasAds;
-          if (hasMeaningfulData) {
-            const ageMinutes = Math.round(cached.age / 60000);
-            console.log(`[ADSENSE_COST_REVENUE] Cache HIT for account ${accountId}: Age ${Math.round(cached.age / 1000)}s (${ageMinutes} min)`);
-            return cached.data;
-          }
-          console.log(`[ADSENSE_COST_REVENUE] Cache MISS for account ${accountId}: cached entry is empty (campaigns=${d?.campaigns?.length ?? 0}, ads=${d?.ads?.length ?? 0}) — will refetch`);
-          return null;
+          const camps = d?.campaigns?.length || 0;
+          const ads = d?.ads?.length || 0;
+          const ageMinutes = Math.round(cached.age / 60000);
+          console.log(`[ADSENSE_COST_REVENUE] Cache HIT for account ${accountId}: Age ${Math.round(cached.age / 1000)}s (${ageMinutes} min, campaigns=${camps}, ads=${ads})`);
+          return cached.data;
         }
 
         // Cache miss or stale
@@ -585,16 +581,29 @@ export async function POST(request: NextRequest) {
             })
           );
 
+          // Success vs. failure taxonomy:
+          //   - result.data present (even with campaigns:[]/ads:[]) = account queried OK,
+          //     it just had no active campaigns today. Cache it as a real result so the
+          //     cron doesn't re-fetch it every 15 min forever.
+          //   - result.data null/undefined = the underlying fetch actually errored
+          //     (OAuth blip, rate-limit, cooldown fallthrough). That's a real failure
+          //     and belongs in dq_failedAccountIds so partial-data cache TTL kicks in.
+          let batchEmptyOk = 0;
           batchResults.forEach(({ accId, result }) => {
-            if (result.data?.campaigns || result.data?.ads) {
+            if (result.data) {
               allResults.set(accId, result);
+              const camps = result.data.campaigns?.length || 0;
+              const ads = result.data.ads?.length || 0;
+              if (camps === 0 && ads === 0) {
+                batchEmptyOk++;
+              }
             } else {
               failedAccountIds.push(accId);
               console.warn(`[ADSENSE_COST_REVENUE] Account ${accId} returned no data: ${result.message || 'unknown'}`);
             }
           });
 
-          console.log(`[ADSENSE_COST_REVENUE] Batch ${i + 1}: ${allResults.size} ok, ${failedAccountIds.length} failed so far`);
+          console.log(`[ADSENSE_COST_REVENUE] Batch ${i + 1}: ${allResults.size} ok (${batchEmptyOk} idle), ${failedAccountIds.length} failed so far`);
 
           if (i < batches.length - 1) {
             await new Promise(resolve => setTimeout(resolve, INTER_BATCH_DELAY_MS));

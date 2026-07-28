@@ -129,30 +129,25 @@ export class BulletproofGoogleAdsAPI {
     if (cached.data && !cached.isStale && allowStale) {
       const quotaStatus = await googleAdsRateLimiter.getQuotaStatus();
 
-      // CRITICAL FIX: Invalidate cache if it has campaigns but NO ads
-      // Both adsense and carhp feeds rely on ads to extract style_ids for revenue matching.
-      // If ads are missing (e.g. ads query failed and was cached), $0 revenue results.
+      // Asymmetric-failure guard: keep invalidating half-broken caches (one query
+      // succeeded, the other returned nothing). These are real fetch failures and
+      // caching them causes wrong cost/revenue math on subsequent reads.
+      //
+      // The fullyEmpty guard was removed 2026-07-28 — it was over-broad, treating
+      // idle accounts (no active campaigns today, valid empty response) as broken
+      // caches. That drove the 12/19 AA "failure" rate that flipped the aggregated
+      // cache to POISON_GUARD_TTL every 15 min and caused users to see 1-3 min cold
+      // fetches. The write path in makeGuardedApiCall now only caches empties when
+      // the underlying fetch didn't error, so a cached {campaigns:[], ads:[]} means
+      // "genuinely idle account" and is safe to trust.
       const isCostAttrFeed = feedType === 'adsense' || feedType === 'carhp' || feedType === 'androidadvice';
       const campaignsWithoutAds = isCostAttrFeed && cached.data.campaigns?.length > 0 && (!cached.data.ads || cached.data.ads.length === 0);
-      // Symmetric guard: ads cached without campaigns means the campaigns query had
-      // failed when the cache was written — the account would show ads/revenue but
-      // $0 cost. Invalidate so the next fetch re-queries campaigns properly.
       const adsWithoutCampaigns = isCostAttrFeed && cached.data.ads?.length > 0 && (!cached.data.campaigns || cached.data.campaigns.length === 0);
-      // ALSO: a totally-empty payload means BOTH queries failed (or the account had
-      // zero data when cached). Treat as a miss so we retry rather than permanently
-      // serving $0 for the account until TTL expires.
-      const fullyEmpty = isCostAttrFeed
-        && (!cached.data.campaigns || cached.data.campaigns.length === 0)
-        && (!cached.data.ads || cached.data.ads.length === 0);
-      if (campaignsWithoutAds || adsWithoutCampaigns || fullyEmpty) {
+      if (campaignsWithoutAds || adsWithoutCampaigns) {
         const why = campaignsWithoutAds
           ? `${cached.data.campaigns.length} campaigns but 0 ads`
-          : adsWithoutCampaigns
-            ? `${cached.data.ads.length} ads but 0 campaigns`
-            : 'fully empty (0 campaigns, 0 ads — earlier fetch likely failed)';
+          : `${cached.data.ads.length} ads but 0 campaigns`;
         console.warn(`[BULLETPROOF_API] Cache invalid for ${feedType} feed: ${why} - INVALIDATING`);
-        // Null the cached payload so later error-fallback paths (rate limit / API failure)
-        // can't resurrect this broken cache and re-serve the half-broken payload.
         cached.data = null;
       } else {
         console.log(`[BULLETPROOF_API] ${cached.source} cache hit, age: ${Math.round(cached.age / 1000)}s`);
@@ -321,15 +316,18 @@ export class BulletproofGoogleAdsAPI {
       throw new Error('Invalid API response structure');
     }
 
-    // Empty-response detection: an account scoped fetch that returns campaigns:[] AND ads:[]
-    // is indistinguishable from "ads query failed and was swallowed". For feeds that need
-    // ads to extract channel_id/style_id (androidadvice, adsense, carhp), force the caller
-    // into the failure path so the per-account retry logic kicks in rather than silently
-    // caching empty data and producing -100% ROI.
-    const isStyleIdFeed = feedType === 'androidadvice' || feedType === 'adsense' || feedType === 'carhp';
-    if (customerId && isStyleIdFeed && apiData.campaigns.length === 0 && apiData.ads.length === 0) {
-      throw new Error(`Empty response for account ${customerId} on ${feedType} feed — likely ads query failed`);
-    }
+    // Empty-response handling: previously we threw here on any campaigns=0 & ads=0
+    // response, assuming the ads query had failed silently. In practice most AA
+    // accounts genuinely have no active campaigns on any given day, so that guard
+    // turned normal "empty but valid" responses into per-account failures. Those
+    // failures then flipped the aggregated cache to POISON_GUARD_TTL (15 min
+    // instead of 24 h), so the cache kept expiring and users saw cold fetches.
+    //
+    // The real "silent failure" mode we still care about is asymmetric: campaigns
+    // came back but ads didn't (or vice versa) — that IS caught by the guards in
+    // lib/google-ads-api.ts before we reach here. If both are empty AND the query
+    // itself succeeded (no exception), it's just an idle account. Cache it as
+    // valid data so the upstream retry loop stops pounding it every cycle.
 
     // Store in Redis cache (memory + Redis layers)
     await redisCacheManager.set(cacheKey, apiData, {
