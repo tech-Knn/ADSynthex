@@ -533,14 +533,19 @@ export async function POST(request: NextRequest) {
         // can fan out more aggressively without overloading oauth2.googleapis.com.
         // With 18 androidadvice accounts we need to clear them all inside the
         // Render HTTP timeout (~100s).
-        //   18 accounts / 6 per batch = 3 batches × ~7s each ≈ 21s typical
-        //   Worst case with one slow call: 3 batches × 20s = 60s
-        const BATCH_SIZE = 6;
+        //   19 accounts / 8 per batch = 3 batches × ~10s each ≈ 30s typical
+        //   Worst case with one slow call: 3 batches × 25s = 75s
+        // Bumped from 6→8 concurrency and 60s→120s budget after adding account 19:
+        // at 6 per batch we were skipping the last batch and returning partial data
+        // (7/19 accounts) which the cron then cached as truth — the dashboard showed
+        // holes. Since the cron runs in a Render cron container (not a user request),
+        // longer wall time is fine here.
+        const BATCH_SIZE = 8;
         const INTER_BATCH_DELAY_MS = 200;
-        const PER_CALL_MAX_WAIT_MS = forceLive ? 30000 : 20000;
+        const PER_CALL_MAX_WAIT_MS = forceLive ? 30000 : 25000;
         // Total budget for the multi-account fetch loop. Must leave headroom for the
         // AdSense fetch + aggregation + JSON serialization that runs after.
-        const TOTAL_BUDGET_MS = forceLive ? 80000 : 60000;
+        const TOTAL_BUDGET_MS = forceLive ? 120000 : 120000;
         const fetchLoopStart = Date.now();
 
         const batches: string[][] = [];
