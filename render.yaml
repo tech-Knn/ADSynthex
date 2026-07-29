@@ -24,12 +24,14 @@ services:
 
   # Cron Job: AndroidAdvice Cache Warmer
   # Keeps androidadvice_aggregated:* Redis fresh so the dashboard reads
-  # from cache (~300ms) instead of doing a 30-90s cold fan-out across
-  # 18 accounts. 12-min interval sits under the 15-min freshness window.
+  # from cache (~300ms) instead of doing a cold fan-out across all
+  # accounts. 5-min interval + 3-min aggregated cache TTL means every cron
+  # cycle actually falls through and re-fetches active-account data from
+  # Google Ads (was a no-op at 12min interval + 15min TTL).
   - type: cron
     name: androidadvice-cache-warmer
     env: node
-    schedule: "*/12 * * * *"
+    schedule: "*/5 * * * *"
     buildCommand: npm install
     startCommand: node scripts/warm-androidadvice.js
     envVars:

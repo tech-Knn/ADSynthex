@@ -93,8 +93,16 @@ export async function POST(request: NextRequest) {
     // rest of the day. Page shows fresh data when possible, falls back to "data as
     // of HH:MM" when upstream is unreachable. Once the worker pattern is in place,
     // we can revert these TTLs to the 15-min freshness target.
-    const ACCOUNT_CACHE_TTL = 15 * 60 * 1000; // 15 min — individual accounts (unchanged)
-    const AGGREGATED_CACHE_TTL = 15 * 60;     // 15 min FRESH threshold (seconds)
+    // Per-account cache TTL is applied dynamically in cacheAccountData below:
+    // active accounts (have campaigns) → 3 min so cron refetches every cycle;
+    // idle accounts (0 campaigns) → 30 min so they don't burn quota.
+    // ACCOUNT_CACHE_TTL is the CEILING used by the cache-read path.
+    const ACCOUNT_CACHE_TTL = 30 * 60 * 1000; // 30 min ceiling (dynamic write below)
+    // Aggregated cache FRESH threshold reduced from 15min→3min. Cron runs every
+    // 5 min, so this guarantees each cron cycle finds the aggregated cache stale
+    // and falls through to per-account fetches (the old 15min TTL made cron a
+    // no-op — it just re-served the cached response without re-fetching Google).
+    const AGGREGATED_CACHE_TTL = 3 * 60;      // 3 min FRESH threshold (seconds)
     // Stale fallback now extends to 24 h so the page always has something to show
     // even during a multi-hour upstream outage. Redis write TTL also uses this so
     // entries don't get evicted before the fallback can use them.
@@ -424,16 +432,22 @@ export async function POST(request: NextRequest) {
       }
     };
 
-    // Helper function to cache a single account's data
+    // Helper function to cache a single account's data with activity-aware TTL:
+    // active accounts (have campaigns today) → 3 min so cron re-fetches every
+    // cycle and users see near-live data; idle accounts (0 campaigns) → 30 min
+    // so we don't waste ~75% of quota polling accounts that never change.
+    // Bootstrapped by the shape of the payload we're caching.
     const cacheAccountData = async (accountId: string, data: any) => {
       try {
         const cacheKey = getAccountCacheKey(accountId);
+        const camps = data?.googleAdsData?.campaigns?.length || 0;
+        const ttlSeconds = camps > 0 ? 3 * 60 : 30 * 60;
         await redisCacheManager.set(cacheKey, data, {
-          ttl: CACHE_TTL / 1000,
+          ttl: ttlSeconds,
           dataType: 'unified',
           priority: 'high'
         });
-        console.log(`[ADSENSE_COST_REVENUE] Cached data for account ${accountId}`);
+        console.log(`[ADSENSE_COST_REVENUE] Cached account ${accountId} (${camps > 0 ? 'active' : 'idle'}, TTL ${ttlSeconds}s)`);
       } catch (err) {
         console.warn(`[ADSENSE_COST_REVENUE] Failed to cache account ${accountId}:`, err);
       }
