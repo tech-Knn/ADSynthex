@@ -19,6 +19,7 @@
   "description": "",
   "dependencies": {
     "@ant-design/icons": "^5.2.6",
+    "@prisma/client": "^6.19.3",
     "@supabase/supabase-js": "^2.39.7",
     "@tailwindcss/postcss": "^4.1.10",
     "@types/node": "20.11.5",
@@ -47,6 +48,7 @@
   "devDependencies": {
     "@types/react-world-flags": "^1.6.0",
     "dotenv": "^17.2.3",
+    "prisma": "^6.19.3",
     "rimraf": "^5.0.10",
     "ts-node": "^10.9.2"
   },

@@ -6,17 +6,6 @@ import { redisClient } from './redis-client';
 export type AdSenseAccountType = 'afs' | 'carhp' | 'thefactrelay' | 'androidadvice';
 
 function getOAuthClient(customerId?: string, adsenseAccountType?: AdSenseAccountType): OAuth2Client {
-  // CARHP: use dedicated CARHP AdSense OAuth credentials
-  if (adsenseAccountType === 'carhp') {
-    const client = new OAuth2Client({
-      clientId: process.env.CARHP_ADSENSE_CLIENT_ID,
-      clientSecret: process.env.CARHP_ADSENSE_CLIENT_SECRET,
-    });
-    const refreshToken = process.env.CARHP_ADSENSE_REFRESH_TOKEN;
-    if (refreshToken) client.setCredentials({ refresh_token: refreshToken });
-    return client;
-  }
-
   // ANDROIDADVICE: dedicated AndroidAdvice AdSense OAuth credentials
   if (adsenseAccountType === 'androidadvice') {
     const client = new OAuth2Client({
@@ -118,13 +107,6 @@ async function writeTokenToCache(key: string, token: string): Promise<void> {
 // exchange directly with fetch() as a fallback when google-auth-library fails.
 function getOAuthCredentials(customerId?: string, adsenseAccountType?: AdSenseAccountType):
   { clientId?: string; clientSecret?: string; refreshToken?: string } {
-  if (adsenseAccountType === 'carhp') {
-    return {
-      clientId: process.env.CARHP_ADSENSE_CLIENT_ID,
-      clientSecret: process.env.CARHP_ADSENSE_CLIENT_SECRET,
-      refreshToken: process.env.CARHP_ADSENSE_REFRESH_TOKEN,
-    };
-  }
   if (adsenseAccountType === 'androidadvice') {
     return {
       clientId: process.env.ANDROIDADVICE_ADSENSE_CLIENT_ID,

@@ -22,7 +22,7 @@ const AA_ACCOUNTS = [
     { id: '4702286319', name: 'androidadvices 06 (4702286319)', descriptiveName: 'androidadvices 06 — 4702286319' },
     { id: '8182947427', name: 'androidadvices 07 (8182947427)', descriptiveName: 'androidadvices 07 — 8182947427' },
     { id: '7423206633', name: 'androidadvices 08 (7423206633)', descriptiveName: 'androidadvices 08 — 7423206633' },
-    { id: '7753453760', name: 'androidadvice 09 (7753453760)', descriptiveName: 'androidadvice 09 — 7753453760' },
+    { id: '7753453760', name: 'androidadvice 09  (7753453760)', descriptiveName: 'androidadvices 09 — 7753453760' },
     { id: '9785664835', name: 'androidadvices 10 (9785664835)', descriptiveName: 'androidadvices 10 — 9785664835' },
     { id: '5418244007', name: 'androidadvices 11 (5418244007)', descriptiveName: 'androidadvices 11 — 5418244007' },
     { id: '1223790856', name: 'androidadvices 12 (1223790856)', descriptiveName: 'androidadvices 12 — 1223790856' },
@@ -192,6 +192,7 @@ export default function AndroidAdvicePage() {
                 endDate: dateRange[1].format('YYYY-MM-DD'),
                 adsenseAccountType: 'androidadvice',
                 forceLive: false,
+                useDb: true,
             };
 
             if (account === 'all') {

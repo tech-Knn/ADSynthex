@@ -87,3 +87,6 @@ test-*.sh
 
 # Reference folders (not to be pushed)
 AFS_REVENUE_REPORT_DASHBOARD/
+/generated/prisma
+cookies.txt
+FETCH_HEAD

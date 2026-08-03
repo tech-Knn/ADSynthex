@@ -9,6 +9,8 @@ import {
   type AdSenseRevenue
 } from '@/lib/adsense-api';
 import { cookies } from 'next/headers';
+import { dashboardFromDb, hasDbData } from '@/lib/dashboard-db';
+import { syncRange } from '@/lib/sync';
 import { bulletproofAPI } from '@/lib/bulletproof-google-ads-api';
 import { redisCacheManager } from '@/lib/redis-cache-manager';
 import { filterAccountsByFeed } from '@/lib/google-ads-api';
@@ -41,23 +43,36 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { startDate, endDate, customerId, accountIds, forceLive, adsenseAccountType } = body;
+    const { startDate, endDate, customerId, accountIds, forceLive, adsenseAccountType, useDb } = body;
+
+   
+if (useDb) {
+  const hasData = await hasDbData(startDate, endDate, accountIds);
+
+  if (hasData) {
+    // DB me data hai → seedha wahan se (fast)
+    const dbResult = await dashboardFromDb({ startDate, endDate, accountIds });
+    return NextResponse.json(dbResult);
+  }
+
+  // DB khaali → background me sync shuru karo (await NAHI — user wait na kare)
+  console.log(`[DASHBOARD] DB empty for ${startDate}..${endDate} — triggering background sync`);
+  syncRange(startDate, endDate, accountIds)
+    .then((r) => console.log(`[DASHBOARD] Background sync done: ${r.adsDailyUpserted} rows`))
+    .catch((e) => console.error('[DASHBOARD] Background sync failed:', e));
+
+  // ...aur neeche purana live code chalne do (user ko abhi data mile)
+}
     let { adsenseAccountId } = body;
 
     // Determine feed type based on account type
-    const requiredFeedType =
-      adsenseAccountType === 'carhp' ? 'carhp'
-      : adsenseAccountType === 'thefactrelay' ? 'thefactrelay'
-      : adsenseAccountType === 'androidadvice' ? 'androidadvice'
-      : 'adsense';
+    const requiredFeedType: FeedType = 'androidadvice';
 
     // Server-side publisher ID resolution: never trust the client for a publisher ID
     // tied to a feed type. Each feed has exactly one publisher; the server picks it
     // from this map so a request can't cross-pollinate one feed's data into another.
     // 'adsense' (default AFS) has multiple pub IDs per customer, so it stays client-driven.
     const FEED_PUBLISHER_IDS: Record<string, string | undefined> = {
-      carhp: 'accounts/pub-4304762948491681',
-      thefactrelay: 'accounts/pub-6567805284657549',
       androidadvice: process.env.ANDROIDADVICE_PUBLISHER_ID,
     };
     const expectedPubId = FEED_PUBLISHER_IDS[adsenseAccountType];
@@ -112,10 +127,7 @@ export async function POST(request: NextRequest) {
     const accountsKey = accountIds?.length > 0
       ? accountIds.sort().join(',')
       : customerId || 'unknown';
-    const feedPrefix =
-      requiredFeedType === 'carhp' ? 'carhp'
-      : requiredFeedType === 'thefactrelay' ? 'thefactrelay'
-      : requiredFeedType === 'androidadvice' ? 'androidadvice'
+    const feedPrefix = requiredFeedType === 'androidadvice' ? 'androidadvice'
       : 'afs';
     const aggregatedCacheKey = `${feedPrefix}_aggregated:${accountsKey}:${adsenseAccountId}:${startDate}:${endDate}`;
 
@@ -659,7 +671,7 @@ export async function POST(request: NextRequest) {
           console.log('[ADSENSE_COST_REVENUE] FORCE LIVE: Bypassing account-level cache, fetching fresh data');
         } else {
           console.log('[ADSENSE_COST_REVENUE] Cache MISS, fetching from bulletproofAPI');
-        } 
+        }
         googleAdsDataPromises = bulletproofAPI.getData(startDate, endDate, customerId, {
           priority: isToday ? 9 : 8,
           allowStale: !forceLive, // CRITICAL: Bypass cache when forceLive=true
@@ -1348,9 +1360,9 @@ export async function POST(request: NextRequest) {
     // DEBUG: Show date distribution
     console.log(`[ADSENSE_COST_REVENUE] Campaign data covers ${campaignDates.size} unique dates: ${Array.from(campaignDates).sort().join(', ')}`);
     console.log(`[ADSENSE_COST_REVENUE] Rows per date:`, Object.fromEntries(
-      Array.from(campaignRowsByDate.entries()).sort((a, b) => a[0].localeCompare(b[0])) 
+      Array.from(campaignRowsByDate.entries()).sort((a, b) => a[0].localeCompare(b[0]))
     ));
-    console.log(`[ADSENSE_COST_REVENUE] Expected date range: ${startDate} to ${endDate}`); 
+    console.log(`[ADSENSE_COST_REVENUE] Expected date range: ${startDate} to ${endDate}`);
 
     // Calculate total conversions from Google Ads 
     const totalGoogleAdsConversions = Array.from(costByStyleId.values()).reduce((sum, data) => sum + data.conversions, 0);
@@ -1617,8 +1629,6 @@ export async function POST(request: NextRequest) {
 
     // Domain allowlist: only accept AdSense revenue from the feed's own domain.
     const FEED_ALLOWED_DOMAINS: Partial<Record<FeedType, string[]>> = {
-      thefactrelay: ['thefactrelay.com'],
-      carhp: ['carhp.com', 'search.carhp.com'],
       androidadvice: ['androidadvices.com'],
     };
     const allowedDomains = FEED_ALLOWED_DOMAINS[requiredFeedType as FeedType] ?? null;
@@ -1958,7 +1968,7 @@ export async function POST(request: NextRequest) {
       accountData.cost += entry.cost;
       accountData.revenue += entry.revenue;
       accountData.profit += entry.profit;
-      accountData.clicks += entry.clicks;         
+      accountData.clicks += entry.clicks;
       accountData.impressions += entry.impressions;
       accountData.conversions += entry.conversions;
       accountData.campaignCount++;
@@ -2064,7 +2074,7 @@ export async function POST(request: NextRequest) {
 
     // Recalculate summary with filtered data
     const filteredTotalCost = filteredCampaignAggregated.reduce((sum: number, c: any) => sum + c.cost, 0);
-    
+
     const filteredTotalRevenue = filteredCampaignAggregated.reduce((sum: number, c: any) => sum + c.revenue, 0);
     const filteredTotalProfit = filteredTotalRevenue - filteredTotalCost;
     const filteredTotalConversions = filteredCampaignAggregated.reduce((sum: number, c: any) => sum + c.conversions, 0);

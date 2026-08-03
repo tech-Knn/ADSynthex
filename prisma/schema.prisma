@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Feed {
+  feedName    String   @id @map("feed_name")
+  publisherId String?  @map("publisher_id")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  accounts Account[]
+
+  @@map("feeds")
+}
+
+model Account {
+  cid       String   @id
+  feedName  String   @map("feed")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  feed         Feed           @relation(fields: [feedName], references: [feedName])
+  campaigns    Campaign[]
+  adsenseDaily AdsenseDaily[]
+
+  @@map("accounts")
+}
+
+model Campaign {
+  accountCid String   @map("account_cid")
+  campaignId String   @map("campaign_id")
+  name       String?
+  status     String?
+  country    String?
+  updatedAt  DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  account  Account    @relation(fields: [accountCid], references: [cid])
+  adsDaily AdsDaily[]
+
+  @@id([accountCid, campaignId])
+  @@map("campaigns")
+}
+
+model AdsDaily {
+  accountCid  String   @map("account_cid")
+  campaignId  String   @map("campaign_id")
+  channelId   String   @default("") @map("channel_id")
+  date        DateTime @db.Date
+  costMicros  BigInt   @default(0) @map("cost_micros")
+  clicks      Int      @default(0)
+  impressions Int      @default(0)
+  conversions Decimal  @default(0) @db.Decimal(16, 6)
+  syncedAt    DateTime @default(now()) @map("synced_at") @db.Timestamptz(6)
+
+  campaign Campaign @relation(fields: [accountCid, campaignId], references: [accountCid, campaignId])
+
+  @@id([accountCid, campaignId, channelId, date])
+  @@index([accountCid, date])
+  @@index([channelId, date])
+  @@map("ads_daily")
+}
+
+model AdsenseDaily {
+  channelId   String   @map("channel_id")
+  date        DateTime @db.Date
+  country     String   @default("")
+  accountCid  String?  @map("account_cid")
+  earnings    Decimal  @default(0) @db.Decimal(16, 6)
+  clicks      Int      @default(0)
+  impressions Int      @default(0)
+  syncedAt    DateTime @default(now()) @map("synced_at") @db.Timestamptz(6)
+
+  account Account? @relation(fields: [accountCid], references: [cid])
+
+  @@id([channelId, date, country])
+  @@index([date])
+  @@index([accountCid, date])
+  @@map("adsense_daily")
+}
+model SyncState {
+  feedName       String    @id @map("feed_name")
+  lastSyncedDate DateTime? @map("last_synced_date") @db.Date
+  lastRunAt      DateTime? @map("last_run_at") @db.Timestamptz(6)
+  status         String?
+  message        String?
+
+  @@map("sync_state")
+}
