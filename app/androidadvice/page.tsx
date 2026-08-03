@@ -272,7 +272,12 @@ export default function AndroidAdvicePage() {
             totalProfit += unattributed.total;
         }
 
-        return { totalCost, totalRevenue, totalProfit, unattributedIncluded: includeUnattributed };
+        // Other sites (queryvaults.com etc.) — same AdSense publisher, par
+        // AndroidAdvice ka hissa nahi. Isliye totals me NAHI jodte, alag dikhate hain.
+        const otherSites = (data as any)?.other_sites;
+        const otherSitesTotal = otherSites?.total || 0;
+
+        return { totalCost, totalRevenue, totalProfit, unattributedIncluded: includeUnattributed, otherSitesTotal };
     };
 
     const filteredSummary = getFilteredSummary();
@@ -378,6 +383,7 @@ export default function AndroidAdvicePage() {
                                             { label: 'Total Revenue', value: `$${filteredSummary.totalRevenue.toFixed(2)}`, color: '#52c41a' },
                                             { label: 'Total Profit', value: `$${filteredSummary.totalProfit.toFixed(2)}`, color: filteredSummary.totalProfit >= 0 ? '#52c41a' : '#f5222d' },
                                             { label: 'ROI', value: `${(filteredSummary.totalCost > 0 ? (filteredSummary.totalProfit / filteredSummary.totalCost) * 100 : 0).toFixed(2)}%`, color: filteredSummary.totalProfit >= 0 ? '#52c41a' : '#f5222d' },
+
                                         ].map(({ label, value, color }) => (
                                             <Col xs={12} md={6} key={label}>
                                                 <div>
@@ -398,23 +404,39 @@ export default function AndroidAdvicePage() {
                             {/* Account-Level Table for All Accounts view */}
                             {selectedAccount === 'all' && data.account_level_aggregated?.length > 0 && (() => {
                                 const unattributed = (data as any).unattributed_revenue;
+                                const otherSites = (data as any).other_sites;
                                 const showUnattributed = isAdmin && unattributed && unattributed.total > 0;
-                                const dataSource = showUnattributed
-                                    ? [
-                                        ...data.account_level_aggregated,
-                                        {
-                                            account_id: '__unattributed__',
-                                            campaignCount: unattributed.styleIdCount,
-                                            cost: 0,
-                                            revenue: unattributed.total,
-                                            profit: unattributed.total,
-                                            roi: 0,
-                                            conversions: 0,
-                                            __isUnattributed: true,
-                                            __styleIdCount: unattributed.styleIdCount,
-                                        },
-                                    ]
-                                    : data.account_level_aggregated;
+
+                                // Har doosri website ki apni row (naam ke saath).
+                                const otherSiteRows = (isAdmin && otherSites?.sites?.length)
+                                    ? otherSites.sites.map((s: any) => ({
+                                        account_id: `__site_${s.domain}`,
+                                        campaignCount: 0,
+                                        cost: 0,
+                                        revenue: s.earnings,
+                                        profit: 0,
+                                        roi: 0,
+                                        conversions: 0,
+                                        __isOtherSite: true,
+                                        __domain: s.domain,
+                                    }))
+                                    : [];
+
+                                const dataSource = [
+                                    ...data.account_level_aggregated,
+                                    ...(showUnattributed ? [{
+                                        account_id: '__unattributed__',
+                                        campaignCount: unattributed.styleIdCount,
+                                        cost: 0,
+                                        revenue: unattributed.total,
+                                        profit: unattributed.total,
+                                        roi: 0,
+                                        conversions: 0,
+                                        __isUnattributed: true,
+                                        __styleIdCount: unattributed.styleIdCount,
+                                    }] : []),
+
+                                ];
 
                                 return (
                                     <Col span={24}>
@@ -426,22 +448,30 @@ export default function AndroidAdvicePage() {
                                                         dataIndex: 'account_id',
                                                         key: 'account_id',
                                                         render: (id: string, row: any) =>
-                                                            row.__isUnattributed
+                                                            row.__isOtherSite
                                                                 ? (
-                                                                    <Tooltip title="Revenue on androidadvices.com from style_ids that don't match any current Google Ads campaign (organic / direct / external traffic). Admin-only.">
-                                                                        <Text strong style={{ color: '#8c8c8c', fontStyle: 'italic' }}>
-                                                                            Unattributed (organic / other)
+                                                                    <Tooltip title="Revenue from another site on the same AdSense publisher account. Not part of AndroidAdvice — shown for reference only.">
+                                                                        <Text strong style={{ color: '#1890ff', fontStyle: 'italic' }}>
+                                                                            {row.__domain}
                                                                         </Text>
                                                                     </Tooltip>
                                                                 )
-                                                                : <Text strong>{AA_ACCOUNTS.find(a => a.id === id)?.name || id}</Text>,
+                                                                : row.__isUnattributed
+                                                                    ? (
+                                                                        <Tooltip title="Revenue on androidadvices.com from style_ids that don't match any current Google Ads campaign (organic / direct / external traffic). Admin-only.">
+                                                                            <Text strong style={{ color: '#8c8c8c', fontStyle: 'italic' }}>
+                                                                                Unattributed (organic / other)
+                                                                            </Text>
+                                                                        </Tooltip>
+                                                                    )
+                                                                    : <Text strong>{AA_ACCOUNTS.find(a => a.id === id)?.name || id}</Text>,
                                                     },
                                                     {
                                                         title: 'Campaigns',
                                                         dataIndex: 'campaignCount',
                                                         key: 'campaignCount',
                                                         render: (v: number, row: any) =>
-                                                            row.__isUnattributed
+                                                            row.__isUnattributed || row.__isOtherSite
                                                                 ? <Text type="secondary">{row.__styleIdCount > 0 ? `${row.__styleIdCount} style${row.__styleIdCount === 1 ? '' : 's'}` : '—'}</Text>
                                                                 : v,
                                                     },
@@ -450,7 +480,7 @@ export default function AndroidAdvicePage() {
                                                         dataIndex: 'cost',
                                                         key: 'cost',
                                                         render: (v: number, row: any) =>
-                                                            row.__isUnattributed
+                                                            row.__isUnattributed || row.__isOtherSite
                                                                 ? <Text type="secondary">—</Text>
                                                                 : <Text style={{ color: '#ff4d4f' }}>${(v || 0).toFixed(2)}</Text>,
                                                         sorter: (a: any, b: any) => a.cost - b.cost,
@@ -467,7 +497,7 @@ export default function AndroidAdvicePage() {
                                                         dataIndex: 'profit',
                                                         key: 'profit',
                                                         render: (v: number, row: any) =>
-                                                            row.__isUnattributed
+                                                            row.__isUnattributed || row.__isOtherSite
                                                                 ? <Text type="secondary">—</Text>
                                                                 : <Text style={{ color: v >= 0 ? '#52c41a' : '#ff4d4f' }}>${(v || 0).toFixed(2)}</Text>,
                                                         sorter: (a: any, b: any) => a.profit - b.profit,
@@ -477,7 +507,7 @@ export default function AndroidAdvicePage() {
                                                         dataIndex: 'roi',
                                                         key: 'roi',
                                                         render: (v: number, row: any) =>
-                                                            row.__isUnattributed
+                                                            row.__isUnattributed || row.__isOtherSite
                                                                 ? <Text type="secondary">—</Text>
                                                                 : <Text style={{ color: v >= 0 ? '#52c41a' : '#ff4d4f' }}>{(v || 0).toFixed(1)}%</Text>,
                                                         sorter: (a: any, b: any) => a.roi - b.roi,
@@ -487,7 +517,7 @@ export default function AndroidAdvicePage() {
                                                         dataIndex: 'conversions',
                                                         key: 'conversions',
                                                         render: (v: number, row: any) =>
-                                                            row.__isUnattributed
+                                                            row.__isUnattributed || row.__isOtherSite
                                                                 ? <Text type="secondary">—</Text>
                                                                 : Math.round(v || 0).toLocaleString(),
                                                     },
