@@ -21,11 +21,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Debug OIDC claim
+      - name: Show real OIDC sub
         run: |
-          echo "repository: ${{ github.repository }}"
-          echo "ref:        ${{ github.ref }}"
-          echo "sub:        repo:${{ github.repository }}:ref:${{ github.ref }}"
+          T=$(curl -sH "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
+          P=$(echo "$T" | cut -d. -f2 | tr '_-' '/+')
+          while [ $((${#P}%4)) -ne 0 ]; do P="${P}="; done
+          echo "sub = $(echo "$P" | base64 -d | jq -r .sub)"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
