@@ -34,6 +34,7 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::459893259882:role/adsynthex-github-actions
           aws-region: ap-south-1
+          role-skip-session-tagging: true
 
       - name: Login to ECR
         id: ecr
