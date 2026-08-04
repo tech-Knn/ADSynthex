@@ -20,6 +20,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Debug OIDC claim
+        run: |
+          echo "repository: ${{ github.repository }}"
+          echo "ref:        ${{ github.ref }}"
+          echo "sub:        repo:${{ github.repository }}:ref:${{ github.ref }}"
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
