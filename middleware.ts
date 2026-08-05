@@ -4,6 +4,7 @@ import { verifySession } from '@/lib/session';
 const publicPaths = [
   '/login',
   '/api/auth/login',
+  'api/health',
 ];
 
 export async function middleware(req: NextRequest) {
