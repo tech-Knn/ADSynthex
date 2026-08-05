@@ -33,6 +33,9 @@ npm install
 # Setup environment variables (see docs/QUICK_START.md)
 cp .env.example .env.local
 
+#import prisma file into node-modules
+npx prisma generate
+
 # Run development server
 npm run dev
 ```

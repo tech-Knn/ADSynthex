@@ -1,121 +1,40 @@
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
-import { hasAccessToRoute, getFeedTypeFromRoute } from './lib/account-access-control';
+import { NextRequest, NextResponse } from 'next/server';
+import { verifySession } from '@/lib/session';
 
-// Define paths that don't require authentication
 const publicPaths = [
   '/login',
   '/api/auth/login',
-  '/api/auth/logout',
-  '/api/google-ads/accounts',
-  '/api/google-ads-production',
-  '/api/test',
-  '/api/test-db',
-  '/api/setup-db',
-  '/api/setup-indexes',
-  '/api/cleanup-db',
-  '/api/check-db-data',
-  '/api/dashboard-v2',
-  '/api/cron/',  // Changed: Added trailing slash to match all cron routes
-  '/api/sync',
-  '/api/sync-status',
-  '/api/manual-sync',
-  '/api/currency/refresh',
-  '/api/debug-adsense-revenue',  // Debug endpoint for revenue diagnostics
-  '/api/clear-cache',  // Cache clearing endpoint
-  '/api/find-duplicate-style-ids',  // Find duplicate style_ids across accounts
-  '/api/adsense-accounts',  // Get AdSense accounts
-  '/api/debug-gads', // For diagnosing Google Ads
-  '/api/afs-unmapped-revenue',  // Get unmapped AFS revenue
-  // Public read endpoints — protected by their own ?secret=<CRON_SECRET> auth.
-  // Without these, the middleware redirects unauthenticated callers to /login
-  // (returns HTML), which is why team members were seeing the dashboard page
-  // instead of JSON when the user (with admin cookie) saw JSON.
-  '/api/androidadvice-revenue-only',
-  '/api/androidadvice-revenue-by-channel',
-  '/api/reset-cooldown',
-  '/logout'
 ];
 
-// Check if a path is public
-const isPublicPath = (path: string) => {
-  return publicPaths.some(publicPath => path.startsWith(publicPath));
-};
+export async function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl;
 
-// Middleware function that runs on every request
-export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-  
-  // If trying to access root, redirect to login
-  if (pathname === '/') {
-    const loginUrl = new URL('/login', request.url);
-    return NextResponse.redirect(loginUrl);
-  }
-  
-  // Skip middleware for public paths
-  if (isPublicPath(pathname)) {
+  // Server-to-server bypass for the sync cron — KEEP THIS
+  const auth = req.headers.get('authorization');
+  if (auth === `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.next();
   }
 
-  // Server-to-server bypass: the AA cache-warmer cron POSTs directly to
-  // /api/adsense-cost-revenue with the shared CRON_SECRET so the aggregated
-  // Redis cache stays hot. Cron containers can't carry user cookies, so we
-  // allow the bearer through here rather than importing the huge route
-  // handler into an intermediate /api/cron/* endpoint (that pattern OOMs the
-  // Next.js build).
-  const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const bearer = request.headers.get('authorization');
-    if (bearer === `Bearer ${cronSecret}`) {
-      return NextResponse.next();
+  if (publicPaths.some((p) => pathname.startsWith(p))) {
+    return NextResponse.next();
+  }
+
+  const token = req.cookies.get('session')?.value;
+  const session = token ? await verifySession(token) : null;
+
+  if (!session) {
+    // API routes get 401 JSON; pages redirect to /login
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'unauthenticated' }, { status: 401 });
     }
+    const url = req.nextUrl.clone();
+    url.pathname = '/login';
+    return NextResponse.redirect(url);
   }
 
-  // Check for authentication cookie
-  const authType = request.cookies.get('auth_type')?.value;
-  const sessionId = request.cookies.get('session_id')?.value;
-  
-  // If not authenticated, redirect to login page
-  if (!authType || !sessionId) {
-    const loginUrl = new URL('/login', request.url);
-    return NextResponse.redirect(loginUrl);
-  }
-
-  // For regular users (not admins), enforce feed-level access control
-  if (authType === 'user') {
-    const accountId = request.cookies.get('account_id')?.value;
-
-    if (accountId) {
-      // Check if user has access to the requested feed/route
-      const feedType = getFeedTypeFromRoute(pathname);
-
-      if (feedType) {
-        // This is a feed route - check access
-        if (!hasAccessToRoute(accountId, pathname)) {
-          console.log(`[MIDDLEWARE] Access denied: Account ${accountId} attempted to access ${pathname}`);
-
-          // Redirect to unauthorized page or login
-          const unauthorizedUrl = new URL('/login?error=unauthorized', request.url);
-          return NextResponse.redirect(unauthorizedUrl);
-        }
-      }
-
-    }
-  }
-
-  // If authenticated and authorized, proceed with the request
   return NextResponse.next();
 }
 
-// Configure middleware to run on specific paths
 export const config = {
-  matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     */
-    '/((?!_next/static|_next/image|favicon.ico).*)',
-  ],
-}; 
+  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+};

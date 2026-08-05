@@ -640,9 +640,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
 
   // Get current active menu key based on pathname
   const getActiveMenuKey = () => {
-    if (typeof window === 'undefined') return '10';
-    const pathname = window.location.pathname;
-    if (pathname === '/androidadvice') return '10';
+    if (pathname === '/team') return '20';
+    if (pathname === '/add-user') return '30';
     return '10';
   };
 
@@ -658,35 +657,19 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   };
 
   // Check if user is admin on component mount
+  const [userName, setUserName] = useState<string>('');
+
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      // Get auth type from cookie
-      const authType = getCookie('auth_type');
-      const accountId = getCookie('account_id');
-
-      setIsAdmin(authType === 'admin');
-      setUserAccountId(accountId);
-
-      // Get allowed feeds for this user
-      if (authType !== 'admin' && accountId) {
-        const feeds = getAllowedFeeds(accountId);
-        setAllowedFeeds(feeds);
-        console.log(`[DashboardLayout] User ${accountId} has access to feeds:`, feeds);
-      } else if (authType === 'admin') {
-        // Only androidadvice remains active — every other feed is in DISABLED_FEEDS.
+    fetch('/api/auth/me')
+      .then(r => r.json())
+      .then(({ user }) => {
+        if (!user) return;
+        setIsAdmin(user.role === 'admin');
+        setUserName(user.username || user.email);
         setAllowedFeeds(['androidadvice']);
-      }
-
-      // If not admin and we have an account ID, select it by default
-      if (authType !== 'admin' && accountId && onAccountChange) {
-        // Get the numeric customer ID
-        const account = CUSTOMER_ACCOUNTS.find(acc => acc.id === accountId);
-        if (account) {
-          onAccountChange(account.value);
-        }
-      }
-    }
-  }, [onAccountChange]);
+      })
+      .catch(() => { });
+  }, []);
 
   const handleAccountClick = (accountId: string) => {
     console.log('Account selected in DashboardLayout:', accountId);
@@ -797,7 +780,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
                     <UserOutlined style={{ marginRight: 6, color: '#1890ff' }} />
-                    <Text strong style={{ fontSize: 13 }}>Your Account</Text>
+                    <Text strong style={{ fontSize: 13 }}>{userName || 'Your Account'}</Text>
                   </div>
                   <div style={{ fontSize: 11, opacity: 0.7, marginLeft: 22 }}>{userAccountId}</div>
                 </div>
@@ -821,6 +804,15 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 key: '10',
                 icon: <AndroidOutlined />,
                 label: <Link href="/androidadvice">AndroidAdvice</Link>,
+              }] : []),
+              ...(isAdmin ? [{
+                key: '20',
+                icon: <TeamOutlined />,
+                label: <Link href="/team">Manage Team</Link>,
+              }, {
+                key: '30',
+                icon: <UserOutlined />,
+                label: <Link href="/add-user">Add User</Link>,
               }] : []),
             ]}
           />

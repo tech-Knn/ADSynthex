@@ -30,6 +30,8 @@ model Account {
   adsenseDaily AdsenseDaily[]
 
   @@map("accounts")
+  allocations Allocation[]
+  seq  Int?  @map("seq")
 }
 
 model Campaign {
@@ -91,4 +93,44 @@ model SyncState {
   message        String?
 
   @@map("sync_state")
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  username     String?   @unique
+  passwordHash String?   @map("password_hash")
+  role         String    @default("user")     // 'admin' | 'user'
+  status       String    @default("pending")  // 'pending' | 'active' | 'rejected'
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  approvedAt   DateTime? @map("approved_at") @db.Timestamptz(6)
+
+  allocations Allocation[]
+
+  @@map("users")
+}
+
+model Allocation {
+  id            String    @id @default(uuid())
+  userId        String    @map("user_id")
+  accountCid    String    @map("account_cid")
+  allottedAt    DateTime  @default(now()) @map("allotted_at") @db.Timestamptz(6)
+  removedAt     DateTime? @map("removed_at") @db.Timestamptz(6)
+  periodCost    BigInt?   @map("period_cost")
+  periodRevenue Decimal?  @map("period_revenue") @db.Decimal(16, 6)
+
+  user    User    @relation(fields: [userId], references: [id])
+  account Account @relation(fields: [accountCid], references: [cid])
+
+  @@index([userId, removedAt])
+  @@index([accountCid, removedAt])
+  @@map("allocations")
+}
+
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("app_settings")
 }
