@@ -81,6 +81,14 @@ export default function AndroidAdvicePage() {
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
     const [currentPage, setCurrentPage] = useState<number>(1);
     const [pageSize, setPageSize] = useState<number>(20);
+    const [accountsMeta, setAccountsMeta] = useState<{ cid: string; seq: number | null }[]>([]);
+
+    const accountLabel = (cid: string) => {
+        const found = accountsMeta.find(a => a.cid === cid);
+        return found && found.seq != null
+            ? `androidadvices ${String(found.seq).padStart(2, '0')} (${cid})`
+            : cid;
+    };
 
     const getCacheKey = useCallback((account: string, dates: [Dayjs, Dayjs]) => {
         return `${CACHE_PREFIX}${account}:${dates[0].format('YYYY-MM-DD')}:${dates[1].format('YYYY-MM-DD')}`;
@@ -121,30 +129,34 @@ export default function AndroidAdvicePage() {
     // Phase 1: read auth cookies and decide which account this user is allowed to see.
     // Nothing renders or fetches until this completes — prevents the all-accounts
     // flash that previously leaked admin-cached data to regular users.
+    const [allocatedAccounts, setAllocatedAccounts] = useState<string[]>([]);
+
     useEffect(() => {
-        const authType = getCookie('auth_type');
-        const accountIdCookie = getCookie('account_id');
-        const isAdminUser = authType === 'admin';
+        fetch('/api/accounts/labels')
+            .then(r => r.json())
+            .then(({ accounts }) => setAccountsMeta(accounts || []))
+            .catch(() => { });
+    }, []);
 
-        setIsAdmin(isAdminUser);
-
-        if (isAdminUser) {
-            setSelectedAccount('all');
-        } else if (accountIdCookie) {
-            const numericAccountId = accountIdCookie.replace('CID_', '');
-            const isValidAccount = AA_ACCOUNTS.some(acc => acc.id === numericAccountId);
-            if (isValidAccount) {
-                setSelectedAccount(numericAccountId);
-            } else {
-                setError(`Invalid account ID: ${numericAccountId} is not an AndroidAdvice account`);
-                setSelectedAccount(null); // explicit "no access"
-            }
-        } else {
-            // No auth cookie at all — don't fetch anything; middleware should redirect.
-            setSelectedAccount(null);
-        }
-
-        setAuthReady(true);
+    useEffect(() => {
+        fetch('/api/auth/me')
+            .then(r => r.json())
+            .then(({ user }) => {
+                if (!user) {
+                    setSelectedAccount(null);
+                    setAuthReady(true);
+                    return;
+                }
+                const admin = user.role === 'admin';
+                setIsAdmin(admin);
+                setAllocatedAccounts(user.accounts || []);
+                setSelectedAccount(admin ? 'all' : 'user');
+                setAuthReady(true);
+            })
+            .catch(() => {
+                setSelectedAccount(null);
+                setAuthReady(true);
+            });
     }, []);
 
     // Phase 2: only fetch data once auth is resolved AND we know which account.
@@ -195,9 +207,9 @@ export default function AndroidAdvicePage() {
                 useDb: true,
             };
 
-            if (account === 'all') {
-                requestBody.accountIds = AA_ACCOUNTS.map(a => a.id);
-            } else {
+            // Send the specific account when one is picked (admin or user).
+            // 'user' and 'all' mean "all my scope" — send nothing, server scopes it.
+            if (account !== 'all' && account !== 'user') {
                 requestBody.accountIds = [account];
             }
 
@@ -313,11 +325,14 @@ export default function AndroidAdvicePage() {
                                     style={{ width: '100%', marginTop: 8 }}
                                     value={selectedAccount}
                                     onChange={setSelectedAccount}
-                                    disabled={!isAdmin}
+                                    disabled={false}
                                 >
-                                    <Option value="all">All AndroidAdvice Accounts</Option>
-                                    {AA_ACCOUNTS.map(acc => (
-                                        <Option key={acc.id} value={acc.id}>{acc.name}</Option>
+                                    {isAdmin && <Option value="all">All AndroidAdvice Accounts</Option>}
+                                    {!isAdmin && allocatedAccounts.length > 1 && (
+                                        <Option value="user">All my accounts ({allocatedAccounts.length})</Option>
+                                    )}
+                                    {(isAdmin ? accountsMeta.map(a => a.cid) : allocatedAccounts).map(id => (
+                                        <Option key={id} value={id}>{accountLabel(id)}</Option>
                                     ))}
                                 </Select>
                             </div>

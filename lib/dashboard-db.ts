@@ -1,6 +1,6 @@
 import { prisma } from './prisma';
 import { fetchAdSenseDomainEarnings } from './adsense-api';
-
+import { getAccountsForUser } from './account-scope';
 
 /**
  * Dashboard data — Postgres se.
@@ -10,18 +10,20 @@ export async function dashboardFromDb(params: {
   startDate: string;
   endDate: string;
   accountIds?: string[];
+  userId: string;
+  role: string;
 }) {
   const t0 = Date.now();
-  const { startDate, endDate } = params;
+  const { startDate, endDate, userId, role } = params;
 
-  let targets = params.accountIds;
-  if (!targets?.length) {
-    const rows = await prisma.account.findMany({
-      where: { feedName: 'androidadvice', active: true },
-      select: { cid: true },
-    });
-    targets = rows.map((r) => r.cid);
-  }
+  // Accounts this caller is allowed to see (admin = all active, user = allotted only)
+  const allowed = await getAccountsForUser(userId, role);
+
+  // If specific accountIds were requested, intersect them with what's allowed —
+  // a user can never widen their scope by passing extra IDs.
+  let targets = params.accountIds?.length
+    ? params.accountIds.filter((id) => allowed.includes(id))
+    : allowed;
 
   // cost (ads_daily) + revenue (adsense_daily, countries pehle SUM karke)
   const rows = await prisma.$queryRaw<any[]>`
