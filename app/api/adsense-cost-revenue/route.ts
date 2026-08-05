@@ -50,8 +50,15 @@ if (useDb) {
   const hasData = await hasDbData(startDate, endDate, accountIds);
 
   if (hasData) {
-    // DB me data hai → seedha wahan se (fast)
-    const dbResult = await dashboardFromDb({ startDate, endDate, accountIds });
+    const cookieStore = cookies();
+    const authType = cookieStore.get('auth_type')?.value;        // 'admin' | 'user'
+    const userAccountId = cookieStore.get('account_id')?.value;
+
+    const dbResult = await dashboardFromDb({
+      startDate, endDate, accountIds,
+      userId: userAccountId || '',
+      role: authType === 'admin' ? 'admin' : 'user',
+    });
     return NextResponse.json(dbResult);
   }
 
