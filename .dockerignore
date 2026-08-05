@@ -1,0 +1,10 @@
+node_modules
+.next
+.git
+.env
+.env.*
+!.env.example
+*.md
+scripts/cron-local.sh
+cookies.txt
+.DS_Store
