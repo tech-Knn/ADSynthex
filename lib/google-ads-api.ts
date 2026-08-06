@@ -1067,6 +1067,100 @@ export async function fetchGoogleAdsData(
   }
   return data;
 }
+// ============================================================================
+// SYNC ke liye 2-query fetch: ad_group_ad (normal) + asset_group (PMax).
+// campaign + geo query DROP. Cost per-date synthesize hoti hai. DB-driven (no silent-skip).
+// ============================================================================
+export async function fetchGoogleAdsDataForSync(
+  startDate: string,
+  endDate: string,
+  specificAccountId?: string | null,
+  feedType?: FeedType | null
+): Promise<GoogleAdsData> {
+  const data: GoogleAdsData = { campaigns: [], ads: [], clicks: [], geographic_views: [] };
+  console.log(`[GADS_SYNC] 2-query fetch: ${startDate} to ${endDate} (feed: ${feedType})`);
+
+  // DB-driven: sync exact cid DB se bhejta hai — seedhe use karo, koi hardcoded filter nahi.
+  // YEHI silent-skip fix: DB ka koi bhi account (account 20 included) ab sync hoga.
+  const accountsToProcess = (specificAccountId && specificAccountId !== 'all')
+    ? [{ id: specificAccountId, name: `androidadvice ${specificAccountId}` }]
+    : filterAccountsByFeed(feedType);
+
+  for (const account of accountsToProcess) {
+    try {
+      const mccCreds = getMCCForAccount(account.id) || getDefaultMCC();
+      const customer = getOrCreateCustomer(account.id, mccCreds);
+      const adQuery = buildAllAdGroupAdQuery(startDate, endDate);
+      const assetQuery = buildAssetGroupQuery(startDate, endDate);
+
+      const guardedQuery = async (q: string, name: string) => {
+        const chk = await googleAdsRateLimiter.canMakeRequest(account.id);
+        if (!chk.allowed) {
+          if (chk.waitTime && chk.waitTime < 60000) await new Promise(r => setTimeout(r, chk.waitTime));
+          else throw new Error(`Rate limit: ${chk.reason}`);
+        }
+        const resp = await customer.query(q);
+        await googleAdsRateLimiter.recordRequest(account.id);
+        console.log(`[GADS_SYNC] ${account.id} ${name}: ${resp?.length || 0} rows`);
+        return resp;
+      };
+
+      const adResp = await guardedQuery(adQuery, 'ad_group_ad').catch((e: any) => {
+        console.warn(`[GADS_SYNC] ad_group_ad failed ${account.id}: ${e?.message}`); return null;
+      });
+      const assetResp = await guardedQuery(assetQuery, 'asset_group').catch((e: any) => {
+        console.warn(`[GADS_SYNC] asset_group failed ${account.id}: ${e?.message}`); return null;
+      });
+
+      // SILENT-FAIL GUARD: dono null = quota/auth fail → throw, $0 na likhe, retry ho.
+      if (adResp === null && assetResp === null) {
+        throw new Error(`Both ad_group_ad & asset_group failed for ${account.id} — likely quota/auth`);
+      }
+
+      // cost by (campaign_id, date) — dono responses se aggregate
+      const costMap = new Map<string, { campaignId: string; campaignName: string; date: string; cost: number; clicks: number; impressions: number; conversions: number; }>();
+      const addRows = (rows: any[] | null) => {
+        for (const r of rows || []) {
+          const campaignId = String(r.campaign?.id || 'unknown');
+          const date = r.segments?.date || '';
+          if (!date) continue;
+          const key = `${campaignId}|${date}`;
+          const m = r.metrics || {};
+          let e = costMap.get(key);
+          if (!e) { e = { campaignId, campaignName: r.campaign?.name || '', date, cost: 0, clicks: 0, impressions: 0, conversions: 0 }; costMap.set(key, e); }
+          e.cost += Number(m.cost_micros || 0);
+          e.clicks += Number(m.clicks || 0);
+          e.impressions += Number(m.impressions || 0);
+          e.conversions += Number(m.conversions || 0);
+        }
+      };
+      addRows(adResp); addRows(assetResp);
+
+      for (const e of costMap.values()) {
+        data.campaigns.push({
+          customer_id: account.id, customer_name: account.name,
+          campaign_id: e.campaignId, campaign_name: e.campaignName,
+          campaign_status: 'ENABLED', final_url_suffix: '',
+          date: e.date, segments: { date: e.date },
+          metrics: {
+            impressions: e.impressions, clicks: e.clicks,
+            cost: e.cost / 1e6, cost_micros: e.cost, conversions: e.conversions,
+            ctr: 0, cpa: 0, cpc: 0, average_cost: 0, average_cpc: 0, average_cpe: 0, average_target_cpa: 0,
+          },
+        } as GoogleAdsCampaign);
+      }
+
+      if (adResp && adResp.length > 0) data.ads.push(...processAdData(adResp, account));
+      if (assetResp && assetResp.length > 0) data.ads.push(...processAssetGroupData(assetResp, account));
+
+      await new Promise(r => setTimeout(r, 200));
+    } catch (err: any) {
+      console.error(`[GADS_SYNC] Account ${account.id} error: ${err?.message || err}`);
+      throw err;
+    }
+  }
+  return data;
+}
 
 // Export quota status for monitoring (now handled by smart cache)
 export function getQuotaStatus() {
@@ -1092,4 +1186,3 @@ function deterministicRandom(date: string, seed: number): number {
   // Convert to 0-1 range
   return Math.abs(hash % 1000) / 1000;
 }
-
