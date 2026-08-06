@@ -46,29 +46,29 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { startDate, endDate, customerId, accountIds, forceLive, adsenseAccountType, useDb } = body;
 
-   
-if (useDb) {
-  const hasData = await hasDbData(startDate, endDate, accountIds);
 
-  if (hasData) {
-    const session = await getSession();
+    if (useDb) {
+      const hasData = await hasDbData(startDate, endDate, accountIds);
 
-const dbResult = await dashboardFromDb({
-  startDate, endDate, accountIds,
-  userId: session?.userId || '',
-  role: session?.role || 'user',
-});
-return NextResponse.json(dbResult);
-  }
+      if (hasData) {
+        const session = await getSession();
 
-  // DB khaali → background me sync shuru karo (await NAHI — user wait na kare)
-  console.log(`[DASHBOARD] DB empty for ${startDate}..${endDate} — triggering background sync`);
-  syncRange(startDate, endDate, accountIds)
-    .then((r) => console.log(`[DASHBOARD] Background sync done: ${r.adsDailyUpserted} rows`))
-    .catch((e) => console.error('[DASHBOARD] Background sync failed:', e));
+        const dbResult = await dashboardFromDb({
+          startDate, endDate, accountIds,
+          userId: session?.userId || '',
+          role: session?.role || 'user',
+        });
+        return NextResponse.json(dbResult);
+      }
 
-  // ...aur neeche purana live code chalne do (user ko abhi data mile)
-}
+      // DB khaali → background me sync shuru karo (await NAHI — user wait na kare)
+      console.log(`[DASHBOARD] DB empty for ${startDate}..${endDate} — triggering background sync`);
+      syncRange(startDate, endDate, accountIds)
+        .then((r) => console.log(`[DASHBOARD] Background sync done: ${r.adsDailyUpserted} rows`))
+        .catch((e) => console.error('[DASHBOARD] Background sync failed:', e));
+
+      // ...aur neeche purana live code chalne do (user ko abhi data mile)
+    }
     let { adsenseAccountId } = body;
 
     // Determine feed type based on account type
@@ -247,8 +247,9 @@ return NextResponse.json(dbResult);
 
     // ENHANCED: Proper auth check with ACCOUNT_FEED_ACCESS validation
     const cookieStore = cookies();
-    const authType = cookieStore.get('auth_type')?.value;
-    const userAccountId = cookieStore.get('account_id')?.value;
+    const session = await getSession();
+    const authType = session?.role;              // 'admin' | 'user'
+    const userAccountId = session?.userId;
 
     // Validate all requested accounts have AFS access
     const requestedAccountIds: string[] = [];

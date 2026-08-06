@@ -24,7 +24,6 @@ export async function dashboardFromDb(params: {
   let targets = params.accountIds?.length
     ? params.accountIds.filter((id) => allowed.includes(id))
     : allowed;
-    console.log('[DASH_DEBUG] role:', role, 'userId:', userId, 'allowed:', allowed.length, 'targets:', targets.length);
 
   // cost (ads_daily) + revenue (adsense_daily, countries pehle SUM karke)
   const rows = await prisma.$queryRaw<any[]>`
