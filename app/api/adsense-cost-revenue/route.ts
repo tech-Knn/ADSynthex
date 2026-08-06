@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getSession } from '@/lib/session';
 import {
   fetchAdSenseRevenueByStyleId,
   fetchAdSenseDomainEarnings,
@@ -50,16 +51,14 @@ if (useDb) {
   const hasData = await hasDbData(startDate, endDate, accountIds);
 
   if (hasData) {
-    const cookieStore = cookies();
-    const authType = cookieStore.get('auth_type')?.value;        // 'admin' | 'user'
-    const userAccountId = cookieStore.get('account_id')?.value;
+    const session = await getSession();
 
-    const dbResult = await dashboardFromDb({
-      startDate, endDate, accountIds,
-      userId: userAccountId || '',
-      role: authType === 'admin' ? 'admin' : 'user',
-    });
-    return NextResponse.json(dbResult);
+const dbResult = await dashboardFromDb({
+  startDate, endDate, accountIds,
+  userId: session?.userId || '',
+  role: session?.role || 'user',
+});
+return NextResponse.json(dbResult);
   }
 
   // DB khaali → background me sync shuru karo (await NAHI — user wait na kare)
