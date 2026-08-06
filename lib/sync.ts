@@ -1,5 +1,5 @@
 import { prisma } from './prisma';
-import { fetchGoogleAdsData } from './google-ads-api';
+import { fetchGoogleAdsDataForSync } from './google-ads-api';
 import {
   fetchAdSenseRevenueByStyleId,
   extractChannelIdFromUrl,
@@ -64,7 +64,8 @@ export async function syncRange(
   for (const cid of targets) {
     try {
       console.log(`[SYNC] Google Ads: account ${cid}...`);
-      const data = await fetchGoogleAdsData(startDate, endDate, cid, FEED as any);
+      //const data = await fetchGoogleAdsData(startDate, endDate, cid, FEED as any);
+      const data = await fetchGoogleAdsDataForSync(startDate, endDate, cid, FEED as any);
       const campaigns = data.campaigns || [];
       const ads = data.ads || [];
       console.log(`[SYNC]   ${campaigns.length} campaign rows, ${ads.length} ads`);
