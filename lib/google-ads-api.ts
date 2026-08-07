@@ -790,6 +790,31 @@ function processClickData(response: any[], account: any): GoogleAdsClick[] {
   }).filter(Boolean) as GoogleAdsClick[];
 }
 
+
+
+// Country mapping — campaign_criterion se geo_id, phir geo_countries table se code
+export async function fetchCampaignCountries(specificAccountId: string): Promise<Map<string, string>> {
+  const result = new Map<string, string>(); // campaignId → geo_id
+  try {
+    const mccCreds = getMCCForAccount(specificAccountId) || getDefaultMCC();
+    const customer = getOrCreateCustomer(specificAccountId, mccCreds);
+    const rows = await customer.query(`
+      SELECT campaign.id, campaign_criterion.location.geo_target_constant
+      FROM campaign_criterion
+      WHERE campaign_criterion.type = 'LOCATION' AND campaign_criterion.negative = false
+    `);
+    for (const r of rows) {
+      const cid = String(r.campaign?.id || '');
+      const geoConstant = r.campaign_criterion?.location?.geo_target_constant;
+      const geoId = geoConstant ? String(geoConstant).replace('geoTargetConstants/', '') : '';
+      if (cid && geoId && !result.has(cid)) result.set(cid, geoId);
+    }
+  } catch (e: any) {
+    console.warn(`[GADS_COUNTRY] ${specificAccountId} failed: ${e?.message}`);
+  }
+  return result; // campaignId → geoId
+}
+
 // Fetch all necessary data
 // EMERGENCY FIX 2026-02-07: Added includeClickViews parameter to reduce quota usage
 // Click view queries are EXPENSIVE (1 per account) and often not needed
@@ -1067,6 +1092,7 @@ export async function fetchGoogleAdsData(
   }
   return data;
 }
+
 // ============================================================================
 // SYNC ke liye 2-query fetch: ad_group_ad (normal) + asset_group (PMax).
 // campaign + geo query DROP. Cost per-date synthesize hoti hai. DB-driven (no silent-skip).

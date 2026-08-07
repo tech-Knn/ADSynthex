@@ -94,7 +94,7 @@ export async function bulkUpsertCampaigns(
       DO UPDATE SET
         name       = EXCLUDED.name,
         status     = EXCLUDED.status,
-        country    = EXCLUDED.country,
+        country    = COALESCE(NULLIF(EXCLUDED.country, ''), campaigns.country),
         updated_at = now()
     `;
     total += batch.length;

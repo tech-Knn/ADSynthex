@@ -1,5 +1,6 @@
 import { prisma } from './prisma';
-import { fetchGoogleAdsDataForSync } from './google-ads-api';
+import { fetchGoogleAdsDataForSync, fetchCampaignCountries } from './google-ads-api';
+
 import {
   fetchAdSenseRevenueByStyleId,
   extractChannelIdFromUrl,
@@ -36,6 +37,21 @@ export async function syncRange(
 
   console.log(`\n[SYNC] ===== ${startDate} -> ${endDate} =====`);
 
+  // Sync run counter — har 5th run pe country refresh (country daily nahi badalta)
+  let refreshCountry = false;
+  try {
+    const cRow = await prisma.$queryRaw<any[]>`SELECT value FROM app_settings WHERE key = 'sync_run_count'`;
+    const runCount = parseInt(cRow?.[0]?.value || '0') + 1;
+    await prisma.$executeRaw`
+      INSERT INTO app_settings (key, value, updated_at) VALUES ('sync_run_count', ${String(runCount)}, NOW())
+      ON CONFLICT (key) DO UPDATE SET value = ${String(runCount)}, updated_at = NOW()
+    `;
+    refreshCountry = (runCount % 5 === 0);
+    console.log(`[SYNC] run #${runCount}, refreshCountry: ${refreshCountry}`);
+  } catch (e: any) {
+    console.warn(`[SYNC] run counter failed: ${e?.message}`);
+  }
+
   let targets: string[];
   if (accountIds?.length) {
     targets = accountIds;
@@ -64,11 +80,26 @@ export async function syncRange(
   for (const cid of targets) {
     try {
       console.log(`[SYNC] Google Ads: account ${cid}...`);
-      //const data = await fetchGoogleAdsData(startDate, endDate, cid, FEED as any);
       const data = await fetchGoogleAdsDataForSync(startDate, endDate, cid, FEED as any);
       const campaigns = data.campaigns || [];
       const ads = data.ads || [];
       console.log(`[SYNC]   ${campaigns.length} campaign rows, ${ads.length} ads`);
+
+      // Country — sirf har 5th run pe (campaign_criterion se geo_id, phir geo_countries se code)
+      let campaignCountry = new Map<string, string>(); // campaignId → country code
+      if (refreshCountry) {
+        const campaignGeo = await fetchCampaignCountries(cid); // campaignId → geoId
+        if (campaignGeo.size > 0) {
+          const geoIds = [...new Set(campaignGeo.values())];
+          const codes = await prisma.$queryRaw<any[]>`
+            SELECT geo_id, country_code FROM geo_countries WHERE geo_id = ANY(${geoIds})
+          `;
+          const geoToCode = new Map(codes.map((c: any) => [c.geo_id, c.country_code]));
+          for (const [campId, geoId] of campaignGeo) {
+            campaignCountry.set(campId, geoToCode.get(geoId) || '');
+          }
+        }
+      }
 
       const seen = new Set<string>();
       for (const c of campaigns) {
@@ -80,7 +111,7 @@ export async function syncRange(
           campaignId,
           name: c.campaign_name || '',
           status: String(c.campaign_status || ''),
-          country: (c as any).country || '',
+          country: campaignCountry.get(campaignId) || (c as any).country || '',
         });
       }
 
