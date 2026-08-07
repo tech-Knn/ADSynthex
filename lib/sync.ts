@@ -88,7 +88,7 @@ export async function syncRange(
       // Country — sirf har 5th run pe (campaign_criterion se geo_id, phir geo_countries se code)
       let campaignCountry = new Map<string, string>(); // campaignId → country code
       if (refreshCountry) {
-        const campaignGeo = await fetchCampaignCountries(cid); // campaignId → geoId
+         const campaignGeo = await fetchCampaignCountries(cid, startDate, endDate); // dates add
         if (campaignGeo.size > 0) {
           const geoIds = [...new Set(campaignGeo.values())];
           const codes = await prisma.$queryRaw<any[]>`
