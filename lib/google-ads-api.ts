@@ -793,22 +793,36 @@ function processClickData(response: any[], account: any): GoogleAdsClick[] {
 
 
 // Country mapping — campaign_criterion se geo_id, phir geo_countries table se code
-export async function fetchCampaignCountries(specificAccountId: string): Promise<Map<string, string>> {
-  const result = new Map<string, string>(); // campaignId → geo_id
+export async function fetchCampaignCountries(
+  specificAccountId: string,
+  startDate: string,
+  endDate: string
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>(); // campaignId → geoId (country_criterion_id)
+  const costByCampaignCountry = new Map<string, { geoId: string; cost: number }>();
   try {
     const mccCreds = getMCCForAccount(specificAccountId) || getDefaultMCC();
     const customer = getOrCreateCustomer(specificAccountId, mccCreds);
     const rows = await customer.query(`
-      SELECT campaign.id, campaign_criterion.location.geo_target_constant
-      FROM campaign_criterion
-      WHERE campaign_criterion.type = 'LOCATION' AND campaign_criterion.negative = false
+      SELECT campaign.id, geographic_view.country_criterion_id, metrics.cost_micros
+      FROM geographic_view
+      WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
     `);
+    // ek campaign multiple country mein ho to sabse zyada cost wala country lo
     for (const r of rows) {
-      const cid = String(r.campaign?.id || '');
-      const geoConstant = r.campaign_criterion?.location?.geo_target_constant;
-      const geoId = geoConstant ? String(geoConstant).replace('geoTargetConstants/', '') : '';
-      if (cid && geoId && !result.has(cid)) result.set(cid, geoId);
+      const campId = String((r as any).campaign?.id || '');
+      const geoId = String((r as any).geographic_view?.country_criterion_id || '');
+      const cost = Number((r as any).metrics?.cost_micros || 0);
+      if (!campId || !geoId) continue;
+      const existing = costByCampaignCountry.get(campId);
+      if (!existing || cost > existing.cost) {
+        costByCampaignCountry.set(campId, { geoId, cost });
+      }
     }
+    for (const [campId, v] of costByCampaignCountry) {
+      result.set(campId, v.geoId);
+    }
+    console.log(`[GADS_COUNTRY] ${specificAccountId}: ${result.size} campaigns mapped (geographic_view)`);
   } catch (e: any) {
     console.warn(`[GADS_COUNTRY] ${specificAccountId} failed: ${e?.message}`);
   }
