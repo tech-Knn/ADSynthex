@@ -373,9 +373,9 @@ export default function AndroidAdvicePage() {
                                 >
                                     Refresh
                                 </Button>
-                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                {/* <Text type="secondary" style={{ fontSize: 12 }}>
                                     Auto-refreshes every 5 min. Server cache warmed every 12 min.
-                                </Text>
+                                </Text> */}
                             </div>
                         </Col>
                     </Row>
