@@ -5,7 +5,7 @@ import { Layout, Typography, Card, Select, DatePicker, App, Input, Button } from
 import { useParams, useRouter } from 'next/navigation';
 import dayjs, { Dayjs } from 'dayjs';
 import DashboardLayout from '@/components/Layout/DashboardLayout';
-import { ArrowLeftOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
 
 const { Content } = Layout;
 const { Title, Text } = Typography;
@@ -20,7 +20,7 @@ function PerfContent() {
     const [accounts, setAccounts] = useState<{ cid: string; seq: number | null }[]>([]);
     const [userAccounts, setUserAccounts] = useState<string[]>([]);
     const [selectedAccount, setSelectedAccount] = useState('all');
-    const [range, setRange] = useState<[Dayjs, Dayjs]>([dayjs().subtract(30, 'day'), dayjs()]);
+    const [range, setRange] = useState<[Dayjs, Dayjs]>([dayjs(), dayjs()]);
     const [rows, setRows] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     const [campaigns, setCampaigns] = useState<any[]>([]);
@@ -122,9 +122,28 @@ function PerfContent() {
                             />
                         </div>
                     </div>
+                    {/* <Button
+                        type="primary"
+                        icon={<ReloadOutlined />}
+                        onClick={load}
+                        loading={loading}
+                        style={{ marginTop: 16 }}
+                    >
+                        Refresh
+                    </Button> */}
                 </Card>
 
-                <Card style={{ marginBottom: 16 }}>
+                <Button
+                    type="primary"
+                    icon={<ReloadOutlined />}
+                    onClick={load}
+                    loading={loading}
+                    style={{ marginTop: 16 }}
+                >
+                    Refresh
+                </Button>
+
+                <Card style={{ marginTop: 16, marginBottom: 16 }}>
                     <div style={{ display: 'flex', gap: 48, flexWrap: 'wrap' }}>
                         <div><Text type="secondary">Total Cost</Text><br /><Text style={{ fontSize: 28, fontWeight: 700, color: '#ff4d4f' }}>${totalCost.toFixed(2)}</Text></div>
                         <div><Text type="secondary">Total Revenue</Text><br /><Text style={{ fontSize: 28, fontWeight: 700, color: '#52c41a' }}>${totalRevenue.toFixed(2)}</Text></div>
