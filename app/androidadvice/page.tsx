@@ -417,7 +417,7 @@ export default function AndroidAdvicePage() {
                             </Col>
 
                             {/* Account-Level Table for All Accounts view */}
-                            {(selectedAccount === 'all' || selectedAccount === 'user') && data.account_level_aggregated?.length > 0 && (() => {
+                            {data.account_level_aggregated?.length > 0 && (() => {
                                 const unattributed = (data as any).unattributed_revenue;
                                 const otherSites = (data as any).other_sites;
                                 const showUnattributed = isAdmin && unattributed && unattributed.total > 0;
