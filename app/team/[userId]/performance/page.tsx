@@ -144,7 +144,7 @@ function PerfContent() {
                 </Button>
 
                 <Card style={{ marginTop: 16, marginBottom: 16 }}>
-                    <div style={{ display: 'flex', gap: 48, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: 40, flexWrap: 'wrap', maxWidth: 1200, justifyContent: 'space-between' }}>
                         <div><Text type="secondary">Total Cost</Text><br /><Text style={{ fontSize: 28, fontWeight: 700, color: '#ff4d4f' }}>${totalCost.toFixed(2)}</Text></div>
                         <div><Text type="secondary">Total Revenue</Text><br /><Text style={{ fontSize: 28, fontWeight: 700, color: '#52c41a' }}>${totalRevenue.toFixed(2)}</Text></div>
                         <div><Text type="secondary">Total Profit</Text><br /><Text style={{ fontSize: 28, fontWeight: 700, color: totalProfit >= 0 ? '#52c41a' : '#ff4d4f' }}>${totalProfit.toFixed(2)}</Text></div>
