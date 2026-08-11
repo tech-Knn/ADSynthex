@@ -417,7 +417,7 @@ export default function AndroidAdvicePage() {
                             </Col>
 
                             {/* Account-Level Table for All Accounts view */}
-                            {selectedAccount === 'all' && data.account_level_aggregated?.length > 0 && (() => {
+                            {(selectedAccount === 'all' || selectedAccount === 'user') && data.account_level_aggregated?.length > 0 && (() => {
                                 const unattributed = (data as any).unattributed_revenue;
                                 const otherSites = (data as any).other_sites;
                                 const showUnattributed = isAdmin && unattributed && unattributed.total > 0;
@@ -479,7 +479,7 @@ export default function AndroidAdvicePage() {
                                                                             </Text>
                                                                         </Tooltip>
                                                                     )
-                                                                    : <Text strong>{AA_ACCOUNTS.find(a => a.id === id)?.name || id}</Text>,
+                                                                    : <Text strong>{accountLabel(id)}</Text>,
                                                     },
                                                     {
                                                         title: 'Campaigns',
