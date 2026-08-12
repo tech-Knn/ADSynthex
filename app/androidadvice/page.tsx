@@ -13,28 +13,6 @@ const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 const { Option } = Select;
 
-const AA_ACCOUNTS = [
-    { id: '8701280199', name: 'androidadvices 01 (8701280199)', descriptiveName: 'androidadvices 01 — 8701280199' },
-    { id: '3765399744', name: 'androidadvices 02 (3765399744)', descriptiveName: 'androidadvices 02 — 3765399744' },
-    { id: '3617356950', name: 'androidadvices 03 (3617356950)', descriptiveName: 'androidadvices 03 — 3617356950' },
-    { id: '4932880256', name: 'androidadvices 04 (4932880256)', descriptiveName: 'androidadvices 04 — 4932880256' },
-    { id: '3764963776', name: 'androidadvices 05 (3764963776)', descriptiveName: 'androidadvices 05 — 3764963776' },
-    { id: '4702286319', name: 'androidadvices 06 (4702286319)', descriptiveName: 'androidadvices 06 — 4702286319' },
-    { id: '8182947427', name: 'androidadvices 07 (8182947427)', descriptiveName: 'androidadvices 07 — 8182947427' },
-    { id: '7423206633', name: 'androidadvices 08 (7423206633)', descriptiveName: 'androidadvices 08 — 7423206633' },
-    { id: '7753453760', name: 'androidadvice 09  (7753453760)', descriptiveName: 'androidadvices 09 — 7753453760' },
-    { id: '9785664835', name: 'androidadvices 10 (9785664835)', descriptiveName: 'androidadvices 10 — 9785664835' },
-    { id: '5418244007', name: 'androidadvices 11 (5418244007)', descriptiveName: 'androidadvices 11 — 5418244007' },
-    { id: '1223790856', name: 'androidadvices 12 (1223790856)', descriptiveName: 'androidadvices 12 — 1223790856' },
-    { id: '7416756000', name: 'androidadvices 13 (7416756000)', descriptiveName: 'androidadvices 13 — 7416756000' },
-    { id: '2039691127', name: 'androidadvices 14 (2039691127)', descriptiveName: 'androidadvices 14 — 2039691127' },
-    { id: '5193468964', name: 'androidadvices 15 (5193468964)', descriptiveName: 'androidadvices 15 — 5193468964' },
-    { id: '4457984442', name: 'androidadvices 16 (4457984442)', descriptiveName: 'androidadvices 16 — 4457984442' },
-    { id: '9220539746', name: 'androidadvices 17 (9220539746)', descriptiveName: 'androidadvices 17 — 9220539746' },
-    { id: '8693469647', name: 'androidadvices 18 (8693469647)', descriptiveName: 'androidadvices 18 — 8693469647' },
-    { id: '9722524142', name: 'androidadvices 19 (9722524142)', descriptiveName: 'androidadvices 19 — 9722524142' },
-    { id: '3407131442', name: 'androidadvices 20 (3407131442)', descriptiveName: 'androidadvices 20 — 3407131442' },
-];
 
 const AA_PUBLISHER_DISPLAY_NAME = 'AndroidAdvice';
 const CACHE_PREFIX = 'aa_data_';
@@ -83,7 +61,6 @@ export default function AndroidAdvicePage() {
     const [currentPage, setCurrentPage] = useState<number>(1);
     const [pageSize, setPageSize] = useState<number>(20);
     const [accountsMeta, setAccountsMeta] = useState<{ cid: string; seq: number | null }[]>([]);
-    const [rows, setRows] = useState<any[]>([]);
 
     const accountLabel = (cid: string) => {
         const found = accountsMeta.find(a => a.cid === cid);
@@ -460,7 +437,7 @@ export default function AndroidAdvicePage() {
                                         <Card title={<Title level={4}>Account-Level Performance</Title>}>
                                             {loading ? (
                                                 <div style={{ padding: 40, textAlign: 'center' }}><Text type="secondary">Loading…</Text></div>
-                                            ) : rows.length === 0 ? (
+                                            ) : dataSource.length === 0 ? (
                                                 <Text type="secondary">No data for the selected range.</Text>
                                             ) : (
                                                 <div style={{ overflowX: 'auto' }}>
