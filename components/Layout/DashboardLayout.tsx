@@ -640,7 +640,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
 
   // Get current active menu key based on pathname
   const getActiveMenuKey = () => {
-    if (pathname === '/team') return '20';
+    if (pathname?.startsWith('/team')) return '20';
     if (pathname === '/add-user') return '30';
     return '10';
   };
@@ -744,34 +744,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
               </div>
 
               {/* Show selector for admins, static text for users */}
-              {isAdmin ? (
-                <Select
-                  style={{ width: '100%' }}
-                  placeholder="Select Account"
-                  value={selectedAccountId}
-                  open={accountSelectOpen}
-                  onDropdownVisibleChange={setAccountSelectOpen}
-                  onSelect={handleAccountClick}
-                  optionLabelProp="label"
-                  popupMatchSelectWidth={false}
-                  dropdownStyle={{ width: 280 }}
-                >
-                  {DISPLAY_ACCOUNTS.map(account => (
-                    <Option key={account.id} value={account.id} label={account.id === 'all' ? 'All Accounts' : account.name}>
-                      <div style={{ display: 'flex', alignItems: 'center' }}>
-                        <TeamOutlined style={{ marginRight: 8, fontSize: 16, color: '#1890ff' }} />
-                        <div>
-                          <div style={{ fontWeight: 'bold' }}>{account.name}</div>
-                          {account.id !== 'all' && (
-                            <div style={{ fontSize: 12, opacity: 0.8 }}>{account.id}</div>
-                          )}
-                        </div>
-                      </div>
-                    </Option>
-                  ))}
-                </Select>
-              ) : (
-                // For regular users, show their account without selector
+              {!isAdmin && (
                 <div style={{
                   padding: '8px 12px',
                   border: '1px solid #d9d9d9',
@@ -782,7 +755,6 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                     <UserOutlined style={{ marginRight: 6, color: '#1890ff' }} />
                     <Text strong style={{ fontSize: 13 }}>{userName || 'Your Account'}</Text>
                   </div>
-                  <div style={{ fontSize: 11, opacity: 0.7, marginLeft: 22 }}>{userAccountId}</div>
                 </div>
               )}
             </div>

@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Layout, Typography, Table, Button, Card, Select, Modal, Tag, App, Input } from 'antd';
+import { Layout, Typography, Table, Button, Card, Select, Modal, Tag, App, Input, Alert } from 'antd';
 import DashboardLayout from '@/components/Layout/DashboardLayout';
+import { useRouter } from 'next/navigation';
 
 const { Content } = Layout;
 const { Title, Text } = Typography;
@@ -24,6 +25,7 @@ interface PendingUser {
 
 function TeamContent() {
     const { message } = App.useApp();
+    const router = useRouter();
     const [users, setUsers] = useState<TeamUser[]>([]);
     const [pending, setPending] = useState<PendingUser[]>([]);
     const [loading, setLoading] = useState(true);
@@ -37,6 +39,7 @@ function TeamContent() {
     const [accounts, setAccounts] = useState<{ cid: string; seq: number | null }[]>([]);
     const [newAccountInput, setNewAccountInput] = useState('');
     const [addingAccount, setAddingAccount] = useState(false);
+
     const accountLabel = (cid: string, seq: number | null) =>
         seq != null ? `androidadvices ${String(seq).padStart(2, '0')} (${cid})` : cid;
 
@@ -224,6 +227,7 @@ function TeamContent() {
                                         <Text type="secondary">—</Text>
                                     ) : (
                                         <div style={{ display: 'flex', gap: 8 }}>
+                                            <Button size="small" onClick={() => router.push(`/team/${row.id}/performance`)}>View</Button>
                                             {row.status !== 'rejected' && (
                                                 <Button size="small" onClick={() => openEdit(row.id)}>Add / Edit</Button>
                                             )}

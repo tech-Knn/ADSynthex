@@ -352,9 +352,9 @@ export default function AndroidAdvicePage() {
                                 >
                                     Refresh
                                 </Button>
-                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                {/* <Text type="secondary" style={{ fontSize: 12 }}>
                                     Auto-refreshes every 5 min. Server cache warmed every 12 min.
-                                </Text>
+                                </Text> */}
                             </div>
                         </Col>
                     </Row>
@@ -396,7 +396,7 @@ export default function AndroidAdvicePage() {
                             </Col>
 
                             {/* Account-Level Table for All Accounts view */}
-                            {selectedAccount === 'all' && data.account_level_aggregated?.length > 0 && (() => {
+                            {data.account_level_aggregated?.length > 0 && (() => {
                                 const unattributed = (data as any).unattributed_revenue;
                                 const otherSites = (data as any).other_sites;
                                 const showUnattributed = isAdmin && unattributed && unattributed.total > 0;
@@ -435,94 +435,102 @@ export default function AndroidAdvicePage() {
                                 return (
                                     <Col span={24}>
                                         <Card title={<Title level={4}>Account-Level Performance</Title>}>
-                                            <Table
-                                                columns={[
-                                                    {
-                                                        title: 'Account',
-                                                        dataIndex: 'account_id',
-                                                        key: 'account_id',
-                                                        render: (id: string, row: any) =>
-                                                            row.__isOtherSite
-                                                                ? (
-                                                                    <Tooltip title="Revenue from another site on the same AdSense publisher account. Not part of AndroidAdvice — shown for reference only.">
-                                                                        <Text strong style={{ color: '#1890ff', fontStyle: 'italic' }}>
-                                                                            {row.__domain}
-                                                                        </Text>
-                                                                    </Tooltip>
-                                                                )
-                                                                : row.__isUnattributed
-                                                                    ? (
-                                                                        <Tooltip title="Revenue on androidadvices.com from style_ids that don't match any current Google Ads campaign (organic / direct / external traffic). Admin-only.">
-                                                                            <Text strong style={{ color: '#8c8c8c', fontStyle: 'italic' }}>
-                                                                                Unattributed (organic / other)
-                                                                            </Text>
-                                                                        </Tooltip>
-                                                                    )
-                                                                    : <Text strong>{accountLabel(id)}</Text>,
-                                                    },
-                                                    {
-                                                        title: 'Campaigns',
-                                                        dataIndex: 'campaignCount',
-                                                        key: 'campaignCount',
-                                                        render: (v: number, row: any) =>
-                                                            row.__isUnattributed || row.__isOtherSite
-                                                                ? <Text type="secondary">{row.__styleIdCount > 0 ? `${row.__styleIdCount} style${row.__styleIdCount === 1 ? '' : 's'}` : '—'}</Text>
-                                                                : v,
-                                                    },
-                                                    {
-                                                        title: 'Cost',
-                                                        dataIndex: 'cost',
-                                                        key: 'cost',
-                                                        render: (v: number, row: any) =>
-                                                            row.__isUnattributed || row.__isOtherSite
-                                                                ? <Text type="secondary">—</Text>
-                                                                : <Text style={{ color: '#ff4d4f' }}>${(v || 0).toFixed(2)}</Text>,
-                                                        sorter: (a: any, b: any) => a.cost - b.cost,
-                                                    },
-                                                    {
-                                                        title: 'Revenue',
-                                                        dataIndex: 'revenue',
-                                                        key: 'revenue',
-                                                        render: (v: number) => <Text style={{ color: '#52c41a' }}>${(v || 0).toFixed(2)}</Text>,
-                                                        sorter: (a: any, b: any) => a.revenue - b.revenue,
-                                                    },
-                                                    {
-                                                        title: 'Profit',
-                                                        dataIndex: 'profit',
-                                                        key: 'profit',
-                                                        render: (v: number, row: any) =>
-                                                            row.__isUnattributed || row.__isOtherSite
-                                                                ? <Text type="secondary">—</Text>
-                                                                : <Text style={{ color: v >= 0 ? '#52c41a' : '#ff4d4f' }}>${(v || 0).toFixed(2)}</Text>,
-                                                        sorter: (a: any, b: any) => a.profit - b.profit,
-                                                    },
-                                                    {
-                                                        title: 'ROI',
-                                                        dataIndex: 'roi',
-                                                        key: 'roi',
-                                                        render: (v: number, row: any) =>
-                                                            row.__isUnattributed || row.__isOtherSite
-                                                                ? <Text type="secondary">—</Text>
-                                                                : <Text style={{ color: v >= 0 ? '#52c41a' : '#ff4d4f' }}>{(v || 0).toFixed(1)}%</Text>,
-                                                        sorter: (a: any, b: any) => a.roi - b.roi,
-                                                    },
-                                                    {
-                                                        title: 'Conversions',
-                                                        dataIndex: 'conversions',
-                                                        key: 'conversions',
-                                                        render: (v: number, row: any) =>
-                                                            row.__isUnattributed || row.__isOtherSite
-                                                                ? <Text type="secondary">—</Text>
-                                                                : Math.round(v || 0).toLocaleString(),
-                                                    },
-                                                ]}
-                                                dataSource={dataSource}
-                                                rowKey="account_id"
-                                                pagination={false}
-                                                size="middle"
-                                                scroll={{ x: 800 }}
-                                                rowClassName={(row: any) => row.__isUnattributed ? 'aa-unattributed-row' : ''}
-                                            />
+                                            {loading ? (
+                                                <div style={{ padding: 40, textAlign: 'center' }}><Text type="secondary">Loading…</Text></div>
+                                            ) : dataSource.length === 0 ? (
+                                                <Text type="secondary">No data for the selected range.</Text>
+                                            ) : (
+                                                <div style={{ overflowX: 'auto' }}>
+                                                    <Table
+                                                        columns={[
+                                                            {
+                                                                title: 'Account',
+                                                                dataIndex: 'account_id',
+                                                                key: 'account_id',
+                                                                render: (id: string, row: any) =>
+                                                                    row.__isOtherSite
+                                                                        ? (
+                                                                            <Tooltip title="Revenue from another site on the same AdSense publisher account. Not part of AndroidAdvice — shown for reference only.">
+                                                                                <Text strong style={{ color: '#1890ff', fontStyle: 'italic' }}>
+                                                                                    {row.__domain}
+                                                                                </Text>
+                                                                            </Tooltip>
+                                                                        )
+                                                                        : row.__isUnattributed
+                                                                            ? (
+                                                                                <Tooltip title="Revenue on androidadvices.com from style_ids that don't match any current Google Ads campaign (organic / direct / external traffic). Admin-only.">
+                                                                                    <Text strong style={{ color: '#8c8c8c', fontStyle: 'italic' }}>
+                                                                                        Unattributed (organic / other)
+                                                                                    </Text>
+                                                                                </Tooltip>
+                                                                            )
+                                                                            : <Text strong>{accountLabel(id)}</Text>,
+                                                            },
+                                                            {
+                                                                title: 'Campaigns',
+                                                                dataIndex: 'campaignCount',
+                                                                key: 'campaignCount',
+                                                                render: (v: number, row: any) =>
+                                                                    row.__isUnattributed || row.__isOtherSite
+                                                                        ? <Text type="secondary">{row.__styleIdCount > 0 ? `${row.__styleIdCount} style${row.__styleIdCount === 1 ? '' : 's'}` : '—'}</Text>
+                                                                        : v,
+                                                            },
+                                                            {
+                                                                title: 'Cost',
+                                                                dataIndex: 'cost',
+                                                                key: 'cost',
+                                                                render: (v: number, row: any) =>
+                                                                    row.__isUnattributed || row.__isOtherSite
+                                                                        ? <Text type="secondary">—</Text>
+                                                                        : <Text style={{ color: '#ff4d4f' }}>${(v || 0).toFixed(2)}</Text>,
+                                                                sorter: (a: any, b: any) => a.cost - b.cost,
+                                                            },
+                                                            {
+                                                                title: 'Revenue',
+                                                                dataIndex: 'revenue',
+                                                                key: 'revenue',
+                                                                render: (v: number) => <Text style={{ color: '#52c41a' }}>${(v || 0).toFixed(2)}</Text>,
+                                                                sorter: (a: any, b: any) => a.revenue - b.revenue,
+                                                            },
+                                                            {
+                                                                title: 'Profit',
+                                                                dataIndex: 'profit',
+                                                                key: 'profit',
+                                                                render: (v: number, row: any) =>
+                                                                    row.__isUnattributed || row.__isOtherSite
+                                                                        ? <Text type="secondary">—</Text>
+                                                                        : <Text style={{ color: v >= 0 ? '#52c41a' : '#ff4d4f' }}>${(v || 0).toFixed(2)}</Text>,
+                                                                sorter: (a: any, b: any) => a.profit - b.profit,
+                                                            },
+                                                            {
+                                                                title: 'ROI',
+                                                                dataIndex: 'roi',
+                                                                key: 'roi',
+                                                                render: (v: number, row: any) =>
+                                                                    row.__isUnattributed || row.__isOtherSite
+                                                                        ? <Text type="secondary">—</Text>
+                                                                        : <Text style={{ color: v >= 0 ? '#52c41a' : '#ff4d4f' }}>{(v || 0).toFixed(1)}%</Text>,
+                                                                sorter: (a: any, b: any) => a.roi - b.roi,
+                                                            },
+                                                            {
+                                                                title: 'Conversions',
+                                                                dataIndex: 'conversions',
+                                                                key: 'conversions',
+                                                                render: (v: number, row: any) =>
+                                                                    row.__isUnattributed || row.__isOtherSite
+                                                                        ? <Text type="secondary">—</Text>
+                                                                        : Math.round(v || 0).toLocaleString(),
+                                                            },
+                                                        ]}
+                                                        dataSource={dataSource}
+                                                        rowKey="account_id"
+                                                        pagination={false}
+                                                        size="middle"
+                                                        scroll={{ x: 800 }}
+                                                        rowClassName={(row: any) => row.__isUnattributed ? 'aa-unattributed-row' : ''}
+                                                    />
+                                                </div>
+                                            )}
                                             <style dangerouslySetInnerHTML={{
                                                 __html: `.aa-unattributed-row { background: #fafafa !important; }
 .aa-unattributed-row:hover > td { background: #f0f7ff !important; }`
