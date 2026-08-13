@@ -335,6 +335,7 @@ export default function AndroidAdvicePage() {
                                     value={dateRange}
                                     onChange={(dates) => dates && setDateRange(dates as [Dayjs, Dayjs])}
                                     format="YYYY-MM-DD"
+                                    disabledDate={(current) => current && current > dayjs().endOf('day')}
                                 />
                             </div>
                         </Col>
