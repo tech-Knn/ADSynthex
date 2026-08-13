@@ -119,6 +119,7 @@ function PerfContent() {
                                 value={range}
                                 onChange={(v) => v && setRange(v as [Dayjs, Dayjs])}
                                 allowClear={false}
+                                disabledDate={(current) => current && current > dayjs().endOf('day')}
                             />
                         </div>
                     </div>
