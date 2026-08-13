@@ -208,7 +208,7 @@ export async function syncRange(
     errors.push(msg);
   }
 
-  const result: SyncResult = {
+const result: SyncResult = {
     startDate, endDate,
     accountsProcessed: targets.length,
     campaignsUpserted, adsDailyUpserted, adsenseDailyUpserted,
@@ -218,6 +218,45 @@ export async function syncRange(
 
   console.log(`[SYNC] ===== DONE in ${(result.durationMs / 1000).toFixed(1)}s =====`);
   console.log(`[SYNC] campaigns=${campaignsUpserted} ads_daily=${adsDailyUpserted} adsense_daily=${adsenseDailyUpserted} errors=${errors.length}\n`);
+
+  // Har sync ka snapshot — history ke liye (har 10 min ka data dekhne ko)
+  try {
+    const snapshot = await prisma.$queryRaw<any[]>`
+      SELECT 
+        COALESCE(SUM(cost_micros),0)/1e6 AS total_cost,
+        COALESCE(SUM(clicks),0) AS total_clicks,
+        COALESCE(SUM(conversions),0) AS total_conversions,
+        COUNT(DISTINCT account_cid) AS accounts_count,
+        COUNT(*) AS ads_rows
+      FROM ads_daily
+      WHERE date BETWEEN ${startDate}::date AND ${endDate}::date
+    `;
+    const rev = await prisma.$queryRaw<any[]>`
+      SELECT COALESCE(SUM(earnings),0) AS total_revenue, COUNT(*) AS adsense_rows
+      FROM adsense_daily
+      WHERE date BETWEEN ${startDate}::date AND ${endDate}::date
+    `;
+    const s = snapshot[0] || {};
+    const r = rev[0] || {};
+    await prisma.$executeRaw`
+      INSERT INTO sync_snapshots 
+        (sync_date, total_cost, total_revenue, total_clicks, total_conversions, accounts_count, ads_rows, adsense_rows, duration_ms)
+      VALUES (
+        ${endDate}::date,
+        ${Number(s.total_cost) || 0},
+        ${Number(r.total_revenue) || 0},
+        ${Number(s.total_clicks) || 0},
+        ${Number(s.total_conversions) || 0},
+        ${Number(s.accounts_count) || 0},
+        ${Number(s.ads_rows) || 0},
+        ${Number(r.adsense_rows) || 0},
+        ${result.durationMs}
+      )
+    `;
+    console.log(`[SYNC] Snapshot saved: cost=$${Number(s.total_cost).toFixed(2)}, revenue=$${Number(r.total_revenue).toFixed(2)}`);
+  } catch (e: any) {
+    console.warn(`[SYNC] snapshot failed: ${e?.message}`);
+  }
 
   return result;
 }
