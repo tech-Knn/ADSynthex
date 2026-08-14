@@ -88,7 +88,7 @@ export async function syncRange(
       // Country — sirf har 5th run pe (campaign_criterion se geo_id, phir geo_countries se code)
       let campaignCountry = new Map<string, string>(); // campaignId → country code
       if (refreshCountry) {
-         const campaignGeo = await fetchCampaignCountries(cid, startDate, endDate); // dates add
+        const campaignGeo = await fetchCampaignCountries(cid, startDate, endDate); // dates add
         if (campaignGeo.size > 0) {
           const geoIds = [...new Set(campaignGeo.values())];
           const codes = await prisma.$queryRaw<any[]>`
@@ -208,7 +208,7 @@ export async function syncRange(
     errors.push(msg);
   }
 
-const result: SyncResult = {
+  const result: SyncResult = {
     startDate, endDate,
     accountsProcessed: targets.length,
     campaignsUpserted, adsDailyUpserted, adsenseDailyUpserted,
@@ -238,21 +238,28 @@ const result: SyncResult = {
     `;
     const s = snapshot[0] || {};
     const r = rev[0] || {};
+
+    // result.errors, result.accountsProcessed already available hain
+    const errorCount = result.errors.length;
+    const errorText = result.errors.length > 0 ? result.errors.join(' | ').substring(0, 500) : null;
+    const syncStatus = result.errors.length > 0 ? 'has_errors'
+      : Number(s.ads_rows) === 0 ? 'no_data'
+        : 'ok';
+
     await prisma.$executeRaw`
-      INSERT INTO sync_snapshots 
-        (sync_date, total_cost, total_revenue, total_clicks, total_conversions, accounts_count, ads_rows, adsense_rows, duration_ms)
-      VALUES (
-        ${endDate}::date,
-        ${Number(s.total_cost) || 0},
-        ${Number(r.total_revenue) || 0},
-        ${Number(s.total_clicks) || 0},
-        ${Number(s.total_conversions) || 0},
-        ${Number(s.accounts_count) || 0},
-        ${Number(s.ads_rows) || 0},
-        ${Number(r.adsense_rows) || 0},
-        ${result.durationMs}
-      )
-    `;
+  INSERT INTO sync_snapshots 
+    (sync_date, total_cost, total_revenue, total_clicks, total_conversions, 
+     accounts_count, ads_rows, adsense_rows, duration_ms,
+     error_count, errors, accounts_processed, sync_status)
+  VALUES (
+    ${endDate}::date,
+    ${Number(s.total_cost) || 0}, ${Number(r.total_revenue) || 0},
+    ${Number(s.total_clicks) || 0}, ${Number(s.total_conversions) || 0},
+    ${Number(s.accounts_count) || 0}, ${Number(s.ads_rows) || 0}, 
+    ${Number(r.adsense_rows) || 0}, ${result.durationMs},
+    ${errorCount}, ${errorText}, ${result.accountsProcessed}, ${syncStatus}
+  )
+`;
     console.log(`[SYNC] Snapshot saved: cost=$${Number(s.total_cost).toFixed(2)}, revenue=$${Number(r.total_revenue).toFixed(2)}`);
   } catch (e: any) {
     console.warn(`[SYNC] snapshot failed: ${e?.message}`);
