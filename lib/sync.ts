@@ -202,6 +202,21 @@ export async function syncRange(
 
     console.log(`[SYNC] Writing ${adsenseRows.length} adsense_daily rows...`);
     adsenseDailyUpserted = await bulkUpsertAdsenseDaily(adsenseRows);
+    try {
+      const domainUpdated = await prisma.$executeRaw`
+        UPDATE adsense_daily
+        SET domain = 'androidadvices.com'
+        WHERE date BETWEEN ${startDate}::date AND ${endDate}::date
+        AND domain IS DISTINCT FROM 'androidadvices.com'
+        AND channel_id IN (
+          SELECT DISTINCT channel_id FROM ads_daily
+          WHERE date BETWEEN ${startDate}::date AND ${endDate}::date AND channel_id != ''
+        )
+      `;
+      console.log(`[SYNC] Domain tagged: ${domainUpdated} adsense rows → androidadvices.com`);
+    } catch (e: any) {
+      console.warn(`[SYNC] domain tagging failed: ${e?.message}`);
+    }
   } catch (err: any) {
     const msg = `adsense: ${err?.message || err}`;
     console.error(`[SYNC] x ${msg}`);
