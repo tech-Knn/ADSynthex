@@ -253,6 +253,9 @@ export default function AndroidAdvicePage() {
         // in the table: admin user on the All-Accounts view and no campaign search filter.
         // Unattributed has no cost, so it lands fully in profit.
         const unattributed = (data as any)?.unattributed_revenue;
+        console.log('[DEBUG] unattributed:', unattributed);
+        console.log('[DEBUG] isAdmin:', isAdmin, '| selectedAccount:', selectedAccount, '| searchText:', searchText);
+        console.log('[DEBUG] totalRevenue (attributed):', totalRevenue);
         const includeUnattributed =
             isAdmin &&
             selectedAccount === 'all' &&
@@ -375,24 +378,33 @@ export default function AndroidAdvicePage() {
                                     <Row gutter={[16, 16]}>
                                         {[
                                             { label: 'Total Cost', value: `$${filteredSummary.totalCost.toFixed(2)}`, color: '#f5222d' },
-                                            { label: 'Total Revenue', value: `$${filteredSummary.totalRevenue.toFixed(2)}`, color: '#52c41a' },
+                                            {
+                                                label: 'Total Revenue',
+                                                value: `$${filteredSummary.totalRevenue.toFixed(2)}`,
+                                                color: '#52c41a',
+                                                subtitle: filteredSummary.unattributedIncluded
+                                                    ? (() => {
+                                                        const unattr = (data as any)?.unattributed_revenue?.total || 0;
+                                                        const base = filteredSummary.totalRevenue - unattr;
+                                                        return `$${base.toFixed(2)} + $${unattr.toFixed(2)} unattributed`;
+                                                    })()
+                                                    : null
+                                            },
                                             { label: 'Total Profit', value: `$${filteredSummary.totalProfit.toFixed(2)}`, color: filteredSummary.totalProfit >= 0 ? '#52c41a' : '#f5222d' },
                                             { label: 'ROI', value: `${(filteredSummary.totalCost > 0 ? (filteredSummary.totalProfit / filteredSummary.totalCost) * 100 : 0).toFixed(2)}%`, color: filteredSummary.totalProfit >= 0 ? '#52c41a' : '#f5222d' },
 
-                                        ].map(({ label, value, color }) => (
+                                        ].map(({ label, value, color, subtitle }: any) => (
                                             <Col xs={12} md={6} key={label}>
                                                 <div>
                                                     <Text type="secondary">{label}</Text>
                                                     <div style={{ fontSize: 24, fontWeight: 'bold', color }}>{value}</div>
+                                                    {subtitle && (
+                                                        <div style={{ fontSize: 11, color: '#8c8c8c', marginTop: 2 }}>{subtitle}</div>
+                                                    )}
                                                 </div>
                                             </Col>
                                         ))}
                                     </Row>
-                                    {filteredSummary.unattributedIncluded && (
-                                        <div style={{ marginTop: 12, fontSize: 12, color: '#8c8c8c', fontStyle: 'italic' }}>
-                                            Includes unattributed (organic / other) revenue.
-                                        </div>
-                                    )}
                                 </div>
                             </Col>
 
