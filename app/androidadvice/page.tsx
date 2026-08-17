@@ -253,9 +253,6 @@ export default function AndroidAdvicePage() {
         // in the table: admin user on the All-Accounts view and no campaign search filter.
         // Unattributed has no cost, so it lands fully in profit.
         const unattributed = (data as any)?.unattributed_revenue;
-        console.log('[DEBUG] unattributed:', unattributed);
-        console.log('[DEBUG] isAdmin:', isAdmin, '| selectedAccount:', selectedAccount, '| searchText:', searchText);
-        console.log('[DEBUG] totalRevenue (attributed):', totalRevenue);
         const includeUnattributed =
             isAdmin &&
             selectedAccount === 'all' &&
