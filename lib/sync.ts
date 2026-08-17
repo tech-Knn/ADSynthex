@@ -156,9 +156,21 @@ export async function syncRange(
     }
   }
 
-  console.log(`[SYNC] Writing ${campaignRows.length} campaigns, ${adsRows.length} ads_daily rows...`);
-  let campaignsUpserted = 0;
-  let adsDailyUpserted = 0;
+    let campaignsUpserted = 0;
+    let adsDailyUpserted = 0;
+   const syncedAccounts = [...new Set(adsRows.map(r => r.accountCid))];
+  if (syncedAccounts.length > 0) {
+    try {
+      const deleted = await prisma.$executeRaw`
+        DELETE FROM ads_daily
+        WHERE account_cid = ANY(${syncedAccounts})
+        AND date BETWEEN ${startDate}::date AND ${endDate}::date
+      `;
+      console.log(`[SYNC] Deleted ${deleted} old ads_daily rows (stale channel cleanup)`);
+    } catch (e: any) {
+      console.warn(`[SYNC] ads_daily cleanup failed: ${e?.message}`);
+    }
+  }
   try {
     campaignsUpserted = await bulkUpsertCampaigns(campaignRows);
     adsDailyUpserted = await bulkUpsertAdsDaily(adsRows);
