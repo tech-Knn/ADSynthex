@@ -27,6 +27,22 @@ export async function dashboardFromDb(params: {
 
   // cost (ads_daily) + revenue (adsense_daily, countries pehle SUM karke)
   const rows = await prisma.$queryRaw<any[]>`
+    WITH channel_cost AS (
+      -- har channel ka total cost (is range, androidadvice accounts) — revenue distribute karne ko
+      SELECT channel_id, SUM(cost_micros) AS total_channel_cost
+      FROM ads_daily
+      WHERE date BETWEEN ${startDate}::date AND ${endDate}::date
+        AND channel_id != ''
+        AND account_cid = ANY(${targets})
+      GROUP BY channel_id
+    ),
+    channel_rev AS (
+      -- har channel ka revenue (ek baar, countries jodke)
+      SELECT channel_id, SUM(earnings) AS revenue, SUM(clicks) AS rev_clicks
+      FROM adsense_daily
+      WHERE date BETWEEN ${startDate}::date AND ${endDate}::date
+      GROUP BY channel_id
+    )
     SELECT
       a.account_cid,
       a.campaign_id,
@@ -37,22 +53,23 @@ export async function dashboardFromDb(params: {
       SUM(a.clicks)                  AS cost_clicks,
       SUM(a.impressions)             AS impressions,
       SUM(a.conversions)             AS conversions,
-      COALESCE(r.revenue, 0)         AS revenue,
-      COALESCE(r.rev_clicks, 0)      AS revenue_clicks
+      -- revenue ko cost-proportion se baanto: channel ka poora revenue duplicate na ho
+      COALESCE(
+        cr.revenue * (SUM(a.cost_micros)::numeric / NULLIF(cc.total_channel_cost, 0)),
+        0
+      ) AS revenue,
+      COALESCE(
+        cr.rev_clicks * (SUM(a.cost_micros)::numeric / NULLIF(cc.total_channel_cost, 0)),
+        0
+      ) AS revenue_clicks
     FROM ads_daily a
     LEFT JOIN campaigns c
       ON c.account_cid = a.account_cid AND c.campaign_id = a.campaign_id
-    LEFT JOIN (
-      SELECT channel_id,
-             SUM(earnings) AS revenue,
-             SUM(clicks)   AS rev_clicks
-      FROM adsense_daily
-      WHERE date BETWEEN ${startDate}::date AND ${endDate}::date
-      GROUP BY channel_id
-    ) r ON r.channel_id = a.channel_id AND a.channel_id != ''
+    LEFT JOIN channel_cost cc ON cc.channel_id = a.channel_id AND a.channel_id != ''
+    LEFT JOIN channel_rev cr ON cr.channel_id = a.channel_id AND a.channel_id != ''
     WHERE a.account_cid = ANY(${targets})
       AND a.date BETWEEN ${startDate}::date AND ${endDate}::date
-    GROUP BY a.account_cid, a.campaign_id, a.channel_id, c.name, c.country, r.revenue, r.rev_clicks
+    GROUP BY a.account_cid, a.campaign_id, a.channel_id, c.name, c.country, cr.revenue, cr.rev_clicks, cc.total_channel_cost
     ORDER BY revenue DESC
   `;
 
