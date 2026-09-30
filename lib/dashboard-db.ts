@@ -1,7 +1,8 @@
 import { prisma } from './prisma';
 import { fetchAdSenseDomainEarnings } from './adsense-api';
 import { getAccountsForUser } from './account-scope';
-
+import { getAccountCurrency } from './currency-converter';
+import { convertToUsd } from './currency-service';
 /**
  * Dashboard data — Postgres se.
  * Wahi shape jo /api/adsense-cost-revenue deta hai, par live API ke bajaye DB se.
@@ -73,8 +74,19 @@ export async function dashboardFromDb(params: {
     ORDER BY revenue DESC
   `;
 
+  // Build per-account conversion rates for any non-USD account
+  const uniqueAccounts = [...new Set(rows.map(r => r.account_cid))];
+  const rateByAccount = new Map<string, number>();
+  for (const cid of uniqueAccounts) {
+    const currency = getAccountCurrency(cid);
+    const r = currency === 'USD' ? 1 : await convertToUsd(1, currency);
+    rateByAccount.set(cid, r);
+    if (currency !== 'USD') console.log(`[DASH_CURRENCY] ${cid}: ${currency} rate=${r}`);
+  }
+
   const campaign_aggregated = rows.map((row) => {
-    const cost = Number(row.cost) || 0;
+    const rate = rateByAccount.get(row.account_cid) ?? 1;
+    const cost = (Number(row.cost) || 0) * rate;
     const revenue = Number(row.revenue) || 0;
     const profit = revenue - cost;
     const clicks = Number(row.revenue_clicks) || 0;

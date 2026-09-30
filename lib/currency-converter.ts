@@ -23,6 +23,7 @@ export const ACCOUNT_CURRENCIES: Record<string, string> = {
   // Example:
   // '1234567890': 'EUR', // European account
   // '9876543210': 'GBP', // UK account
+  '7952421486': 'INR', // androidadvices 22
 };
 
 /**
@@ -33,6 +34,7 @@ export const SUPPORTED_CURRENCIES = {
   USD: { symbol: '$', name: 'US Dollar', conversion: false },
   IDR: { symbol: 'Rp', name: 'Indonesian Rupiah', conversion: true },
   EUR: { symbol: '€', name: 'Euro', conversion: true },
+  INR: { symbol: '₹', name: 'Indian Rupee', conversion: true },
   // Add more as needed
 } as const;
 

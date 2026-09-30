@@ -4,11 +4,13 @@ import axios, { AxiosError } from 'axios';
 const CONFIG = {
   REDIS_KEY_EUR: 'currency:eur-to-usd:v2',
   REDIS_KEY_IDR: 'currency:idr-to-usd:v1',
+  REDIS_KEY_INR: 'currency:inr-to-usd:v1',
   CACHE_TTL_SECONDS: 24 * 60 * 60,
   FALLBACK_CACHE_TTL: 60 * 60,
   // Multiple API sources for reliability
   FRANKFURTER_API_EUR: 'https://api.frankfurter.app/latest?from=EUR&to=USD',
   FRANKFURTER_API_IDR: 'https://api.frankfurter.app/latest?from=IDR&to=USD',
+  FRANKFURTER_API_INR: 'https://api.frankfurter.app/latest?from=INR&to=USD',
   EXCHANGERATE_API_EUR: 'https://api.exchangerate-api.com/v4/latest/EUR',
   EXCHANGERATE_API_IDR: 'https://api.exchangerate-api.com/v4/latest/IDR',
   ECB_DIRECT_API: 'https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml',
@@ -20,6 +22,9 @@ const CONFIG = {
   MIN_RATE_IDR: 0.00005,  // ~20,000 IDR per USD
   MAX_RATE_IDR: 0.0001,   // ~10,000 IDR per USD
   MIN_FETCH_INTERVAL_MS: 60000,
+  FALLBACK_RATE_INR: 0.011, // 1 INR = ~$0.011 USD (≈90 INR/USD), updated 2026-09
+  MIN_RATE_INR: 0.008,  // ~125 INR per USD
+  MAX_RATE_INR: 0.015,  // ~67 INR per USD
 } as const;
 
 interface ExchangeRateCache {
@@ -62,7 +67,7 @@ class CurrencyService {
         return cache.rate;
       }
 
-      const redisCache = await this.getFromRedisCache(redisKey);
+      const redisCache = await this.getFromRedisCache(CONFIG.REDIS_KEY_EUR);
       if (redisCache) {
         if (currency === 'EUR') {
           this.inMemoryCacheEUR = redisCache;
@@ -89,7 +94,7 @@ class CurrencyService {
   async forceRefresh(): Promise<FetchResult> {
     try {
       console.log('[CURRENCY] Force refresh...');
-      const result = await this.fetchAndCacheRate();
+      const result = await this.fetchAndCacheRate('EUR');
 
       if (result.success) {
         console.log(`[CURRENCY] Refresh successful: ${result.rate} (${result.source})`);
@@ -103,7 +108,7 @@ class CurrencyService {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       console.error('[CURRENCY] Refresh failed:', errorMsg);
 
-      await this.cacheRate(CONFIG.FALLBACK_RATE_EUR, 'fallback', CONFIG.FALLBACK_CACHE_TTL);
+      await this.cacheRate(CONFIG.FALLBACK_RATE_EUR, 'fallback', CONFIG.FALLBACK_CACHE_TTL, CONFIG.REDIS_KEY_EUR, 'EUR');
 
       return {
         rate: CONFIG.FALLBACK_RATE_EUR,
@@ -122,9 +127,9 @@ class CurrencyService {
       ? { cached: true, rate: this.inMemoryCacheEUR.rate, source: this.inMemoryCacheEUR.source }
       : { cached: false };
 
-    const redisCache = await this.getFromRedisCache();
+    const redisCache = await this.getFromRedisCache(CONFIG.REDIS_KEY_EUR);
     const redis = redisCache
-      ? { cached: true, rate: redisCache.rate, source: redisCache.source, ttl: await this.getRedisTTL() }
+      ? { cached: true, rate: redisCache.rate, source: redisCache.source, ttl: await this.getRedisTTL(CONFIG.REDIS_KEY_EUR) }
       : { cached: false };
 
     return { inMemory, redis };
@@ -132,7 +137,9 @@ class CurrencyService {
 
   async clearCache(): Promise<void> {
     this.inMemoryCacheEUR = null;
-    await redisClient.del(CONFIG.REDIS_KEY);
+    this.inMemoryCacheIDR = null;
+    await redisClient.del(CONFIG.REDIS_KEY_EUR);
+    await redisClient.del(CONFIG.REDIS_KEY_IDR);
     console.log('[CURRENCY] Cache cleared');
   }
 
@@ -140,14 +147,14 @@ class CurrencyService {
     // Try multiple APIs in order of preference
     const apis = currency === 'EUR'
       ? [
-          { name: 'frankfurter' as const, fetcher: () => this.fetchFromFrankfurter(currency) },
-          { name: 'exchangerate-api' as const, fetcher: () => this.fetchFromExchangeRateAPI(currency) },
-          { name: 'ecb' as const, fetcher: () => this.fetchFromECBXML() },
-        ]
+        { name: 'frankfurter' as const, fetcher: () => this.fetchFromFrankfurter(currency) },
+        { name: 'exchangerate-api' as const, fetcher: () => this.fetchFromExchangeRateAPI(currency) },
+        { name: 'ecb' as const, fetcher: () => this.fetchFromECBXML() },
+      ]
       : [
-          { name: 'frankfurter' as const, fetcher: () => this.fetchFromFrankfurter(currency) },
-          { name: 'exchangerate-api' as const, fetcher: () => this.fetchFromExchangeRateAPI(currency) },
-        ];
+        { name: 'frankfurter' as const, fetcher: () => this.fetchFromFrankfurter(currency) },
+        { name: 'exchangerate-api' as const, fetcher: () => this.fetchFromExchangeRateAPI(currency) },
+      ];
 
     const fallback = currency === 'EUR' ? CONFIG.FALLBACK_RATE_EUR : CONFIG.FALLBACK_RATE_IDR;
     const redisKey = currency === 'EUR' ? CONFIG.REDIS_KEY_EUR : CONFIG.REDIS_KEY_IDR;
@@ -231,7 +238,7 @@ class CurrencyService {
     }
 
     const rate = parseFloat(usdMatch[1]);
-    if (!this.isValidRate(rate)) {
+    if (!this.isValidRate(rate, 'EUR')) {
       throw new Error(`Invalid ECB XML rate: ${rate}`);
     }
 
@@ -297,9 +304,9 @@ class CurrencyService {
     }
   }
 
-  private async getRedisTTL(): Promise<number> {
+  private async getRedisTTL(redisKey: string): Promise<number> {
     try {
-      const ttl = await redisClient.ttl(CONFIG.REDIS_KEY);
+      const ttl = await redisClient.ttl(redisKey);
       return ttl > 0 ? ttl : 0;
     } catch (error) {
       return 0;
@@ -348,9 +355,35 @@ export async function convertToUsd(amount: number, sourceCurrency: string): Prom
     return amount * rate;
   }
 
+  if (sourceCurrency === 'INR') {
+    const rate = await getInrToUsdRate();
+    return amount * rate;
+  }
+
   // Unknown currency - return as-is
   console.warn(`[CURRENCY] Unknown currency: ${sourceCurrency}, returning original amount`);
   return amount;
+}
+
+let inrRateCache: { rate: number; at: number } | null = null;
+
+export async function getInrToUsdRate(): Promise<number> {
+  if (inrRateCache && Date.now() - inrRateCache.at < 24 * 60 * 60 * 1000) {
+    return inrRateCache.rate;
+  }
+  try {
+    const res = await axios.get(CONFIG.FRANKFURTER_API_INR, { timeout: CONFIG.TIMEOUT_MS });
+    const rate = res.data?.rates?.USD;
+    if (rate && rate >= CONFIG.MIN_RATE_INR && rate <= CONFIG.MAX_RATE_INR) {
+      inrRateCache = { rate, at: Date.now() };
+      console.log(`[CURRENCY_INR] Fetched: ${rate}`);
+      return rate;
+    }
+    throw new Error(`Invalid INR rate: ${rate}`);
+  } catch (e) {
+    console.warn(`[CURRENCY_INR] Fetch failed, using fallback ${CONFIG.FALLBACK_RATE_INR}`);
+    return CONFIG.FALLBACK_RATE_INR;
+  }
 }
 
 export const CURRENCY_CONFIG = CONFIG;
