@@ -1,16 +1,17 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Card, Button, Input, Typography, Form, App } from 'antd';
-import { MailOutlined, LockOutlined, LineChartOutlined } from '@ant-design/icons';
+import { Button, Input, Typography, Form, App } from 'antd';
+import { MailOutlined, LockOutlined } from '@ant-design/icons';
 import AntdProvider from '../../components/Providers/AntdProvider';
+import AsxLogo from '../../components/AppShell/AsxLogo';
+import '../../components/AppShell/appshell.css';
+import './login.css';
 
 const { Title, Text } = Typography;
-const DEFAULT_LANDING = '/androidadvice';
+const DEFAULT_LANDING = '/dashboard';
 
 function LoginForm() {
-  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const { message: antdMessage } = App.useApp();
 
@@ -40,84 +41,64 @@ function LoginForm() {
   };
 
   return (
-    <div style={{
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'center',
-      minHeight: '100vh',
-      background: '#fff',
-      position: 'relative',
-      overflow: 'hidden',
-    }}>
-      <div className="login-bg-wave" style={{
-        position: 'absolute',
-        width: '100%',
-        height: '50vh',
-        background: 'var(--primary-gradient)',
-        top: 0,
-        left: 0,
-        borderBottomLeftRadius: '50%',
-        borderBottomRightRadius: '50%',
-        transform: 'scaleX(1.5)',
-        zIndex: 0,
-      }} />
+    <div
+      className="asx-login"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
+        padding: 24,
+        background: '#f8faff',
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+    >
+      <div className="asx-login-blob asx-login-blob-1" />
+      <div className="asx-login-blob asx-login-blob-2" />
 
-      <Card
+      <div
+        className="asx-login-card"
         style={{
-          width: 420,
-          borderRadius: '20px',
-          boxShadow: '0 15px 35px rgba(0, 0, 0, 0.1)',
-          overflow: 'hidden',
-          border: 'none',
           position: 'relative',
           zIndex: 1,
+          width: '100%',
+          maxWidth: 420,
+          background: '#ffffff',
+          border: '1px solid #e8ecf6',
+          borderRadius: 18,
+          padding: '36px 32px 28px',
+          boxShadow: '0 20px 50px -20px rgba(79, 70, 229, 0.18)',
         }}
-        styles={{ body: { padding: '36px' } }}
       >
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <div style={{
-            width: '80px',
-            height: '80px',
-            borderRadius: '50%',
-            background: 'var(--primary-gradient)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            margin: '0 auto 20px',
-            boxShadow: '0 10px 20px rgba(106, 61, 232, 0.2)',
-          }}>
-            <LineChartOutlined style={{ fontSize: '38px', color: 'white' }} />
+        <div className="asx-login-head">
+          <div className="asx-login-logo">
+            <AsxLogo size={56} />
           </div>
-
-          <Title level={2} style={{
-            marginBottom: 8,
-            background: 'var(--primary-gradient)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text',
-            fontWeight: '600',
-          }}>
-            Welcome to AdSyntheX
+          <Title level={3} className="asx-login-title">
+            Welcome to AdSynthe<span className="brand-x">X</span>
           </Title>
-          <Text type="secondary" style={{ fontSize: '15px' }}>Please login to continue</Text>
+          <Text type="secondary" className="asx-login-sub">Sign in to your workspace to continue</Text>
         </div>
 
-        <Form name="login" layout="vertical" onFinish={onLogin}>
+        <Form name="login" layout="vertical" onFinish={onLogin} requiredMark={false}>
           <Form.Item
+            label="Email"
             name="email"
             rules={[
               { required: true, message: 'Please enter your email' },
               { type: 'email', message: 'Enter a valid email' },
             ]}
           >
-            <Input prefix={<MailOutlined />} placeholder="Email" size="large" autoComplete="email" />
+            <Input prefix={<MailOutlined />} placeholder="you@company.com" size="large" autoComplete="email" />
           </Form.Item>
 
           <Form.Item
+            label="Password"
             name="password"
             rules={[{ required: true, message: 'Please enter your password' }]}
           >
-            <Input.Password prefix={<LockOutlined />} placeholder="Password" size="large" autoComplete="current-password" />
+            <Input.Password prefix={<LockOutlined />} placeholder="Enter your password" size="large" autoComplete="current-password" />
           </Form.Item>
 
           <Form.Item>
@@ -126,14 +107,20 @@ function LoginForm() {
               htmlType="submit"
               block
               size="large"
-              className="login-button"
+              className="btn-primary-gradient"
               loading={loading}
             >
-              Login
+              Sign in
             </Button>
           </Form.Item>
         </Form>
-      </Card>
+
+        <div className="asx-login-foot">
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            © {new Date().getFullYear()} AdSyntheX
+          </Text>
+        </div>
+      </div>
     </div>
   );
 }
