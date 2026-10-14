@@ -5,7 +5,7 @@ import { Input, Table, Button, Dropdown, Spin } from 'antd';
 import {
   CalendarOutlined, DollarOutlined, LineChartOutlined, RiseOutlined,
   SearchOutlined, DownOutlined, RightOutlined, MoreOutlined, ExpandAltOutlined, ShrinkOutlined,
-  QuestionCircleOutlined,
+  QuestionCircleOutlined, AimOutlined,
 } from '@ant-design/icons';
 import FilterBar, { FilterValues, defaultRange } from '@/components/AppShell/FilterBar';
 import Kpi, { fmtDate, fmtInt, fmtMoney, fmtPct } from '@/components/AppShell/Kpi';
@@ -33,7 +33,7 @@ export default function BreakdownPage() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
-  const [summary, setSummary] = useState<{ cost: number; revenue: number; profit: number; roi: number; unattributedRevenue?: number } | null>(null);
+  const [summary, setSummary] = useState<{ cost: number; revenue: number; profit: number; roi: number; adsenseClicks: number; unattributedRevenue?: number } | null>(null);
   const [delta, setDelta] = useState<{ cost: number | null; revenue: number | null; profit: number | null; roi: number | null } | null>(null);
   const seq = useRef(0);
   const [page, setPage] = useState(1);
@@ -151,11 +151,12 @@ export default function BreakdownPage() {
         onExport={() => exportCsv(filtered, label)} showExport loading={loading}
       />
 
-      <div className={`kpi-grid${summary?.unattributedRevenue !== undefined ? ' cols-5' : ''}`}>
+      <div className={`kpi-grid ${summary?.unattributedRevenue !== undefined ? 'cols-6' : 'cols-5'}`}>
         <Kpi label="Total Cost" tone="red" value={fmtMoney(summary?.cost ?? 0)} delta={delta?.cost ?? null} invertDelta icon={<CalendarOutlined />} />
         <Kpi label="Total Revenue" tone="green" value={fmtMoney(summary?.revenue ?? 0)} delta={delta?.revenue ?? null} icon={<DollarOutlined />} />
         <Kpi label="Total Profit" tone="purple" value={fmtMoney(summary?.profit ?? 0)} delta={delta?.profit ?? null} icon={<LineChartOutlined />} />
         <Kpi label="ROI" tone="blue" value={fmtPct(summary?.roi ?? 0)} delta={delta?.roi ?? null} icon={<RiseOutlined />} />
+        <Kpi label="AdSense Clicks" tone="indigo" value={fmtInt(summary?.adsenseClicks ?? 0)} icon={<AimOutlined />} />
         {summary?.unattributedRevenue !== undefined && (
           <Kpi label="Unattributed Rev" tone="indigo" value={fmtMoney(summary.unattributedRevenue)} icon={<QuestionCircleOutlined />} />
         )}

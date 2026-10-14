@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Space, Spin } from 'antd';
-import { ArrowRightOutlined, ExportOutlined, CalendarOutlined, DollarOutlined, LineChartOutlined, RiseOutlined, PieChartOutlined, QuestionCircleOutlined } from '@ant-design/icons';
+import { ArrowRightOutlined, ExportOutlined, CalendarOutlined, DollarOutlined, LineChartOutlined, RiseOutlined, PieChartOutlined, QuestionCircleOutlined, AimOutlined } from '@ant-design/icons';
 import Link from 'next/link';
 import {
   Chart as ChartJS, CategoryScale, LinearScale,
@@ -12,7 +12,7 @@ import {
 } from 'chart.js';
 import { Chart } from 'react-chartjs-2';
 import FilterBar, { FilterValues, defaultRange } from '@/components/AppShell/FilterBar';
-import Kpi, { fmtDayShort, fmtMoney, fmtPct } from '@/components/AppShell/Kpi';
+import Kpi, { fmtDayShort, fmtInt, fmtMoney, fmtPct } from '@/components/AppShell/Kpi';
 
 ChartJS.register(
   CategoryScale, LinearScale,
@@ -21,10 +21,10 @@ ChartJS.register(
   Tooltip, Legend, Title,
 );
 
-type DayRow = { date: string; cost: number; revenue: number; profit: number; roi: number };
+type DayRow = { date: string; cost: number; revenue: number; profit: number; roi: number; clicks: number };
 
 interface SummaryResponse {
-  summary: { cost: number; revenue: number; profit: number; roi: number; unattributedRevenue?: number };
+  summary: { cost: number; revenue: number; profit: number; roi: number; adsenseClicks: number; unattributedRevenue?: number };
   byDay: DayRow[];
   delta: { cost: number | null; revenue: number | null; profit: number | null; roi: number | null };
 }
@@ -71,7 +71,7 @@ export default function DashboardPage() {
 
       <FilterBar value={filters} onChange={setFilters} onRefresh={load} loading={loading} />
 
-      <div className={`kpi-grid${data?.summary.unattributedRevenue !== undefined ? ' cols-5' : ''}`}>
+      <div className={`kpi-grid ${data?.summary.unattributedRevenue !== undefined ? 'cols-6' : 'cols-5'}`}>
         <Kpi label="Total Cost" tone="red"
           value={fmtMoney(data?.summary.cost ?? 0)}
           delta={data?.delta.cost ?? null} invertDelta
@@ -91,6 +91,10 @@ export default function DashboardPage() {
           value={fmtPct(data?.summary.roi ?? 0)}
           delta={data?.delta.roi ?? null}
           icon={<RiseOutlined />}
+        />
+        <Kpi label="AdSense Clicks" tone="indigo"
+          value={fmtInt(data?.summary.adsenseClicks ?? 0)}
+          icon={<AimOutlined />}
         />
         {data?.summary.unattributedRevenue !== undefined && (
           <Kpi label="Unattributed Rev" tone="indigo"
