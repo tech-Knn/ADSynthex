@@ -105,6 +105,8 @@ export default function CampaignsPage() {
     return { count: filtered.length, ...totals, roi };
   }, [filtered]);
 
+  const isFiltered = search.trim() !== '' || country !== 'all';
+
   const toggleStatus = (row: Campaign) => {
     const nextStatus = row.status === 'ENABLED' ? 'PAUSED' : 'ENABLED';
     const verb = nextStatus === 'PAUSED' ? 'Pause' : 'Resume';
@@ -230,10 +232,10 @@ export default function CampaignsPage() {
 
       <div className={`kpi-grid ${overview?.unattributedRevenue !== undefined ? 'cols-6' : 'cols-5'}`}>
         <Kpi label="Total Campaigns" tone="indigo" value={fmtInt(summary.count)} icon={<AppstoreOutlined />} />
-        <Kpi label="Total Cost" tone="red" value={fmtMoney(overview?.cost ?? 0)} icon={<CalendarOutlined />} />
-        <Kpi label="Total Revenue" tone="green" value={fmtMoney(overview?.revenue ?? 0)} icon={<DollarOutlined />} />
-        <Kpi label="Total Profit" tone="purple" value={fmtMoney(overview?.profit ?? 0)} icon={<LineChartOutlined />} />
-        <Kpi label="Avg. ROI" tone="blue" value={fmtPct(overview?.roi ?? 0)} icon={<RiseOutlined />} />
+        <Kpi label="Total Cost" tone="red" value={fmtMoney(isFiltered ? summary.cost : (overview?.cost ?? 0))} icon={<CalendarOutlined />} />
+        <Kpi label="Total Revenue" tone="green" value={fmtMoney(isFiltered ? summary.revenue : (overview?.revenue ?? 0))} icon={<DollarOutlined />} />
+        <Kpi label="Total Profit" tone="purple" value={fmtMoney(isFiltered ? summary.profit : (overview?.profit ?? 0))} icon={<LineChartOutlined />} />
+        <Kpi label="Avg. ROI" tone="blue" value={fmtPct(isFiltered ? summary.roi : (overview?.roi ?? 0))} icon={<RiseOutlined />} />
         {overview?.unattributedRevenue !== undefined && (
           <Kpi label="Unattributed Rev" tone="indigo" value={fmtMoney(overview.unattributedRevenue)} icon={<QuestionCircleOutlined />} />
         )}
