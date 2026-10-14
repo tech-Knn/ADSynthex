@@ -58,6 +58,7 @@ export async function GET(req: NextRequest) {
       a.date,
       c.name AS campaign_name,
       c.country,
+      MAX(a.channel_id) AS channel_id,
       SUM(a.cost_micros) / 1000000.0 AS cost,
       SUM(a.clicks) AS clicks,
       SUM(a.conversions) AS conversions,
@@ -96,7 +97,7 @@ export async function GET(req: NextRequest) {
       entry = {
         campaignId: row.campaign_id,
         campaignName: row.campaign_name || row.campaign_id,
-        styleId: row.campaign_id,
+        styleId: row.channel_id || '—',
         country: row.country || '—',
         accountCid: row.account_cid,
         cost: 0, revenue: 0, profit: 0, roi: 0,

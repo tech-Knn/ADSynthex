@@ -104,7 +104,7 @@ export default function CampaignsPage() {
       title: 'Campaign', dataIndex: 'campaignName',
       render: (v: string) => <span style={{ fontWeight: 500, color: '#0f172a' }}>{v}</span>
     },
-    { title: 'Style ID', dataIndex: 'styleId', width: 120, render: (v: string) => <span className="m-muted">{v}</span> },
+    { title: 'Channel ID', dataIndex: 'styleId', width: 120, render: (v: string) => <span className="m-muted">{v}</span> },
     { title: 'Country', dataIndex: 'country', width: 100, render: (v: string) => <span className="m-muted">{v}</span> },
     {
       title: 'Cost', dataIndex: 'cost', align: 'right' as const, width: 110,
@@ -292,7 +292,7 @@ function CampaignDaily({ daily }: { daily: Daily[] }) {
 }
 
 function exportCsv(campaigns: Campaign[]) {
-  const header = ['Campaign', 'Style ID', 'Country', 'Date', 'Cost', 'Revenue', 'Profit', 'ROI (%)', 'Clicks', 'Conversions'];
+  const header = ['Campaign', 'Channel ID', 'Country', 'Date', 'Cost', 'Revenue', 'Profit', 'ROI (%)', 'Clicks', 'Conversions'];
   const lines = [header.join(',')];
   for (const c of campaigns) {
     for (const d of c.daily) {
