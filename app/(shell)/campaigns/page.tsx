@@ -32,6 +32,8 @@ export default function CampaignsPage() {
   const [order, setOrder] = useState<'desc' | 'asc'>('desc');
   const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
   const seq = useRef(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(8);
 
   const load = useCallback(async () => {
     const id = ++seq.current;
@@ -51,6 +53,10 @@ export default function CampaignsPage() {
   }, [filters]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, country, sortBy, order]);
 
   const countryOpts = useMemo(() => {
     const set = new Set<string>();
@@ -87,26 +93,44 @@ export default function CampaignsPage() {
   }, [filtered]);
 
   const columns = [
-    { title: 'Campaign', dataIndex: 'campaignName',
-      render: (v: string) => <span style={{ fontWeight: 500, color: '#0f172a' }}>{v}</span> },
+    {
+      title: 'Campaign', dataIndex: 'campaignName',
+      render: (v: string) => <span style={{ fontWeight: 500, color: '#0f172a' }}>{v}</span>
+    },
     { title: 'Style ID', dataIndex: 'styleId', width: 120, render: (v: string) => <span className="m-muted">{v}</span> },
     { title: 'Country', dataIndex: 'country', width: 100, render: (v: string) => <span className="m-muted">{v}</span> },
-    { title: 'Cost', dataIndex: 'cost', align: 'right' as const, width: 110,
-      render: (v: number) => <span className="m-cost">{fmtMoney(v)}</span> },
-    { title: 'Revenue', dataIndex: 'revenue', align: 'right' as const, width: 110,
-      render: (v: number) => <span className="m-rev">{fmtMoney(v)}</span> },
-    { title: 'Profit', dataIndex: 'profit', align: 'right' as const, width: 110,
-      render: (v: number) => <span className="m-profit">{fmtMoney(v)}</span> },
-    { title: 'ROI', dataIndex: 'roi', align: 'right' as const, width: 90,
-      render: (v: number) => <span className="m-roi">{fmtPct(v)}</span> },
-    { title: 'CPA', dataIndex: 'cpa', align: 'right' as const, width: 90,
-      render: (v: number) => <span className="m-muted">{fmtMoney(v)}</span> },
-    { title: 'RPC', dataIndex: 'rpc', align: 'right' as const, width: 90,
-      render: (v: number) => <span className="m-muted">{fmtMoney(v)}</span> },
-    { title: 'Conv.', dataIndex: 'conversions', align: 'right' as const, width: 90,
-      render: (v: number) => fmtInt(v) },
-    { title: 'Clicks', dataIndex: 'clicks', align: 'right' as const, width: 90,
-      render: (v: number) => fmtInt(v) },
+    {
+      title: 'Cost', dataIndex: 'cost', align: 'right' as const, width: 110,
+      render: (v: number) => <span className="m-cost">{fmtMoney(v)}</span>
+    },
+    {
+      title: 'Revenue', dataIndex: 'revenue', align: 'right' as const, width: 110,
+      render: (v: number) => <span className="m-rev">{fmtMoney(v)}</span>
+    },
+    {
+      title: 'Profit', dataIndex: 'profit', align: 'right' as const, width: 110,
+      render: (v: number) => <span className="m-profit">{fmtMoney(v)}</span>
+    },
+    {
+      title: 'ROI', dataIndex: 'roi', align: 'right' as const, width: 90,
+      render: (v: number) => <span className="m-roi">{fmtPct(v)}</span>
+    },
+    {
+      title: 'CPA', dataIndex: 'cpa', align: 'right' as const, width: 90,
+      render: (v: number) => <span className="m-muted">{fmtMoney(v)}</span>
+    },
+    {
+      title: 'RPC', dataIndex: 'rpc', align: 'right' as const, width: 90,
+      render: (v: number) => <span className="m-muted">{fmtMoney(v)}</span>
+    },
+    {
+      title: 'Conv.', dataIndex: 'conversions', align: 'right' as const, width: 90,
+      render: (v: number) => fmtInt(v)
+    },
+    {
+      title: 'Clicks', dataIndex: 'clicks', align: 'right' as const, width: 90,
+      render: (v: number) => fmtInt(v)
+    },
     {
       title: 'Actions', width: 70, align: 'center' as const,
       render: (_: any, row: Campaign) => (
@@ -200,7 +224,22 @@ export default function CampaignsPage() {
           loading={loading}
           dataSource={filtered}
           columns={columns as any}
-          pagination={{ pageSize: 8, showSizeChanger: true, pageSizeOptions: ['8', '20', '50'], locale: { items_per_page: '/ page' }, showTotal: (total, range) => `Showing ${range[0]} to ${range[1]} of ${total} campaigns` }}
+          pagination={{
+            current: page,
+            pageSize: pageSize,
+            showSizeChanger: true,
+            pageSizeOptions: ['8', '20', '50'],
+            locale: { items_per_page: '/ page' },
+            showTotal: (total, range) => `Showing ${range[0]} to ${range[1]} of ${total} campaigns`,
+            onChange: (p, ps) => {
+              setPage(p);
+              setPageSize(ps);
+            },
+            onShowSizeChange: (_, ps) => {
+              setPage(1);
+              setPageSize(ps);
+            },
+          }}
           expandable={{
             expandedRowKeys: expandedKeys,
             onExpandedRowsChange: (keys) => setExpandedKeys(keys as React.Key[]),

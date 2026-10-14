@@ -36,6 +36,8 @@ export default function BreakdownPage() {
   const [summary, setSummary] = useState<{ cost: number; revenue: number; profit: number; roi: number; unattributedRevenue?: number } | null>(null);
   const [delta, setDelta] = useState<{ cost: number | null; revenue: number | null; profit: number | null; roi: number | null } | null>(null);
   const seq = useRef(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     fetch('/api/accounts/mine')
@@ -73,6 +75,7 @@ export default function BreakdownPage() {
   }, [filters]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { setPage(1); }, [search]);
 
   const label = (cid: string) => {
     const m = meta[cid];
@@ -98,21 +101,31 @@ export default function BreakdownPage() {
       sorter: (a: Account, b: Account) => label(a.accountCid).localeCompare(label(b.accountCid)),
     },
     { title: 'Campaigns', dataIndex: 'campaigns', align: 'right' as const, width: 120, sorter: (a: Account, b: Account) => a.campaigns - b.campaigns },
-    { title: 'Cost', dataIndex: 'cost', align: 'right' as const, width: 130,
+    {
+      title: 'Cost', dataIndex: 'cost', align: 'right' as const, width: 130,
       render: (v: number) => <span className="m-cost">{fmtMoney(v)}</span>,
-      sorter: (a: Account, b: Account) => a.cost - b.cost },
-    { title: 'Revenue', dataIndex: 'revenue', align: 'right' as const, width: 130,
+      sorter: (a: Account, b: Account) => a.cost - b.cost
+    },
+    {
+      title: 'Revenue', dataIndex: 'revenue', align: 'right' as const, width: 130,
       render: (v: number) => <span className="m-rev">{fmtMoney(v)}</span>,
-      sorter: (a: Account, b: Account) => a.revenue - b.revenue },
-    { title: 'Profit', dataIndex: 'profit', align: 'right' as const, width: 130,
+      sorter: (a: Account, b: Account) => a.revenue - b.revenue
+    },
+    {
+      title: 'Profit', dataIndex: 'profit', align: 'right' as const, width: 130,
       render: (v: number) => <span className="m-profit">{fmtMoney(v)}</span>,
-      sorter: (a: Account, b: Account) => a.profit - b.profit },
-    { title: 'ROI', dataIndex: 'roi', align: 'right' as const, width: 100,
+      sorter: (a: Account, b: Account) => a.profit - b.profit
+    },
+    {
+      title: 'ROI', dataIndex: 'roi', align: 'right' as const, width: 100,
       render: (v: number) => <span className="m-roi">{fmtPct(v)}</span>,
-      sorter: (a: Account, b: Account) => a.roi - b.roi },
-    { title: 'Conversions', dataIndex: 'conversions', align: 'right' as const, width: 130,
+      sorter: (a: Account, b: Account) => a.roi - b.roi
+    },
+    {
+      title: 'Conversions', dataIndex: 'conversions', align: 'right' as const, width: 130,
       render: (v: number) => fmtInt(v),
-      sorter: (a: Account, b: Account) => a.conversions - b.conversions },
+      sorter: (a: Account, b: Account) => a.conversions - b.conversions
+    },
     {
       title: 'Actions', width: 80, align: 'center' as const,
       render: (_: any, row: Account) => (
@@ -171,7 +184,16 @@ export default function BreakdownPage() {
           loading={loading}
           dataSource={filtered}
           columns={columns as any}
-          pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '25', '50'], locale: { items_per_page: '/ page' }, showTotal: (total, range) => `Showing ${range[0]} to ${range[1]} of ${total} accounts` }}
+          pagination={{
+            current: page,
+            pageSize: pageSize,
+            showSizeChanger: true,
+            pageSizeOptions: ['10', '25', '50'],
+            locale: { items_per_page: '/ page' },
+            showTotal: (total, range) => `Showing ${range[0]} to ${range[1]} of ${total} accounts`,
+            onChange: (p, ps) => { setPage(p); setPageSize(ps); },
+            onShowSizeChange: (_, ps) => { setPage(1); setPageSize(ps); },
+          }}
           expandable={{
             expandedRowKeys: expandedKeys,
             onExpandedRowsChange: (keys) => setExpandedKeys(keys as string[]),

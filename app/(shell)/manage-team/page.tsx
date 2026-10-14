@@ -33,6 +33,8 @@ export default function ManageTeamPage() {
   const [editing, setEditing] = useState<TeamUser | null>(null);
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const accountLabel = (cid: string, seq: number | null) =>
     seq != null ? `androidadvices ${String(seq).padStart(2, '0')} (${cid})` : cid;
@@ -152,10 +154,14 @@ export default function ManageTeamPage() {
   const columns = [
     { title: 'Email', dataIndex: 'email' },
     { title: 'Username', dataIndex: 'username', render: (v: string | null) => v || '—' },
-    { title: 'Role', dataIndex: 'role', width: 100,
-      render: (r: string) => <span className={`status-pill ${r}`}>{r}</span> },
-    { title: 'Status', dataIndex: 'status', width: 100,
-      render: (s: string) => <span className={`status-pill ${s === 'active' ? 'active' : s === 'pending' ? 'pending' : 'inactive'}`}>{s}</span> },
+    {
+      title: 'Role', dataIndex: 'role', width: 100,
+      render: (r: string) => <span className={`status-pill ${r}`}>{r}</span>
+    },
+    {
+      title: 'Status', dataIndex: 'status', width: 100,
+      render: (s: string) => <span className={`status-pill ${s === 'active' ? 'active' : s === 'pending' ? 'pending' : 'inactive'}`}>{s}</span>
+    },
     { title: 'Accounts', dataIndex: 'accountCount', width: 100, align: 'right' as const, render: (n: number) => fmtInt(n) },
     {
       title: 'Actions', width: 240, align: 'right' as const,
@@ -198,7 +204,16 @@ export default function ManageTeamPage() {
           loading={loading}
           dataSource={users}
           columns={columns as any}
-          pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '25', '50'], locale: { items_per_page: '/ page' }, showTotal: (total, range) => `Showing ${range[0]} to ${range[1]} of ${total} members` }}
+          pagination={{
+            current: page,
+            pageSize: pageSize,
+            showSizeChanger: true,
+            pageSizeOptions: ['10', '25', '50'],
+            locale: { items_per_page: '/ page' },
+            showTotal: (total, range) => `Showing ${range[0]} to ${range[1]} of ${total} members`,
+            onChange: (p, ps) => { setPage(p); setPageSize(ps); },
+            onShowSizeChange: (_, ps) => { setPage(1); setPageSize(ps); },
+          }}
         />
       </div>
 
