@@ -59,13 +59,13 @@ export async function GET(req: NextRequest) {
       c.name AS campaign_name,
       c.country,
       SUM(a.cost_micros) / 1000000.0 AS cost,
-      SUM(a.clicks) AS clicks,
+      COALESCE(SUM(r.clicks), 0) AS clicks,
       SUM(a.conversions) AS conversions,
       COALESCE(SUM(r.earnings), 0) AS revenue
     FROM ads_daily a
     LEFT JOIN campaigns c ON c.account_cid = a.account_cid AND c.campaign_id = a.campaign_id
     LEFT JOIN (
-      SELECT channel_id, date, SUM(earnings) AS earnings
+      SELECT channel_id, date, SUM(earnings) AS earnings, SUM(clicks) AS clicks
       FROM adsense_daily GROUP BY channel_id, date
     ) r ON r.channel_id = a.channel_id AND r.date = a.date AND a.channel_id != ''
     WHERE a.account_cid = ANY(${targets})
