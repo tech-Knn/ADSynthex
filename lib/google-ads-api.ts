@@ -259,6 +259,15 @@ export function initializeGoogleAdsClient(customerId?: string | null) {
   }
 }
 
+/**
+ * Return a Customer instance scoped to a child account under the correct MCC.
+ * Use for write operations against a specific account (mutations etc.).
+ */
+export function getCustomerForAccount(accountId: string): any {
+  const mccCreds = getMCCForAccount(accountId) || getDefaultMCC();
+  return getOrCreateCustomer(accountId, mccCreds);
+}
+
 // Build campaign query without restricting by status so we capture ENABLED, PAUSED, REMOVED etc.
 function buildActiveCampaignQuery(startDate: string, endDate: string) {
   const datePattern = /^\d{4}-\d{2}-\d{2}$/;
