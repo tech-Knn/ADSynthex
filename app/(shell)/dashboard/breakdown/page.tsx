@@ -7,7 +7,7 @@ import {
   SearchOutlined, DownOutlined, RightOutlined, MoreOutlined, ExpandAltOutlined, ShrinkOutlined,
   QuestionCircleOutlined, AimOutlined,
 } from '@ant-design/icons';
-import FilterBar, { FilterValues, defaultRange } from '@/components/AppShell/FilterBar';
+import FilterBar, { FilterValues, defaultRange, loadRange, saveRange } from '@/components/AppShell/FilterBar';
 import Kpi, { fmtDate, fmtInt, fmtMoney, fmtPct } from '@/components/AppShell/Kpi';
 
 type Daily = { date: string; cost: number; revenue: number; profit: number; roi: number; conversions: number };
@@ -76,6 +76,10 @@ export default function BreakdownPage() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setPage(1); }, [search]);
+  useEffect(() => {
+    const saved = loadRange();
+    if (saved) setFilters((f) => ({ ...f, range: saved }));
+  }, []);
 
   const label = (cid: string) => {
     const m = meta[cid];
@@ -147,7 +151,7 @@ export default function BreakdownPage() {
       </div>
 
       <FilterBar
-        value={filters} onChange={setFilters} onRefresh={load}
+        value={filters} onChange={(v) => { setFilters(v); saveRange(v.range); }} onRefresh={load}
         onExport={() => exportCsv(filtered, label)} showExport loading={loading}
       />
 

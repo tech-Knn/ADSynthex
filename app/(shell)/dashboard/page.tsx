@@ -11,7 +11,7 @@ import {
   Tooltip, Legend, Title,
 } from 'chart.js';
 import { Chart } from 'react-chartjs-2';
-import FilterBar, { FilterValues, defaultRange } from '@/components/AppShell/FilterBar';
+import FilterBar, { FilterValues, defaultRange, loadRange, saveRange } from '@/components/AppShell/FilterBar';
 import Kpi, { fmtDayShort, fmtInt, fmtMoney, fmtPct } from '@/components/AppShell/Kpi';
 
 ChartJS.register(
@@ -59,6 +59,10 @@ export default function DashboardPage() {
   }, [filters]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const saved = loadRange();
+    if (saved) setFilters((f) => ({ ...f, range: saved }));
+  }, []);
 
   const chartData = buildChartData(data?.byDay || []);
 
@@ -69,7 +73,7 @@ export default function DashboardPage() {
         <p>Track your performance across Google Ads and AdSense in one place</p>
       </div>
 
-      <FilterBar value={filters} onChange={setFilters} onRefresh={load} loading={loading} />
+      <FilterBar value={filters} onChange={(v) => { setFilters(v); saveRange(v.range); }} onRefresh={load} loading={loading} />
 
       <div className={`kpi-grid ${data?.summary.unattributedRevenue !== undefined ? 'cols-6' : 'cols-5'}`}>
         <Kpi label="Total Cost" tone="red"

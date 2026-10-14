@@ -101,6 +101,39 @@ export function defaultRange(): [Dayjs, Dayjs] {
   return [today, today];
 }
 
+// --- Shared date range across Dashboard / Breakdown / Campaigns ---
+// Stored as ISO day strings in sessionStorage so the selection carries
+// across page navigation (and reloads within the same browser tab).
+const RANGE_STORAGE_KEY = 'asx_date_range_v1';
+
+export function saveRange(range: [Dayjs, Dayjs]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.setItem(
+      RANGE_STORAGE_KEY,
+      JSON.stringify([range[0].format('YYYY-MM-DD'), range[1].format('YYYY-MM-DD')]),
+    );
+  } catch {
+    /* sessionStorage unavailable — ignore */
+  }
+}
+
+export function loadRange(): [Dayjs, Dayjs] | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = sessionStorage.getItem(RANGE_STORAGE_KEY);
+    if (!raw) return null;
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr) || arr.length !== 2) return null;
+    const start = dayjs(arr[0]);
+    const end = dayjs(arr[1]);
+    if (!start.isValid() || !end.isValid()) return null;
+    return [start, end];
+  } catch {
+    return null;
+  }
+}
+
 function rangePresets(): { label: string; value: [Dayjs, Dayjs] }[] {
   const today = dayjs();
   const yesterday = today.subtract(1, 'day');
