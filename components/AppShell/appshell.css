@@ -539,14 +539,18 @@
 }
 
 /* ---------- Buttons ---------- */
+/* Hardcoded gradient so this class works outside .appshell too (e.g. /login) */
 .btn-primary-gradient.ant-btn {
-  background: linear-gradient(135deg, var(--asx-primary), var(--asx-accent)) !important;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
   border: none !important;
   color: #fff !important;
-  box-shadow: var(--asx-shadow-lg);
+  box-shadow: 0 10px 30px -14px rgba(79, 70, 229, 0.5);
 }
 
-.btn-primary-gradient.ant-btn:hover {
+.btn-primary-gradient.ant-btn:hover,
+.btn-primary-gradient.ant-btn:focus {
+  background: linear-gradient(135deg, #4f46e5, #7c3aed) !important;
+  color: #fff !important;
   filter: brightness(1.05);
 }
 
