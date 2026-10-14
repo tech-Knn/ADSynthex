@@ -22,14 +22,20 @@ export async function GET(req: NextRequest) {
   const scopeUserId = searchParams.get('scopeUserId');
   const effectiveUserId = scopeUserId && session.role === 'admin' ? scopeUserId : session.userId;
   const effectiveRole = scopeUserId && session.role === 'admin' ? 'user' : session.role;
+  // Only true admin views (no scopeUserId) see publisher-wide unattributed revenue.
+  // Non-admins and per-user admin views do not.
+  const showUnattributed = session.role === 'admin' && !scopeUserId;
+
   const allowed = await getAccountsForUser(effectiveUserId, effectiveRole);
   const targets = account && account !== 'all' ? allowed.filter((c) => c === account) : allowed;
   if (targets.length === 0) {
-    return NextResponse.json({ summary: { ...emptySummary(), unattributedRevenue: 0 }, byDay: [], delta: emptyDelta() });
+    return NextResponse.json({ summary: emptySummary(), byDay: [], delta: emptyDelta() });
   }
 
   const byDay = await fetchDaily(targets, startDate, endDate);
-  const unattributedRevenue = await fetchUnattributed(targets, startDate, endDate);
+  const unattributedRevenue = showUnattributed
+    ? await fetchUnattributed(startDate, endDate)
+    : 0;
 
   // Previous period delta — same window length ending the day before startDate.
   const start = new Date(startDate);
@@ -38,29 +44,42 @@ export async function GET(req: NextRequest) {
   const prevEnd = new Date(start.getTime() - 86400000);
   const prevStart = new Date(prevEnd.getTime() - (windowDays - 1) * 86400000);
   const prev = await fetchTotals(targets, iso(prevStart), iso(prevEnd));
+  const prevUnattributed = showUnattributed
+    ? await fetchUnattributed(iso(prevStart), iso(prevEnd))
+    : 0;
 
-  const totals = byDay.reduce(
+  const attributed = byDay.reduce(
     (acc, d) => {
       acc.cost += d.cost;
       acc.revenue += d.revenue;
-      acc.profit += d.profit;
       return acc;
     },
-    { cost: 0, revenue: 0, profit: 0 },
+    { cost: 0, revenue: 0 },
   );
 
-  const summary = {
-    cost: totals.cost,
-    revenue: totals.revenue,
-    profit: totals.profit,
-    roi: totals.cost > 0 ? (totals.profit / totals.cost) * 100 : 0,
-    unattributedRevenue,
+  // Admin dashboards include unattributed in Total Revenue (and therefore
+  // Profit and ROI). Scoped / non-admin views keep attributed-only numbers.
+  const totalRevenue = attributed.revenue + unattributedRevenue;
+  const totalProfit = totalRevenue - attributed.cost;
+  const totalRoi = attributed.cost > 0 ? (totalProfit / attributed.cost) * 100 : 0;
+
+  const prevRevenueTotal = prev.revenue + prevUnattributed;
+  const prevProfitTotal = prevRevenueTotal - prev.cost;
+  const prevRoiTotal = prev.cost > 0 ? (prevProfitTotal / prev.cost) * 100 : 0;
+
+  const summary: Record<string, number> = {
+    cost: attributed.cost,
+    revenue: totalRevenue,
+    profit: totalProfit,
+    roi: totalRoi,
   };
+  if (showUnattributed) summary.unattributedRevenue = unattributedRevenue;
+
   const delta = {
-    cost: pctDelta(totals.cost, prev.cost),
-    revenue: pctDelta(totals.revenue, prev.revenue),
-    profit: pctDelta(totals.profit, prev.profit),
-    roi: pctDelta(summary.roi, prev.cost > 0 ? ((prev.revenue - prev.cost) / prev.cost) * 100 : 0),
+    cost: pctDelta(attributed.cost, prev.cost),
+    revenue: pctDelta(totalRevenue, prevRevenueTotal),
+    profit: pctDelta(totalProfit, prevProfitTotal),
+    roi: pctDelta(totalRoi, prevRoiTotal),
   };
 
   return NextResponse.json({ summary, byDay, delta });
@@ -106,11 +125,7 @@ async function fetchDaily(cids: string[], startDate: string, endDate: string): P
     }));
 }
 
-async function fetchUnattributed(_cids: string[], startDate: string, endDate: string): Promise<number> {
-  // Publisher-wide unattributed: adsense earnings for channels that have no
-  // matching ads_daily row anywhere for the same date. We don't scope by
-  // account_cid because unattributed earnings typically have NULL account_cid
-  // in the first place (they can't be mapped to a specific Google Ads account).
+async function fetchUnattributed(startDate: string, endDate: string): Promise<number> {
   const rows = await prisma.$queryRaw<any[]>`
     WITH ads_channels AS (
       SELECT DISTINCT channel_id, date

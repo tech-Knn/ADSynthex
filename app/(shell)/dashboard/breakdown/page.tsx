@@ -33,7 +33,7 @@ export default function BreakdownPage() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
-  const [summary, setSummary] = useState<{ cost: number; revenue: number; profit: number; roi: number; unattributedRevenue: number } | null>(null);
+  const [summary, setSummary] = useState<{ cost: number; revenue: number; profit: number; roi: number; unattributedRevenue?: number } | null>(null);
   const [delta, setDelta] = useState<{ cost: number | null; revenue: number | null; profit: number | null; roi: number | null } | null>(null);
   const seq = useRef(0);
 
@@ -138,12 +138,14 @@ export default function BreakdownPage() {
         onExport={() => exportCsv(filtered, label)} showExport loading={loading}
       />
 
-      <div className="kpi-grid cols-5">
+      <div className={`kpi-grid${summary?.unattributedRevenue !== undefined ? ' cols-5' : ''}`}>
         <Kpi label="Total Cost" tone="red" value={fmtMoney(summary?.cost ?? 0)} delta={delta?.cost ?? null} invertDelta icon={<CalendarOutlined />} />
         <Kpi label="Total Revenue" tone="green" value={fmtMoney(summary?.revenue ?? 0)} delta={delta?.revenue ?? null} icon={<DollarOutlined />} />
         <Kpi label="Total Profit" tone="purple" value={fmtMoney(summary?.profit ?? 0)} delta={delta?.profit ?? null} icon={<LineChartOutlined />} />
         <Kpi label="ROI" tone="blue" value={fmtPct(summary?.roi ?? 0)} delta={delta?.roi ?? null} icon={<RiseOutlined />} />
-        <Kpi label="Unattributed Rev" tone="indigo" value={fmtMoney(summary?.unattributedRevenue ?? 0)} icon={<QuestionCircleOutlined />} />
+        {summary?.unattributedRevenue !== undefined && (
+          <Kpi label="Unattributed Rev" tone="indigo" value={fmtMoney(summary.unattributedRevenue)} icon={<QuestionCircleOutlined />} />
+        )}
       </div>
 
       <div className="panel">
