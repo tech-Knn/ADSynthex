@@ -106,25 +106,27 @@ async function fetchDaily(cids: string[], startDate: string, endDate: string): P
     }));
 }
 
-async function fetchUnattributed(cids: string[], startDate: string, endDate: string): Promise<number> {
+async function fetchUnattributed(_cids: string[], startDate: string, endDate: string): Promise<number> {
+  // Publisher-wide unattributed: adsense earnings for channels that have no
+  // matching ads_daily row anywhere for the same date. We don't scope by
+  // account_cid because unattributed earnings typically have NULL account_cid
+  // in the first place (they can't be mapped to a specific Google Ads account).
   const rows = await prisma.$queryRaw<any[]>`
     WITH ads_channels AS (
       SELECT DISTINCT channel_id, date
       FROM ads_daily
-      WHERE account_cid = ANY(${cids})
-        AND date BETWEEN ${startDate}::date AND ${endDate}::date
+      WHERE date BETWEEN ${startDate}::date AND ${endDate}::date
         AND channel_id != ''
     ),
-    adsense_in_scope AS (
+    adsense_total AS (
       SELECT channel_id, date, SUM(earnings) AS earnings
       FROM adsense_daily
-      WHERE account_cid = ANY(${cids})
-        AND date BETWEEN ${startDate}::date AND ${endDate}::date
+      WHERE date BETWEEN ${startDate}::date AND ${endDate}::date
       GROUP BY channel_id, date
     )
-    SELECT COALESCE(SUM(ais.earnings), 0) AS unattributed
-    FROM adsense_in_scope ais
-    LEFT JOIN ads_channels ac ON ac.channel_id = ais.channel_id AND ac.date = ais.date
+    SELECT COALESCE(SUM(at.earnings), 0) AS unattributed
+    FROM adsense_total at
+    LEFT JOIN ads_channels ac ON ac.channel_id = at.channel_id AND ac.date = at.date
     WHERE ac.channel_id IS NULL
   `;
   return Number(rows[0]?.unattributed) || 0;
