@@ -131,8 +131,9 @@ export default function CampaignsPage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ accountCid: row.accountCid, campaignId: row.campaignId, status: nextStatus }),
           });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Update failed');
+          let data: any = {};
+          try { data = await res.json(); } catch { /* non-JSON (e.g. ALB 502 HTML) */ }
+          if (!res.ok) throw new Error(data?.error || `Request failed (${res.status} ${res.statusText || ''})`);
           message.success(`${verb}d on Google Ads`);
         } catch (e: any) {
           // Revert

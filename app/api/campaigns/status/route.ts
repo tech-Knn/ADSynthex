@@ -36,10 +36,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'campaign not found' }, { status: 404 });
   }
 
-  // Mutate on Google Ads.
+  // Mutate on Google Ads (25s hard timeout so we never trip the ALB 60s idle limit).
+  const t0 = Date.now();
   try {
     const customer = getCustomerForAccount(accountCid);
-    await customer.service('CampaignService').mutate({
+    const mutatePromise = customer.service('CampaignService').mutate({
       customer_id: accountCid,
       operations: [{
         update: {
@@ -49,14 +50,21 @@ export async function POST(req: NextRequest) {
         update_mask: { paths: ['status'] },
       }],
     });
+    await Promise.race([
+      mutatePromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Google Ads mutation timed out after 25s')), 25000)),
+    ]);
+    console.log('[campaigns/status] mutate ok', { accountCid, campaignId, status, ms: Date.now() - t0 });
   } catch (err: any) {
-    console.error('[campaigns/status] Google Ads mutate failed', {
-      accountCid, campaignId, status, err: err?.message || String(err),
+    console.error('[campaigns/status] mutate failed', {
+      accountCid, campaignId, status, ms: Date.now() - t0,
+      err: err?.message || String(err),
+      errors: err?.errors || err?.failure?.errors,
     });
     const details = extractGoogleAdsError(err);
     return NextResponse.json(
       { error: details || 'Google Ads update failed' },
-      { status: 502 },
+      { status: 500 },
     );
   }
 
