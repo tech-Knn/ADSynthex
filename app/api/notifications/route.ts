@@ -5,9 +5,9 @@ import { getAccountsForUser } from '@/lib/account-scope';
 import { getAccountCurrency } from '@/lib/currency-converter';
 import { convertToUsd } from '@/lib/currency-service';
 
-const LOSING_PROFIT_THRESHOLD = -1;
 const LOW_ROI_THRESHOLD = 20;
 const MIN_COST_FOR_ALERT = 5;
+const WINDOW_DAYS = 7;
 
 export async function GET() {
   const session = await getSession();
@@ -16,22 +16,21 @@ export async function GET() {
   const cids = await getAccountsForUser(session.userId, session.role);
   if (cids.length === 0) return NextResponse.json({ notifications: [] });
 
+  // Determine window end from latest data in scope (fallback: today).
   const latest = await prisma.$queryRaw<any[]>`
-    SELECT MAX(date) AS d FROM ads_daily
-    WHERE account_cid = ANY(${cids})
+    SELECT MAX(date) AS d FROM ads_daily WHERE account_cid = ANY(${cids})
   `;
-  const latestDate = latest[0]?.d ? new Date(latest[0].d) : null;
-  if (!latestDate) return NextResponse.json({ notifications: [] });
-
-  const startIso = iso(new Date(latestDate.getTime() - 1 * 86400000));
+  const latestDate = latest[0]?.d ? new Date(latest[0].d) : new Date();
   const endIso = iso(latestDate);
+  const startIso = iso(new Date(latestDate.getTime() - (WINDOW_DAYS - 1) * 86400000));
 
   const rows = await prisma.$queryRaw<any[]>`
     SELECT
       a.account_cid,
       a.campaign_id,
-      a.date,
+      MAX(a.date) AS latest_date,
       c.name AS campaign_name,
+      c.country,
       SUM(a.cost_micros) / 1000000.0 AS cost,
       COALESCE(SUM(r.earnings), 0) AS revenue
     FROM ads_daily a
@@ -42,7 +41,7 @@ export async function GET() {
     ) r ON r.channel_id = a.channel_id AND r.date = a.date AND a.channel_id != ''
     WHERE a.account_cid = ANY(${cids})
       AND a.date BETWEEN ${startIso}::date AND ${endIso}::date
-    GROUP BY a.account_cid, a.campaign_id, a.date, c.name
+    GROUP BY a.account_cid, a.campaign_id, c.name, c.country
   `;
 
   const rateByAccount = new Map<string, number>();
@@ -51,11 +50,23 @@ export async function GET() {
     rateByAccount.set(cid, currency === 'USD' ? 1 : await convertToUsd(1, currency));
   }
 
+  // Account & owner lookup for admin
   const accountsMeta = await prisma.account.findMany({
     where: { cid: { in: cids } },
     select: { cid: true, seq: true },
   });
   const seqByCid = new Map(accountsMeta.map((a) => [a.cid, a.seq]));
+
+  let ownerByCid = new Map<string, string>();
+  if (session.role === 'admin') {
+    const allocs = await prisma.allocation.findMany({
+      where: { accountCid: { in: cids }, removedAt: null },
+      select: { accountCid: true, user: { select: { username: true, email: true } } },
+    });
+    ownerByCid = new Map(
+      allocs.map((a) => [a.accountCid, a.user.username || a.user.email.split('@')[0]]),
+    );
+  }
 
   const notifications = rows
     .map((row) => {
@@ -67,27 +78,24 @@ export async function GET() {
 
       if (cost < MIN_COST_FOR_ALERT) return null;
 
-      const losing = profit <= LOSING_PROFIT_THRESHOLD;
+      const losing = profit < 0;
       const lowRoi = !losing && roi < LOW_ROI_THRESHOLD;
       if (!losing && !lowRoi) return null;
 
       const seq = seqByCid.get(row.account_cid);
       const accountLabel = seq != null ? `aa-${String(seq).padStart(2, '0')}` : row.account_cid;
+      const ownerName = ownerByCid.get(row.account_cid) || null;
       const campaignName = row.campaign_name || row.campaign_id;
-      const dayIso = iso(new Date(row.date));
+      const latestDate = iso(new Date(row.latest_date));
 
       return {
-        id: `${row.account_cid}:${row.campaign_id}:${dayIso}`,
-        level: losing ? 'danger' as const : 'warn' as const,
-        title: losing ? `${campaignName} is losing money` : `${campaignName} ROI is low`,
-        description: losing
-          ? `Cost $${cost.toFixed(2)} vs revenue $${revenue.toFixed(2)} → profit -$${Math.abs(profit).toFixed(2)}`
-          : `ROI ${roi.toFixed(1)}% (cost $${cost.toFixed(2)}, revenue $${revenue.toFixed(2)})`,
-        campaignId: row.campaign_id,
-        accountCid: row.account_cid,
+        id: `${row.account_cid}:${row.campaign_id}`,
+        level: losing ? ('danger' as const) : ('warn' as const),
+        title: campaignName,
         accountLabel,
-        date: dayIso,
-        profit, cost, revenue, roi,
+        ownerName,
+        cost, revenue, profit, roi,
+        latestDate,
       };
     })
     .filter((n): n is NonNullable<typeof n> => n !== null)

@@ -38,23 +38,50 @@ type Notification = {
   id: string;
   level: 'danger' | 'warn';
   title: string;
-  description: string;
-  campaignId: string;
-  accountCid: string;
-  date: string;
+  accountLabel: string;
+  ownerName: string | null;
+  cost: number;
+  revenue: number;
+  profit: number;
+  roi: number;
+  latestDate: string;
 };
+
+const SEEN_KEY = 'asx:notif:seen';
+
+function readSeenIds(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = window.localStorage.getItem(SEEN_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw) as string[];
+    return new Set(arr);
+  } catch {
+    return new Set();
+  }
+}
+
+function writeSeenIds(ids: Set<string>) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(SEEN_KEY, JSON.stringify(Array.from(ids)));
+  } catch { /* quota exceeded, ignore */ }
+}
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() || '';
   const router = useRouter();
   const [me, setMe] = useState<MeUser | null>(null);
   const [notifs, setNotifs] = useState<Notification[]>([]);
+  const [seenIds, setSeenIds] = useState<Set<string>>(new Set());
+  const [notifOpen, setNotifOpen] = useState(false);
 
   useEffect(() => {
     fetch('/api/auth/me')
       .then((r) => r.json())
       .then((d) => setMe(d.user || null))
       .catch(() => setMe(null));
+    setSeenIds(readSeenIds());
   }, []);
 
   useEffect(() => {
@@ -69,6 +96,15 @@ export default function AppShell({ children }: { children: ReactNode }) {
     return () => { cancelled = true; clearInterval(t); };
   }, []);
 
+  const unread = notifs.filter((n) => !seenIds.has(n.id)).length;
+
+  const markAllSeen = () => {
+    const next = new Set(seenIds);
+    for (const n of notifs) next.add(n.id);
+    setSeenIds(next);
+    writeSeenIds(next);
+  };
+
   const visibleNav = useMemo(
     () => NAV.filter((n) => !n.adminOnly || me?.role === 'admin'),
     [me],
@@ -79,7 +115,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
       .sort((a, b) => b.href.length - a.href.length)
       .find((n) => pathname === n.href || pathname.startsWith(n.href + '/'))?.key ?? 'dashboard';
 
-  const unread = notifs.length;
 
   return (
     <div className="appshell">
@@ -127,7 +162,14 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <Dropdown
               trigger={['click']}
               placement="bottomRight"
-              dropdownRender={() => <NotificationsPanel notifs={notifs} />}
+              open={notifOpen}
+              onOpenChange={(open) => {
+                setNotifOpen(open);
+                if (open) markAllSeen();
+              }}
+              dropdownRender={() => (
+                <NotificationsPanel notifs={notifs} showOwner={me?.role === 'admin'} />
+              )}
             >
               <button type="button" className="appshell-icon-btn" aria-label="Notifications">
                 <BellOutlined />
@@ -152,13 +194,24 @@ export default function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
-function NotificationsPanel({ notifs }: { notifs: Notification[] }) {
+function NotificationsPanel({ notifs, showOwner }: { notifs: Notification[]; showOwner: boolean }) {
+  const fmtMoney = (n: number) =>
+    `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtDate = (iso: string) => {
+    const d = new Date(iso + 'T00:00:00Z');
+    return `${d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' })} ${d.getUTCDate()}`;
+  };
+
   return (
     <div className="notif-popover" style={{ background: '#fff', borderRadius: 12, border: '1px solid var(--asx-border)', boxShadow: '0 20px 40px -16px rgba(15, 23, 42, 0.15)' }}>
       <div className="notif-head">
         <div>
           <div className="notif-head-title">Notifications</div>
-          <div className="notif-head-sub">{notifs.length ? `${notifs.length} alerts in last 24h` : 'No alerts in last 24h'}</div>
+          <div className="notif-head-sub">
+            {notifs.length
+              ? `${notifs.length} ${notifs.length === 1 ? 'campaign needs' : 'campaigns need'} attention`
+              : 'All campaigns healthy'}
+          </div>
         </div>
       </div>
       {notifs.length === 0 ? (
@@ -176,8 +229,16 @@ function NotificationsPanel({ notifs }: { notifs: Notification[] }) {
                   <WarningOutlined style={{ color: n.level === 'danger' ? 'var(--asx-danger)' : 'var(--asx-warn)', marginRight: 6 }} />
                   {n.title}
                 </div>
-                <div className="notif-desc">{n.description}</div>
-                <div className="notif-meta">{n.date}</div>
+                <div className="notif-desc">
+                  {n.level === 'danger'
+                    ? <>Losing <strong>{fmtMoney(Math.abs(n.profit))}</strong> · Cost {fmtMoney(n.cost)} · Revenue {fmtMoney(n.revenue)}</>
+                    : <>ROI <strong>{n.roi.toFixed(1)}%</strong> · Cost {fmtMoney(n.cost)} · Revenue {fmtMoney(n.revenue)}</>}
+                </div>
+                <div className="notif-meta">
+                  {n.accountLabel}
+                  {showOwner && n.ownerName ? ` · ${n.ownerName}` : ''}
+                  {' · '}latest {fmtDate(n.latestDate)}
+                </div>
               </div>
             </div>
           ))}
