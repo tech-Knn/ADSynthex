@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Input, Select, Table, Button, Dropdown } from 'antd';
+import { App, Input, Select, Table, Button, Dropdown, Modal, Switch, Tooltip } from 'antd';
 import {
   AppstoreOutlined, DollarOutlined, LineChartOutlined, RiseOutlined,
   SearchOutlined, DownOutlined, RightOutlined, MoreOutlined, CalendarOutlined,
@@ -13,6 +13,7 @@ import Kpi, { fmtDate, fmtInt, fmtMoney, fmtPct } from '@/components/AppShell/Kp
 type Daily = { date: string; cost: number; revenue: number; profit: number; roi: number; clicks: number; conversions: number };
 type Campaign = {
   campaignId: string; campaignName: string; styleId: string; country: string; accountCid: string;
+  status: string;
   cost: number; revenue: number; profit: number; roi: number;
   clicks: number; conversions: number; cpa: number; rpc: number;
   daily: Daily[];
@@ -21,6 +22,8 @@ type Campaign = {
 type SortKey = 'cost' | 'revenue' | 'profit' | 'roi' | 'clicks' | 'conversions';
 
 export default function CampaignsPage() {
+  const { message, modal } = App.useApp();
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterValues>({
     adsAccount: 'all', adsenseAccount: 'androidadvice', range: defaultRange(),
   });
@@ -102,6 +105,50 @@ export default function CampaignsPage() {
     return { count: filtered.length, ...totals, roi };
   }, [filtered]);
 
+  const toggleStatus = (row: Campaign) => {
+    const nextStatus = row.status === 'ENABLED' ? 'PAUSED' : 'ENABLED';
+    const verb = nextStatus === 'PAUSED' ? 'Pause' : 'Resume';
+    modal.confirm({
+      title: `${verb} "${row.campaignName}"?`,
+      content: nextStatus === 'PAUSED'
+        ? 'This will pause the campaign on Google Ads immediately. It can be resumed later.'
+        : 'This will resume the campaign on Google Ads.',
+      okText: verb,
+      cancelText: 'Cancel',
+      okButtonProps: nextStatus === 'PAUSED' ? { danger: true } : {},
+      onOk: async () => {
+        const key = `${row.accountCid}::${row.campaignId}`;
+        setTogglingId(key);
+        // Optimistic update
+        setCampaigns((prev) => prev.map((c) =>
+          c.accountCid === row.accountCid && c.campaignId === row.campaignId
+            ? { ...c, status: nextStatus }
+            : c,
+        ));
+        try {
+          const res = await fetch('/api/campaigns/status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ accountCid: row.accountCid, campaignId: row.campaignId, status: nextStatus }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Update failed');
+          message.success(`${verb}d on Google Ads`);
+        } catch (e: any) {
+          // Revert
+          setCampaigns((prev) => prev.map((c) =>
+            c.accountCid === row.accountCid && c.campaignId === row.campaignId
+              ? { ...c, status: row.status }
+              : c,
+          ));
+          message.error(e.message || `${verb} failed`);
+        } finally {
+          setTogglingId(null);
+        }
+      },
+    });
+  };
+
   const columns = [
     {
       title: 'Campaign', dataIndex: 'campaignName',
@@ -109,6 +156,21 @@ export default function CampaignsPage() {
     },
     { title: 'Channel ID', dataIndex: 'styleId', width: 120, render: (v: string) => <span className="m-muted">{v}</span> },
     { title: 'Country', dataIndex: 'country', width: 100, render: (v: string) => <span className="m-muted">{v}</span> },
+    {
+      title: 'Status', dataIndex: 'status', width: 110, align: 'center' as const,
+      render: (_: string, row: Campaign) => {
+        const key = `${row.accountCid}::${row.campaignId}`;
+        const isToggling = togglingId === key;
+        const checked = row.status === 'ENABLED';
+        const removed = row.status === 'REMOVED';
+        if (removed) return <span className="status-pill inactive">removed</span>;
+        return (
+          <Tooltip title={checked ? 'Click to pause on Google Ads' : 'Click to resume on Google Ads'}>
+            <Switch size="small" checked={checked} loading={isToggling} onChange={() => toggleStatus(row)} />
+          </Tooltip>
+        );
+      },
+    },
     {
       title: 'Cost', dataIndex: 'cost', align: 'right' as const, width: 110,
       render: (v: number) => <span className="m-cost">{fmtMoney(v)}</span>
