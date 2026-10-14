@@ -5,7 +5,7 @@ import { Input, Select, Table, Button, Dropdown } from 'antd';
 import {
   AppstoreOutlined, DollarOutlined, LineChartOutlined, RiseOutlined,
   SearchOutlined, DownOutlined, RightOutlined, MoreOutlined, CalendarOutlined,
-  ExpandAltOutlined, ShrinkOutlined,
+  ExpandAltOutlined, ShrinkOutlined, QuestionCircleOutlined,
 } from '@ant-design/icons';
 import FilterBar, { FilterValues, defaultRange } from '@/components/AppShell/FilterBar';
 import Kpi, { fmtDate, fmtInt, fmtMoney, fmtPct } from '@/components/AppShell/Kpi';
@@ -25,6 +25,7 @@ export default function CampaignsPage() {
     adsAccount: 'all', adsenseAccount: 'androidadvice', range: defaultRange(),
   });
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [overview, setOverview] = useState<{ cost: number; revenue: number; profit: number; roi: number; adsenseClicks: number; unattributedRevenue?: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [country, setCountry] = useState<string>('all');
@@ -43,8 +44,14 @@ export default function CampaignsPage() {
         endDate: end.format('YYYY-MM-DD'),
         account: filters.adsAccount,
       });
-      const res = await fetch(`/api/dash/campaigns-daily?${qs.toString()}`).then((r) => r.json());
-      if (id === seq.current) setCampaigns(res.campaigns || []);
+      const [campaignsRes, summaryRes] = await Promise.all([
+        fetch(`/api/dash/campaigns-daily?${qs.toString()}`).then((r) => r.json()),
+        fetch(`/api/dash/summary?${qs.toString()}`).then((r) => r.json()),
+      ]);
+      if (id === seq.current) {
+        setCampaigns(campaignsRes.campaigns || []);
+        setOverview(summaryRes.summary || null);
+      }
     } finally {
       if (id === seq.current) setLoading(false);
     }
@@ -132,12 +139,15 @@ export default function CampaignsPage() {
         onExport={() => exportCsv(filtered)} showExport loading={loading}
       />
 
-      <div className="kpi-grid cols-5">
+      <div className={`kpi-grid ${overview?.unattributedRevenue !== undefined ? 'cols-6' : 'cols-5'}`}>
         <Kpi label="Total Campaigns" tone="indigo" value={fmtInt(summary.count)} icon={<AppstoreOutlined />} />
-        <Kpi label="Total Cost" tone="red" value={fmtMoney(summary.cost)} icon={<CalendarOutlined />} />
-        <Kpi label="Total Revenue" tone="green" value={fmtMoney(summary.revenue)} icon={<DollarOutlined />} />
-        <Kpi label="Total Profit" tone="purple" value={fmtMoney(summary.profit)} icon={<LineChartOutlined />} />
-        <Kpi label="Avg. ROI" tone="blue" value={fmtPct(summary.roi)} icon={<RiseOutlined />} />
+        <Kpi label="Total Cost" tone="red" value={fmtMoney(overview?.cost ?? 0)} icon={<CalendarOutlined />} />
+        <Kpi label="Total Revenue" tone="green" value={fmtMoney(overview?.revenue ?? 0)} icon={<DollarOutlined />} />
+        <Kpi label="Total Profit" tone="purple" value={fmtMoney(overview?.profit ?? 0)} icon={<LineChartOutlined />} />
+        <Kpi label="Avg. ROI" tone="blue" value={fmtPct(overview?.roi ?? 0)} icon={<RiseOutlined />} />
+        {overview?.unattributedRevenue !== undefined && (
+          <Kpi label="Unattributed Rev" tone="indigo" value={fmtMoney(overview.unattributedRevenue)} icon={<QuestionCircleOutlined />} />
+        )}
       </div>
 
       <div className="panel">
