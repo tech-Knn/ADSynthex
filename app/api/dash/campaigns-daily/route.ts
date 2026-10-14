@@ -21,6 +21,7 @@ type CampaignRow = {
   styleId: string;
   country: string;
   accountCid: string;
+  status: string;
   cost: number;
   revenue: number;
   profit: number;
@@ -58,6 +59,7 @@ export async function GET(req: NextRequest) {
       a.date,
       c.name AS campaign_name,
       c.country,
+      c.status AS campaign_status,
       MAX(a.channel_id) AS channel_id,
       SUM(a.cost_micros) / 1000000.0 AS cost,
       COALESCE(SUM(r.clicks), 0) AS clicks,
@@ -71,7 +73,7 @@ export async function GET(req: NextRequest) {
     ) r ON r.channel_id = a.channel_id AND r.date = a.date AND a.channel_id != ''
     WHERE a.account_cid = ANY(${targets})
       AND a.date BETWEEN ${startDate}::date AND ${endDate}::date
-    GROUP BY a.account_cid, a.campaign_id, a.date, c.name, c.country
+    GROUP BY a.account_cid, a.campaign_id, a.date, c.name, c.country, c.status
     ORDER BY a.campaign_id ASC, a.date ASC
   `;
 
@@ -100,6 +102,7 @@ export async function GET(req: NextRequest) {
         styleId: row.channel_id || '—',
         country: row.country || '—',
         accountCid: row.account_cid,
+        status: row.campaign_status || 'UNKNOWN',
         cost: 0, revenue: 0, profit: 0, roi: 0,
         clicks: 0, conversions: 0, cpa: 0, rpc: 0,
         daily: [],
