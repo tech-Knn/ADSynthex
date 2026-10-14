@@ -1,0 +1,87 @@
+.asx-login {
+  min-height: 100vh;
+  background: #f8faff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  position: relative;
+  overflow: hidden;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.asx-login-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.asx-login-blob-1 {
+  width: 480px;
+  height: 480px;
+  background: radial-gradient(circle, #8b5cf6 0%, transparent 70%);
+  top: -140px;
+  left: -140px;
+}
+
+.asx-login-blob-2 {
+  width: 520px;
+  height: 520px;
+  background: radial-gradient(circle, #6366f1 0%, transparent 70%);
+  bottom: -180px;
+  right: -160px;
+}
+
+.asx-login-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 420px;
+  background: #ffffff;
+  border: 1px solid #e8ecf6;
+  border-radius: 18px;
+  padding: 36px 32px 28px;
+  box-shadow: 0 20px 50px -20px rgba(79, 70, 229, 0.18);
+}
+
+.asx-login-head {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.asx-login-logo {
+  display: inline-flex;
+  padding: 10px;
+  background: #ffffff;
+  border: 1px solid #e8ecf6;
+  border-radius: 16px;
+  box-shadow: 0 4px 10px -4px rgba(79, 70, 229, 0.15);
+  margin-bottom: 16px;
+}
+
+.asx-login-title.ant-typography {
+  margin: 0 !important;
+  font-size: 22px !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+}
+
+.asx-login-title .brand-x {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.asx-login-sub {
+  display: block;
+  margin-top: 6px;
+  font-size: 13px !important;
+}
+
+.asx-login-foot {
+  text-align: center;
+  margin-top: 8px;
+}
