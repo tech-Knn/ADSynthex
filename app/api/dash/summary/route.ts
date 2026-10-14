@@ -25,10 +25,11 @@ export async function GET(req: NextRequest) {
   const allowed = await getAccountsForUser(effectiveUserId, effectiveRole);
   const targets = account && account !== 'all' ? allowed.filter((c) => c === account) : allowed;
   if (targets.length === 0) {
-    return NextResponse.json({ summary: emptySummary(), byDay: [], delta: emptyDelta() });
+    return NextResponse.json({ summary: { ...emptySummary(), unattributedRevenue: 0 }, byDay: [], delta: emptyDelta() });
   }
 
   const byDay = await fetchDaily(targets, startDate, endDate);
+  const unattributedRevenue = await fetchUnattributed(targets, startDate, endDate);
 
   // Previous period delta — same window length ending the day before startDate.
   const start = new Date(startDate);
@@ -53,6 +54,7 @@ export async function GET(req: NextRequest) {
     revenue: totals.revenue,
     profit: totals.profit,
     roi: totals.cost > 0 ? (totals.profit / totals.cost) * 100 : 0,
+    unattributedRevenue,
   };
   const delta = {
     cost: pctDelta(totals.cost, prev.cost),
@@ -102,6 +104,30 @@ async function fetchDaily(cids: string[], startDate: string, endDate: string): P
       profit: v.revenue - v.cost,
       roi: v.cost > 0 ? ((v.revenue - v.cost) / v.cost) * 100 : 0,
     }));
+}
+
+async function fetchUnattributed(cids: string[], startDate: string, endDate: string): Promise<number> {
+  const rows = await prisma.$queryRaw<any[]>`
+    WITH ads_channels AS (
+      SELECT DISTINCT channel_id, date
+      FROM ads_daily
+      WHERE account_cid = ANY(${cids})
+        AND date BETWEEN ${startDate}::date AND ${endDate}::date
+        AND channel_id != ''
+    ),
+    adsense_in_scope AS (
+      SELECT channel_id, date, SUM(earnings) AS earnings
+      FROM adsense_daily
+      WHERE account_cid = ANY(${cids})
+        AND date BETWEEN ${startDate}::date AND ${endDate}::date
+      GROUP BY channel_id, date
+    )
+    SELECT COALESCE(SUM(ais.earnings), 0) AS unattributed
+    FROM adsense_in_scope ais
+    LEFT JOIN ads_channels ac ON ac.channel_id = ais.channel_id AND ac.date = ais.date
+    WHERE ac.channel_id IS NULL
+  `;
+  return Number(rows[0]?.unattributed) || 0;
 }
 
 async function fetchTotals(cids: string[], startDate: string, endDate: string) {

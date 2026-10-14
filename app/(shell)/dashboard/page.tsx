@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Space, Spin } from 'antd';
-import { ArrowRightOutlined, ExportOutlined, CalendarOutlined, DollarOutlined, LineChartOutlined, RiseOutlined, PieChartOutlined } from '@ant-design/icons';
+import { ArrowRightOutlined, ExportOutlined, CalendarOutlined, DollarOutlined, LineChartOutlined, RiseOutlined, PieChartOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import Link from 'next/link';
 import {
   Chart as ChartJS, CategoryScale, LinearScale,
@@ -24,7 +24,7 @@ ChartJS.register(
 type DayRow = { date: string; cost: number; revenue: number; profit: number; roi: number };
 
 interface SummaryResponse {
-  summary: { cost: number; revenue: number; profit: number; roi: number };
+  summary: { cost: number; revenue: number; profit: number; roi: number; unattributedRevenue: number };
   byDay: DayRow[];
   delta: { cost: number | null; revenue: number | null; profit: number | null; roi: number | null };
 }
@@ -71,7 +71,7 @@ export default function DashboardPage() {
 
       <FilterBar value={filters} onChange={setFilters} onRefresh={load} loading={loading} />
 
-      <div className="kpi-grid">
+      <div className="kpi-grid cols-5">
         <Kpi label="Total Cost" tone="red"
           value={fmtMoney(data?.summary.cost ?? 0)}
           delta={data?.delta.cost ?? null} invertDelta
@@ -91,6 +91,10 @@ export default function DashboardPage() {
           value={fmtPct(data?.summary.roi ?? 0)}
           delta={data?.delta.roi ?? null}
           icon={<RiseOutlined />}
+        />
+        <Kpi label="Unattributed Rev" tone="indigo"
+          value={fmtMoney(data?.summary.unattributedRevenue ?? 0)}
+          icon={<QuestionCircleOutlined />}
         />
       </div>
 
