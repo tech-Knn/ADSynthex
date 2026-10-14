@@ -24,7 +24,7 @@ ChartJS.register(
 type DayRow = { date: string; cost: number; revenue: number; profit: number; roi: number };
 
 interface SummaryResponse {
-  summary: { cost: number; revenue: number; profit: number; roi: number; unattributedRevenue: number };
+  summary: { cost: number; revenue: number; profit: number; roi: number; unattributedRevenue?: number };
   byDay: DayRow[];
   delta: { cost: number | null; revenue: number | null; profit: number | null; roi: number | null };
 }
@@ -71,7 +71,7 @@ export default function DashboardPage() {
 
       <FilterBar value={filters} onChange={setFilters} onRefresh={load} loading={loading} />
 
-      <div className="kpi-grid cols-5">
+      <div className={`kpi-grid${data?.summary.unattributedRevenue !== undefined ? ' cols-5' : ''}`}>
         <Kpi label="Total Cost" tone="red"
           value={fmtMoney(data?.summary.cost ?? 0)}
           delta={data?.delta.cost ?? null} invertDelta
@@ -92,10 +92,12 @@ export default function DashboardPage() {
           delta={data?.delta.roi ?? null}
           icon={<RiseOutlined />}
         />
-        <Kpi label="Unattributed Rev" tone="indigo"
-          value={fmtMoney(data?.summary.unattributedRevenue ?? 0)}
-          icon={<QuestionCircleOutlined />}
-        />
+        {data?.summary.unattributedRevenue !== undefined && (
+          <Kpi label="Unattributed Rev" tone="indigo"
+            value={fmtMoney(data.summary.unattributedRevenue)}
+            icon={<QuestionCircleOutlined />}
+          />
+        )}
       </div>
 
       <div className="panel">
