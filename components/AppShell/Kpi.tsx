@@ -20,7 +20,7 @@ export default function Kpi({ label, value, delta, tone = 'blue', icon, invertDe
   const sign = hasDelta ? Math.abs(delta as number).toFixed(1) : '';
 
   return (
-    <div className="kpi">
+    <div className={`kpi tone-${tone}`}>
       <div className="kpi-head">
         <span className="kpi-label">{label}</span>
         <span className={`kpi-icon ${tone}`}>{icon}</span>
