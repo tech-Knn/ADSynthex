@@ -5,7 +5,7 @@ import { getAccountsForUser } from '@/lib/account-scope';
 import { getAccountCurrency } from '@/lib/currency-converter';
 import { convertToUsd } from '@/lib/currency-service';
 
-type DayRow = { date: string; cost: number; revenue: number; profit: number; roi: number };
+type DayRow = { date: string; cost: number; revenue: number; profit: number; roi: number; clicks: number };
 
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -33,9 +33,12 @@ export async function GET(req: NextRequest) {
   }
 
   const byDay = await fetchDaily(targets, startDate, endDate);
-  const unattributedRevenue = showUnattributed
+  const attributedClicks = await fetchAdsenseClicks(targets, startDate, endDate);
+  const unatt = showUnattributed
     ? await fetchUnattributed(startDate, endDate)
-    : 0;
+    : { revenue: 0, clicks: 0 };
+  const unattributedRevenue = unatt.revenue;
+  const unattributedClicks = unatt.clicks;
 
   // Previous period delta — same window length ending the day before startDate.
   const start = new Date(startDate);
@@ -67,11 +70,13 @@ export async function GET(req: NextRequest) {
   const prevProfitTotal = prevRevenueTotal - prev.cost;
   const prevRoiTotal = prev.cost > 0 ? (prevProfitTotal / prev.cost) * 100 : 0;
 
+  const totalClicks = attributedClicks + unattributedClicks;
   const summary: Record<string, number> = {
     cost: attributed.cost,
     revenue: totalRevenue,
     profit: totalProfit,
     roi: totalRoi,
+    adsenseClicks: totalClicks,
   };
   if (showUnattributed) summary.unattributedRevenue = unattributedRevenue;
 
@@ -91,10 +96,11 @@ async function fetchDaily(cids: string[], startDate: string, endDate: string): P
       a.account_cid,
       a.date,
       SUM(a.cost_micros) / 1000000.0 AS cost,
-      COALESCE(SUM(r.earnings), 0) AS revenue
+      COALESCE(SUM(r.earnings), 0) AS revenue,
+      COALESCE(SUM(r.clicks), 0) AS clicks
     FROM ads_daily a
     LEFT JOIN (
-      SELECT channel_id, date, SUM(earnings) AS earnings
+      SELECT channel_id, date, SUM(earnings) AS earnings, SUM(clicks) AS clicks
       FROM adsense_daily GROUP BY channel_id, date
     ) r ON r.channel_id = a.channel_id AND r.date = a.date AND a.channel_id != ''
     WHERE a.account_cid = ANY(${cids})
@@ -104,13 +110,14 @@ async function fetchDaily(cids: string[], startDate: string, endDate: string): P
   `;
 
   const rateByAccount = await buildRates(cids);
-  const perDate = new Map<string, { cost: number; revenue: number }>();
+  const perDate = new Map<string, { cost: number; revenue: number; clicks: number }>();
   for (const row of rows) {
     const rate = rateByAccount.get(row.account_cid) ?? 1;
     const date = iso(new Date(row.date));
-    const bucket = perDate.get(date) || { cost: 0, revenue: 0 };
+    const bucket = perDate.get(date) || { cost: 0, revenue: 0, clicks: 0 };
     bucket.cost += (Number(row.cost) || 0) * rate;
     bucket.revenue += Number(row.revenue) || 0;
+    bucket.clicks += Number(row.clicks) || 0;
     perDate.set(date, bucket);
   }
 
@@ -120,12 +127,32 @@ async function fetchDaily(cids: string[], startDate: string, endDate: string): P
       date,
       cost: v.cost,
       revenue: v.revenue,
+      clicks: v.clicks,
       profit: v.revenue - v.cost,
       roi: v.cost > 0 ? ((v.revenue - v.cost) / v.cost) * 100 : 0,
     }));
 }
 
-async function fetchUnattributed(startDate: string, endDate: string): Promise<number> {
+async function fetchAdsenseClicks(cids: string[], startDate: string, endDate: string): Promise<number> {
+  // Attributed AdSense clicks: scoped to channels that have an ads_daily row
+  // for one of the user's allowed accounts in the date range.
+  const rows = await prisma.$queryRaw<any[]>`
+    WITH ads_channels AS (
+      SELECT DISTINCT channel_id, date
+      FROM ads_daily
+      WHERE account_cid = ANY(${cids})
+        AND date BETWEEN ${startDate}::date AND ${endDate}::date
+        AND channel_id != ''
+    )
+    SELECT COALESCE(SUM(ad.clicks), 0) AS clicks
+    FROM adsense_daily ad
+    JOIN ads_channels ac ON ac.channel_id = ad.channel_id AND ac.date = ad.date
+    WHERE ad.date BETWEEN ${startDate}::date AND ${endDate}::date
+  `;
+  return Number(rows[0]?.clicks) || 0;
+}
+
+async function fetchUnattributed(startDate: string, endDate: string): Promise<{ revenue: number; clicks: number }> {
   const rows = await prisma.$queryRaw<any[]>`
     WITH ads_channels AS (
       SELECT DISTINCT channel_id, date
@@ -134,17 +161,22 @@ async function fetchUnattributed(startDate: string, endDate: string): Promise<nu
         AND channel_id != ''
     ),
     adsense_total AS (
-      SELECT channel_id, date, SUM(earnings) AS earnings
+      SELECT channel_id, date, SUM(earnings) AS earnings, SUM(clicks) AS clicks
       FROM adsense_daily
       WHERE date BETWEEN ${startDate}::date AND ${endDate}::date
       GROUP BY channel_id, date
     )
-    SELECT COALESCE(SUM(at.earnings), 0) AS unattributed
+    SELECT
+      COALESCE(SUM(at.earnings), 0) AS revenue,
+      COALESCE(SUM(at.clicks), 0) AS clicks
     FROM adsense_total at
     LEFT JOIN ads_channels ac ON ac.channel_id = at.channel_id AND ac.date = at.date
     WHERE ac.channel_id IS NULL
   `;
-  return Number(rows[0]?.unattributed) || 0;
+  return {
+    revenue: Number(rows[0]?.revenue) || 0,
+    clicks: Number(rows[0]?.clicks) || 0,
+  };
 }
 
 async function fetchTotals(cids: string[], startDate: string, endDate: string) {
