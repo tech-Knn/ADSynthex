@@ -5,14 +5,21 @@ import { Button, Space, Spin } from 'antd';
 import { ArrowRightOutlined, ExportOutlined, CalendarOutlined, DollarOutlined, LineChartOutlined, RiseOutlined, PieChartOutlined } from '@ant-design/icons';
 import Link from 'next/link';
 import {
-  Chart as ChartJS, CategoryScale, LinearScale, BarElement,
-  LineElement, PointElement, Tooltip, Legend, Title,
+  Chart as ChartJS, CategoryScale, LinearScale,
+  BarElement, BarController,
+  LineElement, LineController, PointElement,
+  Tooltip, Legend, Title,
 } from 'chart.js';
 import { Chart } from 'react-chartjs-2';
 import FilterBar, { FilterValues, defaultRange } from '@/components/AppShell/FilterBar';
 import Kpi, { fmtDayShort, fmtMoney, fmtPct } from '@/components/AppShell/Kpi';
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Tooltip, Legend, Title);
+ChartJS.register(
+  CategoryScale, LinearScale,
+  BarElement, BarController,
+  LineElement, LineController, PointElement,
+  Tooltip, Legend, Title,
+);
 
 type DayRow = { date: string; cost: number; revenue: number; profit: number; roi: number };
 
