@@ -117,12 +117,12 @@ export default function BreakdownPage() {
     },
     {
       title: 'Profit', dataIndex: 'profit', align: 'right' as const, width: 130,
-      render: (v: number) => <span className="m-profit">{fmtMoney(v)}</span>,
+      render: (v: number) => <span className="m-profit" style={{ color: v < 0 ? '#ef4444' : '#10b981' }}>{fmtMoney(v)}</span>,
       sorter: (a: Account, b: Account) => a.profit - b.profit
     },
     {
       title: 'ROI', dataIndex: 'roi', align: 'right' as const, width: 100,
-      render: (v: number) => <span className="m-roi">{fmtPct(v)}</span>,
+      render: (v: number) => <span className="m-roi" style={{ color: v < 0 ? '#ef4444' : '#10b981' }}>{fmtPct(v)}</span>,
       sorter: (a: Account, b: Account) => a.roi - b.roi
     },
     {
@@ -227,8 +227,8 @@ function DailyRows({ daily }: { daily: Daily[] }) {
         { width: 120, align: 'right' as const, render: () => <span className="m-muted">—</span> },
         { dataIndex: 'cost', width: 130, align: 'right' as const, render: (v: number) => <span className="m-cost">{fmtMoney(v)}</span> },
         { dataIndex: 'revenue', width: 130, align: 'right' as const, render: (v: number) => <span className="m-rev">{fmtMoney(v)}</span> },
-        { dataIndex: 'profit', width: 130, align: 'right' as const, render: (v: number) => <span className="m-profit">{fmtMoney(v)}</span> },
-        { dataIndex: 'roi', width: 100, align: 'right' as const, render: (v: number) => <span className="m-roi">{fmtPct(v)}</span> },
+        { dataIndex: 'profit', width: 130, align: 'right' as const, render: (v: number) => <span className="m-profit" style={{ color: v < 0 ? '#ef4444' : '#10b981' }}>{fmtMoney(v)}</span> },
+        { dataIndex: 'roi', width: 100, align: 'right' as const, render: (v: number) => <span className="m-roi" style={{ color: v < 0 ? '#ef4444' : '#10b981' }}>{fmtPct(v)}</span> },
         { dataIndex: 'conversions', width: 130, align: 'right' as const, render: (v: number) => fmtInt(v) },
         { width: 80 },
       ]}

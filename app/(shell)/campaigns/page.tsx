@@ -119,11 +119,11 @@ export default function CampaignsPage() {
     },
     {
       title: 'Profit', dataIndex: 'profit', align: 'right' as const, width: 110,
-      render: (v: number) => <span className="m-profit">{fmtMoney(v)}</span>
+      render: (v: number) => <span className="m-profit" style={{ color: v < 0 ? '#ef4444' : '#10b981' }}>{fmtMoney(v)}</span>
     },
     {
       title: 'ROI', dataIndex: 'roi', align: 'right' as const, width: 90,
-      render: (v: number) => <span className="m-roi">{fmtPct(v)}</span>
+      render: (v: number) => <span className="m-roi" style={{ color: v < 0 ? '#ef4444' : '#10b981' }}>{fmtPct(v)}</span>
     },
     {
       title: 'CPA', dataIndex: 'cpa', align: 'right' as const, width: 90,
@@ -282,8 +282,8 @@ function CampaignDaily({ daily }: { daily: Daily[] }) {
         { width: 100, align: 'right' as const, render: () => <span className="m-muted">—</span> },
         { dataIndex: 'cost', width: 110, align: 'right' as const, render: (v: number) => <span className="m-cost">{fmtMoney(v)}</span> },
         { dataIndex: 'revenue', width: 110, align: 'right' as const, render: (v: number) => <span className="m-rev">{fmtMoney(v)}</span> },
-        { dataIndex: 'profit', width: 110, align: 'right' as const, render: (v: number) => <span className="m-profit">{fmtMoney(v)}</span> },
-        { dataIndex: 'roi', width: 90, align: 'right' as const, render: (v: number) => <span className="m-roi">{fmtPct(v)}</span> },
+        { dataIndex: 'profit', width: 110, align: 'right' as const, render: (v: number) => <span className="m-profit" style={{ color: v < 0 ? '#ef4444' : '#10b981' }}>{fmtMoney(v)}</span> },
+        { dataIndex: 'roi', width: 90, align: 'right' as const, render: (v: number) => <span className="m-roi" style={{ color: v < 0 ? '#ef4444' : '#10b981' }}>{fmtPct(v)}</span> },
         { width: 90, align: 'right' as const, render: (_: any, row: Daily) => <span className="m-muted">{fmtMoney(row.conversions > 0 ? row.cost / row.conversions : 0)}</span> },
         { width: 90, align: 'right' as const, render: (_: any, row: Daily) => <span className="m-muted">{fmtMoney(row.clicks > 0 ? row.revenue / row.clicks : 0)}</span> },
         { dataIndex: 'conversions', width: 90, align: 'right' as const, render: (v: number) => fmtInt(v) },
