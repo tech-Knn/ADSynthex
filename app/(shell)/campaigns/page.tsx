@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { App, Input, Select, Table, Button, Dropdown, Modal, Switch, Tooltip } from 'antd';
+import { App, Input, InputNumber, Select, Table, Button, Dropdown, Switch, Tooltip, Spin } from 'antd';
 import {
   AppstoreOutlined, DollarOutlined, LineChartOutlined, RiseOutlined,
   SearchOutlined, DownOutlined, RightOutlined, MoreOutlined, CalendarOutlined,
@@ -24,6 +24,12 @@ type SortKey = 'cost' | 'revenue' | 'profit' | 'roi' | 'clicks' | 'conversions';
 export default function CampaignsPage() {
   const { message, modal } = App.useApp();
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  // Per-row budget cache: { "accountCid:campaignId": { dailyAmountUsd, isShared } }
+  const [budgetByCampaign, setBudgetByCampaign] = useState<Record<string, { dailyAmountUsd: number; isShared: boolean }>>({});
+  const [budgetsLoading, setBudgetsLoading] = useState(false);
+  // Per-row pending edit value & save state (keyed by "accountCid:campaignId")
+  const [budgetDraft, setBudgetDraft] = useState<Record<string, number | null>>({});
+  const [budgetSavingKey, setBudgetSavingKey] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterValues>({
     adsAccount: 'all', adsenseAccount: 'androidadvice', range: defaultRange(),
   });
@@ -63,6 +69,34 @@ export default function CampaignsPage() {
   }, [filters]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Fan out one Google Ads query per account to batch-fetch budgets, merge
+  // into state so the Budget column can render. Re-runs when the set of
+  // visible accounts changes.
+  useEffect(() => {
+    const accountCids = Array.from(new Set(campaigns.map((c) => c.accountCid)));
+    if (accountCids.length === 0) {
+      setBudgetByCampaign({});
+      return;
+    }
+    let cancelled = false;
+    setBudgetsLoading(true);
+    fetch(`/api/campaigns/budgets?accountCids=${accountCids.join(',')}`)
+      .then((r) => (r.ok ? r.json() : { budgets: {} }))
+      .then((data) => {
+        if (cancelled) return;
+        const flat: Record<string, { dailyAmountUsd: number; isShared: boolean }> = {};
+        for (const [cid, byCampaign] of Object.entries(data.budgets || {})) {
+          for (const [campaignId, info] of Object.entries(byCampaign as Record<string, any>)) {
+            flat[`${cid}:${campaignId}`] = info;
+          }
+        }
+        setBudgetByCampaign(flat);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setBudgetsLoading(false); });
+    return () => { cancelled = true; };
+  }, [campaigns]);
   useEffect(() => {
     const saved = loadRange();
     if (saved) setFilters((f) => ({ ...f, range: saved }));
@@ -152,6 +186,55 @@ export default function CampaignsPage() {
     });
   };
 
+  const commitBudget = async (row: Campaign) => {
+    const key = `${row.accountCid}:${row.campaignId}`;
+    const draft = budgetDraft[key];
+    const current = budgetByCampaign[key]?.dailyAmountUsd ?? null;
+
+    // Nothing to do: draft untouched or equals current
+    if (draft == null || current == null || Math.abs(draft - current) < 0.005) {
+      setBudgetDraft((prev) => { const n = { ...prev }; delete n[key]; return n; });
+      return;
+    }
+    if (!isFinite(draft) || draft < 1 || draft > 10000) {
+      message.error('Enter a daily budget between $1 and $10,000');
+      setBudgetDraft((prev) => { const n = { ...prev }; delete n[key]; return n; });
+      return;
+    }
+
+    setBudgetSavingKey(key);
+    try {
+      const res = await fetch('/api/campaigns/budget', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountCid: row.accountCid,
+          campaignId: row.campaignId,
+          dailyBudget: Number(draft.toFixed(2)),
+        }),
+      });
+      let data: any = {};
+      try { data = await res.json(); } catch { /* non-JSON */ }
+      if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
+
+      const info = budgetByCampaign[key];
+      message.success(data.isShared
+        ? `Shared budget updated to $${draft.toFixed(2)}/day (affects other campaigns using it)`
+        : `Budget updated to $${draft.toFixed(2)}/day`);
+      setBudgetByCampaign((prev) => ({
+        ...prev,
+        [key]: { dailyAmountUsd: draft, isShared: info?.isShared ?? data.isShared ?? false },
+      }));
+      setBudgetDraft((prev) => { const n = { ...prev }; delete n[key]; return n; });
+    } catch (e: any) {
+      message.error(e.message || 'Update failed');
+      // Revert draft so cell shows the original value again
+      setBudgetDraft((prev) => { const n = { ...prev }; delete n[key]; return n; });
+    } finally {
+      setBudgetSavingKey(null);
+    }
+  };
+
   const columns = [
     {
       title: 'Campaign', dataIndex: 'campaignName',
@@ -172,6 +255,49 @@ export default function CampaignsPage() {
             <Switch size="small" checked={checked} loading={isToggling} onChange={() => toggleStatus(row)} />
           </Tooltip>
         );
+      },
+    },
+    {
+      title: 'Budget', width: 130, align: 'right' as const,
+      render: (_: any, row: Campaign) => {
+        const key = `${row.accountCid}:${row.campaignId}`;
+        const info = budgetByCampaign[key];
+        if (!info) {
+          return budgetsLoading
+            ? <span className="m-muted">…</span>
+            : <span className="m-muted">—</span>;
+        }
+        const draft = budgetDraft[key];
+        const displayValue = draft ?? Number(info.dailyAmountUsd.toFixed(2));
+        const isSaving = budgetSavingKey === key;
+        return (
+          <Tooltip title={info.isShared ? 'Shared budget — changes affect other campaigns using it' : 'Edit daily budget (saves on blur / Enter)'}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <InputNumber
+                value={displayValue}
+                size="small"
+                min={1}
+                max={10000}
+                step={1}
+                precision={2}
+                prefix="$"
+                controls={false}
+                disabled={isSaving}
+                onChange={(v) => setBudgetDraft((prev) => ({ ...prev, [key]: v == null ? null : Number(v) }))}
+                onPressEnter={(e) => { (e.target as HTMLInputElement).blur(); }}
+                onBlur={() => commitBudget(row)}
+                style={{ width: 92 }}
+              />
+              {info.isShared && <span style={{ fontSize: 11, color: '#f59e0b' }} title="Shared budget">⚠</span>}
+              {isSaving && <Spin size="small" />}
+            </div>
+          </Tooltip>
+        );
+      },
+      sorter: (a: Campaign, b: Campaign) => {
+        const av = budgetByCampaign[`${a.accountCid}:${a.campaignId}`]?.dailyAmountUsd ?? 0;
+        const bv = budgetByCampaign[`${b.accountCid}:${b.campaignId}`]?.dailyAmountUsd ?? 0;
+        return av - bv;
       },
     },
     {
@@ -329,6 +455,7 @@ export default function CampaignsPage() {
           }}
         />
       </div>
+
     </div>
   );
 }
