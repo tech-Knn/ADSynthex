@@ -40,16 +40,12 @@ export async function POST(req: NextRequest) {
   const t0 = Date.now();
   try {
     const customer = getCustomerForAccount(accountCid);
-    const mutatePromise = customer.service('CampaignService').mutate({
-      customer_id: accountCid,
-      operations: [{
-        update: {
-          resource_name: `customers/${accountCid}/campaigns/${campaignId}`,
-          status: enums.CampaignStatus[status],
-        },
-        update_mask: { paths: ['status'] },
-      }],
-    });
+    const mutatePromise = customer.campaigns.update([
+      {
+        resource_name: `customers/${accountCid}/campaigns/${campaignId}`,
+        status: enums.CampaignStatus[status],
+      },
+    ]);
     await Promise.race([
       mutatePromise,
       new Promise((_, reject) => setTimeout(() => reject(new Error('Google Ads mutation timed out after 25s')), 25000)),
