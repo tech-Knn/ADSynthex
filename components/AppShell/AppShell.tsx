@@ -8,7 +8,6 @@ import {
   DashboardOutlined,
   BarChartOutlined,
   TeamOutlined,
-  SettingOutlined,
   LogoutOutlined,
   BellOutlined,
   UserOutlined,
@@ -141,10 +140,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="appshell-sidebar-footer">
-          <Link href="/settings" className="appshell-nav-item">
-            <span className="appshell-nav-icon"><SettingOutlined /></span>
-            <span>Settings</span>
-          </Link>
           <button
             type="button"
             className="appshell-nav-item"
