@@ -1154,16 +1154,32 @@ export async function fetchGoogleAdsDataForSync(
         return resp;
       };
 
+      let adErr: any = null;
+      let assetErr: any = null;
+      const extractGAdsErr = (e: any): string => {
+        const errs = e?.errors || e?.failure?.errors;
+        if (Array.isArray(errs) && errs[0]) {
+          const first = errs[0];
+          const code = first.error_code ? JSON.stringify(first.error_code) : '';
+          return `${first.message || 'unknown error'} ${code}`.trim();
+        }
+        return e?.message || String(e);
+      };
       const adResp = await guardedQuery(adQuery, 'ad_group_ad').catch((e: any) => {
-        console.warn(`[GADS_SYNC] ad_group_ad failed ${account.id}: ${e?.message}`); return null;
+        adErr = e;
+        console.warn(`[GADS_SYNC] ad_group_ad failed ${account.id}: ${extractGAdsErr(e)}`);
+        return null;
       });
       const assetResp = await guardedQuery(assetQuery, 'asset_group').catch((e: any) => {
-        console.warn(`[GADS_SYNC] asset_group failed ${account.id}: ${e?.message}`); return null;
+        assetErr = e;
+        console.warn(`[GADS_SYNC] asset_group failed ${account.id}: ${extractGAdsErr(e)}`);
+        return null;
       });
 
-      // SILENT-FAIL GUARD: dono null = quota/auth fail → throw, $0 na likhe, retry ho.
+      // SILENT-FAIL GUARD: dono null = quota/auth fail → throw with the real GAds error so it surfaces in the response.
       if (adResp === null && assetResp === null) {
-        throw new Error(`Both ad_group_ad & asset_group failed for ${account.id} — likely quota/auth`);
+        const detail = extractGAdsErr(adErr) || extractGAdsErr(assetErr) || 'unknown';
+        throw new Error(`account ${account.id}: ${detail}`);
       }
 
       // cost by (campaign_id, date) — dono responses se aggregate
