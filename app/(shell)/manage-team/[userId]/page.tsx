@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Button, Input, Table, Dropdown, Spin, Tabs } from 'antd';
+import { App, Button, Input, InputNumber, Switch, Table, Dropdown, Spin, Tabs, Tooltip } from 'antd';
 import {
   ArrowLeftOutlined, CalendarOutlined, DollarOutlined, LineChartOutlined, RiseOutlined,
   SearchOutlined, DownOutlined, RightOutlined, MoreOutlined,
@@ -21,6 +21,7 @@ type Account = {
 type DayCamp = { date: string; cost: number; revenue: number; profit: number; roi: number; clicks: number; conversions: number };
 type Campaign = {
   campaignId: string; campaignName: string; styleId: string; country: string; accountCid: string;
+  status: string;
   cost: number; revenue: number; profit: number; roi: number;
   clicks: number; conversions: number; cpa: number; rpc: number;
   daily: DayCamp[];
@@ -33,10 +34,16 @@ type UserInfo = {
 };
 
 export default function UserPerformancePage() {
+  const { message } = App.useApp();
   const params = useParams<{ userId: string }>();
   const router = useRouter();
   const userId = params.userId;
   const [user, setUser] = useState<UserInfo | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [budgetByCampaign, setBudgetByCampaign] = useState<Record<string, { dailyAmountUsd: number; isShared: boolean }>>({});
+  const [budgetsLoading, setBudgetsLoading] = useState(false);
+  const [budgetDraft, setBudgetDraft] = useState<Record<string, number | null>>({});
+  const [budgetSavingKey, setBudgetSavingKey] = useState<string | null>(null);
 
   const [filters, setFilters] = useState<FilterValues>({
     adsAccount: 'all', adsenseAccount: 'androidadvice', range: defaultRange(),
@@ -97,6 +104,95 @@ export default function UserPerformancePage() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    const accountCids = Array.from(new Set(campaigns.map((c) => c.accountCid)));
+    if (accountCids.length === 0) { setBudgetByCampaign({}); return; }
+    let cancelled = false;
+    setBudgetsLoading(true);
+    fetch(`/api/campaigns/budgets?accountCids=${accountCids.join(',')}`)
+      .then((r) => (r.ok ? r.json() : { budgets: {} }))
+      .then((data) => {
+        if (cancelled) return;
+        const flat: Record<string, { dailyAmountUsd: number; isShared: boolean }> = {};
+        for (const [cid, byCampaign] of Object.entries(data.budgets || {})) {
+          for (const [campaignId, info] of Object.entries(byCampaign as Record<string, any>)) {
+            flat[`${cid}:${campaignId}`] = info;
+          }
+        }
+        setBudgetByCampaign(flat);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setBudgetsLoading(false); });
+    return () => { cancelled = true; };
+  }, [campaigns]);
+
+  const toggleStatus = async (row: Campaign) => {
+    const nextStatus = row.status === 'ENABLED' ? 'PAUSED' : 'ENABLED';
+    const key = `${row.accountCid}::${row.campaignId}`;
+    setTogglingId(key);
+    setCampaigns((prev) => prev.map((c) =>
+      c.accountCid === row.accountCid && c.campaignId === row.campaignId ? { ...c, status: nextStatus } : c,
+    ));
+    try {
+      const res = await fetch('/api/campaigns/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accountCid: row.accountCid, campaignId: row.campaignId, status: nextStatus }),
+      });
+      let data: any = {};
+      try { data = await res.json(); } catch {}
+      if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
+      message.success(`${nextStatus === 'PAUSED' ? 'Paused' : 'Resumed'} on Google Ads`);
+    } catch (e: any) {
+      setCampaigns((prev) => prev.map((c) =>
+        c.accountCid === row.accountCid && c.campaignId === row.campaignId ? { ...c, status: row.status } : c,
+      ));
+      message.error(e.message || 'Update failed');
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
+  const commitBudget = async (row: Campaign) => {
+    const key = `${row.accountCid}:${row.campaignId}`;
+    const draft = budgetDraft[key];
+    const current = budgetByCampaign[key]?.dailyAmountUsd ?? null;
+    if (draft == null || current == null || Math.abs(draft - current) < 0.005) {
+      setBudgetDraft((prev) => { const n = { ...prev }; delete n[key]; return n; });
+      return;
+    }
+    if (!isFinite(draft) || draft < 1 || draft > 10000) {
+      message.error('Enter a daily budget between $1 and $10,000');
+      setBudgetDraft((prev) => { const n = { ...prev }; delete n[key]; return n; });
+      return;
+    }
+    setBudgetSavingKey(key);
+    try {
+      const res = await fetch('/api/campaigns/budget', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accountCid: row.accountCid, campaignId: row.campaignId, dailyBudget: Number(draft.toFixed(2)) }),
+      });
+      let data: any = {};
+      try { data = await res.json(); } catch {}
+      if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
+      const info = budgetByCampaign[key];
+      message.success(data.isShared
+        ? `Shared budget updated to $${draft.toFixed(2)}/day (affects other campaigns)`
+        : `Budget updated to $${draft.toFixed(2)}/day`);
+      setBudgetByCampaign((prev) => ({
+        ...prev,
+        [key]: { dailyAmountUsd: draft, isShared: info?.isShared ?? data.isShared ?? false },
+      }));
+      setBudgetDraft((prev) => { const n = { ...prev }; delete n[key]; return n; });
+    } catch (e: any) {
+      message.error(e.message || 'Update failed');
+      setBudgetDraft((prev) => { const n = { ...prev }; delete n[key]; return n; });
+    } finally {
+      setBudgetSavingKey(null);
+    }
+  };
+
   const label = (cid: string) => {
     const m = meta[cid];
     return m?.seq != null ? `androidadvices ${String(m.seq).padStart(2, '0')} (${cid})` : cid;
@@ -139,6 +235,54 @@ export default function UserPerformancePage() {
     { title: 'Campaign', dataIndex: 'campaignName', render: (v: string) => <span style={{ fontWeight: 500, color: '#0f172a' }}>{v}</span> },
     { title: 'Style ID', dataIndex: 'styleId', width: 120, render: (v: string) => <span className="m-muted">{v}</span> },
     { title: 'Country', dataIndex: 'country', width: 100, render: (v: string) => <span className="m-muted">{v}</span> },
+    {
+      title: 'Status', dataIndex: 'status', width: 100, align: 'center' as const,
+      render: (_: string, row: Campaign) => {
+        const key = `${row.accountCid}::${row.campaignId}`;
+        const isToggling = togglingId === key;
+        const checked = row.status === 'ENABLED';
+        if (row.status === 'REMOVED') return <span className="status-pill inactive">removed</span>;
+        return (
+          <Tooltip title={checked ? 'Click to pause on Google Ads' : 'Click to resume on Google Ads'}>
+            <Switch size="small" checked={checked} loading={isToggling} onChange={() => toggleStatus(row)} />
+          </Tooltip>
+        );
+      },
+    },
+    {
+      title: 'Budget', width: 130, align: 'right' as const,
+      render: (_: any, row: Campaign) => {
+        const key = `${row.accountCid}:${row.campaignId}`;
+        const info = budgetByCampaign[key];
+        if (!info) return budgetsLoading ? <span className="m-muted">…</span> : <span className="m-muted">—</span>;
+        const draft = budgetDraft[key];
+        const displayValue = draft ?? Number(info.dailyAmountUsd.toFixed(2));
+        const isSaving = budgetSavingKey === key;
+        return (
+          <Tooltip title={info.isShared ? 'Shared budget — changes affect other campaigns using it' : 'Edit daily budget (saves on blur / Enter)'}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <InputNumber
+                value={displayValue}
+                size="small"
+                min={1}
+                max={10000}
+                step={1}
+                precision={2}
+                prefix="$"
+                controls={false}
+                disabled={isSaving}
+                onChange={(v) => setBudgetDraft((prev) => ({ ...prev, [key]: v == null ? null : Number(v) }))}
+                onPressEnter={(e) => { (e.target as HTMLInputElement).blur(); }}
+                onBlur={() => commitBudget(row)}
+                style={{ width: 92 }}
+              />
+              {info.isShared && <span style={{ fontSize: 11, color: '#f59e0b' }} title="Shared budget">⚠</span>}
+              {isSaving && <Spin size="small" />}
+            </div>
+          </Tooltip>
+        );
+      },
+    },
     { title: 'Cost', dataIndex: 'cost', align: 'right' as const, width: 110, render: (v: number) => <span className="m-cost">{fmtMoney(v)}</span> },
     { title: 'Revenue', dataIndex: 'revenue', align: 'right' as const, width: 110, render: (v: number) => <span className="m-rev">{fmtMoney(v)}</span> },
     { title: 'Profit', dataIndex: 'profit', align: 'right' as const, width: 110, render: (v: number) => <span className="m-profit" style={{ color: v < 0 ? '#ef4444' : '#10b981' }}>{fmtMoney(v)}</span> },
