@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { App, Button, Input, InputNumber, Switch, Table, Dropdown, Spin, Tabs, Tooltip } from 'antd';
+import { App, Button, Input, InputNumber, Select, Switch, Table, Dropdown, Spin, Tabs, Tooltip } from 'antd';
 import {
   ArrowLeftOutlined, CalendarOutlined, DollarOutlined, LineChartOutlined, RiseOutlined,
   SearchOutlined, DownOutlined, RightOutlined, MoreOutlined,
@@ -56,6 +56,8 @@ export default function UserPerformancePage() {
   const [loading, setLoading] = useState(false);
   const [accountSearch, setAccountSearch] = useState('');
   const [campaignSearch, setCampaignSearch] = useState('');
+  const [campaignSortBy, setCampaignSortBy] = useState<'budget' | 'cost' | 'revenue' | 'profit' | 'roi' | 'cpa' | 'rpc' | 'conversions' | 'clicks'>('cost');
+  const [campaignOrder, setCampaignOrder] = useState<'desc' | 'asc'>('desc');
   const [expandedAccounts, setExpandedAccounts] = useState<React.Key[]>([]);
   const [expandedCampaigns, setExpandedCampaigns] = useState<React.Key[]>([]);
   const seq = useRef(0);
@@ -121,7 +123,7 @@ export default function UserPerformancePage() {
         }
         setBudgetByCampaign(flat);
       })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => { if (!cancelled) setBudgetsLoading(false); });
     return () => { cancelled = true; };
   }, [campaigns]);
@@ -140,7 +142,7 @@ export default function UserPerformancePage() {
         body: JSON.stringify({ accountCid: row.accountCid, campaignId: row.campaignId, status: nextStatus }),
       });
       let data: any = {};
-      try { data = await res.json(); } catch {}
+      try { data = await res.json(); } catch { }
       if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
       message.success(`${nextStatus === 'PAUSED' ? 'Paused' : 'Resumed'} on Google Ads`);
     } catch (e: any) {
@@ -174,7 +176,7 @@ export default function UserPerformancePage() {
         body: JSON.stringify({ accountCid: row.accountCid, campaignId: row.campaignId, dailyBudget: Number(draft.toFixed(2)) }),
       });
       let data: any = {};
-      try { data = await res.json(); } catch {}
+      try { data = await res.json(); } catch { }
       if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
       const info = budgetByCampaign[key];
       message.success(data.isShared
@@ -206,29 +208,40 @@ export default function UserPerformancePage() {
 
   const filteredCampaigns = useMemo(() => {
     const q = campaignSearch.trim().toLowerCase();
-    if (!q) return campaigns;
-    return campaigns.filter((c) =>
+    const rows = campaigns.filter((c) =>
+      !q ||
       c.campaignName.toLowerCase().includes(q) ||
       c.styleId.toLowerCase().includes(q) ||
       c.country.toLowerCase().includes(q),
     );
-  }, [campaigns, campaignSearch]);
+    const dir = campaignOrder === 'desc' ? -1 : 1;
+    const val = (c: Campaign): number =>
+      campaignSortBy === 'budget'
+        ? (budgetByCampaign[`${c.accountCid}:${c.campaignId}`]?.dailyAmountUsd ?? 0)
+        : ((c as any)[campaignSortBy] as number);
+    rows.sort((a, b) => dir * (val(a) - val(b)));
+    return rows;
+  }, [campaigns, campaignSearch, campaignSortBy, campaignOrder, budgetByCampaign]);
 
   const accountCols = [
-    { title: 'Account', dataIndex: 'accountCid',
-      render: (cid: string) => <span style={{ fontWeight: 500, color: '#0f172a' }}>{label(cid)}</span> },
+    {
+      title: 'Account', dataIndex: 'accountCid',
+      render: (cid: string) => <span style={{ fontWeight: 500, color: '#0f172a' }}>{label(cid)}</span>
+    },
     { title: 'Campaigns', dataIndex: 'campaigns', align: 'right' as const, width: 110 },
     { title: 'Cost', dataIndex: 'cost', align: 'right' as const, width: 130, render: (v: number) => <span className="m-cost">{fmtMoney(v)}</span> },
     { title: 'Revenue', dataIndex: 'revenue', align: 'right' as const, width: 130, render: (v: number) => <span className="m-rev">{fmtMoney(v)}</span> },
     { title: 'Profit', dataIndex: 'profit', align: 'right' as const, width: 130, render: (v: number) => <span className="m-profit" style={{ color: v < 0 ? '#ef4444' : '#10b981' }}>{fmtMoney(v)}</span> },
     { title: 'ROI', dataIndex: 'roi', align: 'right' as const, width: 100, render: (v: number) => <span className="m-roi" style={{ color: v < 0 ? '#ef4444' : '#10b981' }}>{fmtPct(v)}</span> },
     { title: 'Conversions', dataIndex: 'conversions', align: 'right' as const, width: 130, render: (v: number) => fmtInt(v) },
-    { title: 'Actions', width: 70, align: 'center' as const,
+    {
+      title: 'Actions', width: 70, align: 'center' as const,
       render: (_: any, row: Account) => (
         <Dropdown menu={{ items: [{ key: 'export', label: 'Export CSV', onClick: () => exportAccounts([row], label) }] }} trigger={['click']}>
           <Button type="text" icon={<MoreOutlined />} />
         </Dropdown>
-      ) },
+      )
+    },
   ];
 
   const campaignCols = [
@@ -291,12 +304,14 @@ export default function UserPerformancePage() {
     { title: 'RPC', dataIndex: 'rpc', align: 'right' as const, width: 90, render: (v: number) => <span className="m-muted">{fmtMoney(v)}</span> },
     { title: 'Conv.', dataIndex: 'conversions', align: 'right' as const, width: 90, render: (v: number) => fmtInt(v) },
     { title: 'Clicks', dataIndex: 'clicks', align: 'right' as const, width: 90, render: (v: number) => fmtInt(v) },
-    { title: 'Actions', width: 70, align: 'center' as const,
+    {
+      title: 'Actions', width: 70, align: 'center' as const,
       render: (_: any, row: Campaign) => (
         <Dropdown menu={{ items: [{ key: 'export', label: 'Export CSV', onClick: () => exportCampaigns([row]) }] }} trigger={['click']}>
           <Button type="text" icon={<MoreOutlined />} />
         </Dropdown>
-      ) },
+      )
+    },
   ];
 
   return (
@@ -376,7 +391,39 @@ export default function UserPerformancePage() {
                   <div className="toolbar-right">
                     <Button icon={<ExpandAltOutlined />} onClick={() => setExpandedCampaigns(filteredCampaigns.map((c) => `${c.accountCid}::${c.campaignId}`))}>Expand All</Button>
                     <Button icon={<ShrinkOutlined />} onClick={() => setExpandedCampaigns([])}>Collapse All</Button>
+                    <div className="filter-field" style={{ minWidth: 140 }}>
+                      <label>Sort By</label>
+                      <Select
+                        value={campaignSortBy}
+                        onChange={(v) => setCampaignSortBy(v)}
+                        options={[
+                          { value: 'budget', label: 'Budget' },
+                          { value: 'cost', label: 'Cost' },
+                          { value: 'revenue', label: 'Revenue' },
+                          { value: 'profit', label: 'Profit' },
+                          { value: 'roi', label: 'ROI' },
+                          { value: 'cpa', label: 'CPA' },
+                          { value: 'rpc', label: 'RPC' },
+                          { value: 'conversions', label: 'Conversions' },
+                          { value: 'clicks', label: 'Clicks' },
+                        ]}
+                        style={{ width: 140 }}
+                      />
+                    </div>
+                    <div className="filter-field" style={{ minWidth: 150 }}>
+                      <label>Order</label>
+                      <Select
+                        value={campaignOrder}
+                        onChange={(v) => setCampaignOrder(v as 'asc' | 'desc')}
+                        options={[
+                          { value: 'desc', label: 'Highest First' },
+                          { value: 'asc', label: 'Lowest First' },
+                        ]}
+                        style={{ width: 150 }}
+                      />
+                    </div>
                   </div>
+
                 </div>
                 <Table
                   className="breakdown-table"
