@@ -1,5 +1,6 @@
 import { prisma } from './prisma';
 import { fetchGoogleAdsDataForSync, fetchCampaignCountries } from './google-ads-api';
+import { warmDynamicMccCache } from './dynamic-mcc-cache';
 
 import {
   fetchAdSenseRevenueByStyleId,
@@ -36,6 +37,12 @@ export async function syncRange(
   const errors: string[] = [];
 
   console.log(`\n[SYNC] ===== ${startDate} -> ${endDate} =====`);
+
+  // Make sure every account-mapping (including newly-added ones) is loaded
+  // into the dynamic MCC cache before we start fanning out requests.
+  try { await warmDynamicMccCache(); } catch (e: any) {
+    console.warn('[SYNC] warmDynamicMccCache failed (continuing with static dict):', e?.message || e);
+  }
 
   // Sync run counter — har 5th run pe country refresh (country daily nahi badalta)
   let refreshCountry = false;

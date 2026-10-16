@@ -7,9 +7,9 @@ export async function GET() {
     if ('error' in guard) return guard.error;
 
     const accounts = await prisma.account.findMany({
-        where: { feedName: 'androidadvice' },
-        select: { cid: true, seq: true },
-        orderBy: { seq: 'asc' },
+        where: { active: true },
+        select: { cid: true, seq: true, feedName: true },
+        orderBy: [{ feedName: 'asc' }, { seq: 'asc' }],
     });
     return NextResponse.json({ accounts });
 }

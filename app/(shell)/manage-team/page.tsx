@@ -2,10 +2,11 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { App, Button, Input, Modal, Select, Table, Form } from 'antd';
+import { App, Button, Input, Modal, Select, Table, Form, Spin, Space } from 'antd';
 import {
   UserAddOutlined, TeamOutlined, EyeOutlined, EditOutlined, DeleteOutlined, PlusOutlined,
   UserOutlined, UserDeleteOutlined, AppstoreOutlined, LockOutlined, MailOutlined,
+  CheckCircleOutlined, CloseCircleOutlined,
 } from '@ant-design/icons';
 import Kpi, { fmtInt } from '@/components/AppShell/Kpi';
 
@@ -18,9 +19,15 @@ interface TeamUser {
   accountCount: number;
   accounts: string[];
 }
-interface AccountOpt { cid: string; seq: number | null }
+interface AccountOpt { cid: string; seq: number | null; feedName?: string }
+interface Feed { feedName: string; publisherId: string | null }
 
 type ModalMode = 'add' | 'edit' | null;
+type VerifyState =
+  | { phase: 'idle' }
+  | { phase: 'verifying' }
+  | { phase: 'ok'; customerName: string | null; customerStatus: string | null; mccKey: string }
+  | { phase: 'error'; error: string };
 
 export default function ManageTeamPage() {
   const { message } = App.useApp();
@@ -36,20 +43,30 @@ export default function ManageTeamPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
+  // Add Account modal state
+  const [feeds, setFeeds] = useState<Feed[]>([]);
+  const [addAccountOpen, setAddAccountOpen] = useState(false);
+  const [newCid, setNewCid] = useState('');
+  const [newFeed, setNewFeed] = useState<string>('androidadvice');
+  const [verify, setVerify] = useState<VerifyState>({ phase: 'idle' });
+  const [addingAccount, setAddingAccount] = useState(false);
+
   const accountLabel = (cid: string, seq: number | null) =>
     seq != null ? `androidadvices ${String(seq).padStart(2, '0')} (${cid})` : cid;
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [uRes, hRes, aRes] = await Promise.all([
+      const [uRes, hRes, aRes, fRes] = await Promise.all([
         fetch('/api/team').then((r) => r.json()),
         fetch('/api/accounts/holders').then((r) => r.json()),
         fetch('/api/accounts/list').then((r) => r.json()),
+        fetch('/api/feeds').then((r) => r.json()),
       ]);
       setUsers(uRes.users || []);
       setHolders(hRes.holders || {});
       setAccounts(aRes.accounts || []);
+      setFeeds(fRes.feeds || []);
     } catch {
       message.error('Failed to load team');
     } finally {
@@ -66,6 +83,69 @@ export default function ManageTeamPage() {
     const totalAccounts = accounts.length;
     return { total, active, inactive, totalAccounts };
   }, [users, accounts]);
+
+  const openAddAccount = () => {
+    setNewCid('');
+    setNewFeed(feeds[0]?.feedName || 'androidadvice');
+    setVerify({ phase: 'idle' });
+    setAddAccountOpen(true);
+  };
+
+  const closeAddAccount = () => {
+    if (addingAccount || verify.phase === 'verifying') return;
+    setAddAccountOpen(false);
+  };
+
+  const runVerify = async () => {
+    if (!/^\d{10}$/.test(newCid)) {
+      setVerify({ phase: 'error', error: 'cid must be exactly 10 digits' });
+      return;
+    }
+    setVerify({ phase: 'verifying' });
+    try {
+      const res = await fetch('/api/accounts/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cid: newCid, feed: newFeed }),
+      });
+      let data: any = {};
+      try { data = await res.json(); } catch { /* non-JSON */ }
+      if (data.ok) {
+        setVerify({
+          phase: 'ok',
+          customerName: data.customerName,
+          customerStatus: data.customerStatus,
+          mccKey: data.mccKey,
+        });
+      } else {
+        setVerify({ phase: 'error', error: data.error || `Request failed (${res.status})` });
+      }
+    } catch (e: any) {
+      setVerify({ phase: 'error', error: e.message || 'Verify failed' });
+    }
+  };
+
+  const submitAddAccount = async () => {
+    if (verify.phase !== 'ok') return;
+    setAddingAccount(true);
+    try {
+      const res = await fetch('/api/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cid: newCid, feed: newFeed }),
+      });
+      let data: any = {};
+      try { data = await res.json(); } catch { /* non-JSON */ }
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+      message.success(`Account ${newCid} added under ${newFeed}`);
+      setAddAccountOpen(false);
+      load();
+    } catch (e: any) {
+      message.error(e.message || 'Add failed');
+    } finally {
+      setAddingAccount(false);
+    }
+  };
 
   const openAdd = () => {
     setEditing(null);
@@ -186,9 +266,14 @@ export default function ManageTeamPage() {
           <h1>Manage Team</h1>
           <p>View and manage all team members</p>
         </div>
-        <Button type="primary" icon={<PlusOutlined />} className="btn-primary-gradient" onClick={openAdd}>
-          Add User
-        </Button>
+        <Space>
+          <Button icon={<AppstoreOutlined />} onClick={openAddAccount}>
+            Add Account
+          </Button>
+          <Button type="primary" icon={<PlusOutlined />} className="btn-primary-gradient" onClick={openAdd}>
+            Add User
+          </Button>
+        </Space>
       </div>
 
       <div className="kpi-grid">
@@ -273,6 +358,70 @@ export default function ManageTeamPage() {
             </Form.Item>
           </div>
         </Form>
+      </Modal>
+
+      <Modal
+        title="Add Account"
+        open={addAccountOpen}
+        onCancel={closeAddAccount}
+        onOk={submitAddAccount}
+        okText="Add account"
+        okButtonProps={{
+          className: 'btn-primary-gradient',
+          disabled: verify.phase !== 'ok',
+          loading: addingAccount,
+        }}
+        width={520}
+        destroyOnClose
+      >
+        <p style={{ color: '#64748b', marginTop: -4, marginBottom: 16, fontSize: 13 }}>
+          Enter the 10-digit Google Ads customer ID and pick the feed it belongs to. Click Verify to make sure the configured MCC credentials can actually reach it on Google Ads — only then will the Add button become active.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 150px', gap: 10, marginBottom: 12 }}>
+          <div>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#334155', marginBottom: 4 }}>Customer ID</label>
+            <Input
+              placeholder="10-digit cid (digits only)"
+              value={newCid}
+              onChange={(e) => {
+                setNewCid(e.target.value.replace(/\D/g, '').slice(0, 10));
+                setVerify({ phase: 'idle' });
+              }}
+              maxLength={10}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#334155', marginBottom: 4 }}>Feed</label>
+            <Select
+              value={newFeed}
+              onChange={(v) => { setNewFeed(v); setVerify({ phase: 'idle' }); }}
+              options={feeds.map((f) => ({ value: f.feedName, label: f.feedName }))}
+              style={{ width: '100%' }}
+            />
+          </div>
+        </div>
+        <Button
+          onClick={runVerify}
+          loading={verify.phase === 'verifying'}
+          disabled={newCid.length !== 10 || verify.phase === 'verifying'}
+          block
+        >
+          Verify with Google Ads
+        </Button>
+
+        {verify.phase === 'ok' && (
+          <div style={{ marginTop: 14, padding: '10px 12px', background: '#ecfdf5', borderRadius: 10, border: '1px solid #a7f3d0', color: '#047857', fontSize: 13 }}>
+            <CheckCircleOutlined style={{ marginRight: 6 }} />
+            Verified via <strong>{verify.mccKey}</strong> MCC. Google Ads says this is <strong>{verify.customerName || '(unnamed)'}</strong>
+            {verify.customerStatus ? <> &middot; status: <strong>{verify.customerStatus}</strong></> : null}.
+          </div>
+        )}
+        {verify.phase === 'error' && (
+          <div style={{ marginTop: 14, padding: '10px 12px', background: '#fef2f2', borderRadius: 10, border: '1px solid #fecaca', color: '#b91c1c', fontSize: 13 }}>
+            <CloseCircleOutlined style={{ marginRight: 6 }} />
+            {verify.error}
+          </div>
+        )}
       </Modal>
 
     </div>

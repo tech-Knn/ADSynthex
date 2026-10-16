@@ -77,24 +77,14 @@ export const ACCOUNT_TO_MCC: Record<string, keyof typeof MCC_CONFIGS> = {
   '7974960490': 'primary', // Predicto EST-38
   '8683194652': 'primary', // Predicto EST-39
   '5947639623': 'primary', // Predicto EST-40
-  '1191411049': 'founderzest', // Predicto EST-41 (actually linked under Founderzest, was returning PERMISSION_DENIED via primary)
   '7080789309': 'primary', // Predicto EST-42
   '7292070150': 'primary', // Predicto EST-43
   '5813682086': 'primary', // Predicto EST-44
   '2019271596': 'primary', // Predicto EST-45
-  '2101474690': 'founderzest', // Predicto EST-46
-  '5918243431': 'founderzest', // Predicto EST-47
-  '6855103527': 'founderzest', // Predicto EST-48
-  '5352884756': 'founderzest', // Predicto EST-49
-  '6499341400': 'founderzest', // Predicto EST-50
-  '9308336690': 'founderzest', // Predicto EST-54
-  '4337848325': 'founderzest', // Predicto EST-55
-  '8737177088': 'founderzest', // Predicto EST-56
-  '5929198423': 'founderzest', // Predicto EST-57
-  '5139969741': 'founderzest', // Predicto EST-58
-  '2533179401': 'founderzest', // Predicto EST-59
-  '8167129629': 'founderzest', // Predicto EST-60
-  '3540908401': 'founderzest', // Predicto EST-61
+  // Founderzest cids removed — all 14 were deactivated accounts (CUSTOMER_NOT_ENABLED).
+  // New Founderzest cids are added via the admin "Add Account" UI; the sync resolves
+  // their MCC via accounts.feedName → FEED_TO_MCC (see getMCCForAccount below) so no
+  // code change / deploy is needed when onboarding a new one.
 
   // CarHp Accounts (use PRIMARY MCC for Google Ads cost) - Sequential order
   '8536037999': 'primary',  // CarHp New 01 (IST)
@@ -163,13 +153,43 @@ export const ACCOUNT_TO_MCC: Record<string, keyof typeof MCC_CONFIGS> = {
   '9722524142': 'primary',  // androidadvices 19
 };
 
+/**
+ * Feed → MCC key mapping. Used when a cid isn't in the static ACCOUNT_TO_MCC
+ * dict (e.g. newly added by an admin) — we fall back to the account's
+ * feedName from the DB and route via this table.
+ */
+export const FEED_TO_MCC: Record<string, keyof typeof MCC_CONFIGS> = {
+  androidadvice: 'primary',
+  founderzest: 'founderzest',
+};
+
+/**
+ * Dynamic cid → MCC key cache, built from the DB. Populated by
+ * registerAccountMCC() (called on account create / sync warm-up) so
+ * getMCCForAccount() can stay synchronous for existing hot paths.
+ */
+const dynamicMccMap = new Map<string, keyof typeof MCC_CONFIGS>();
+
+export function registerAccountMCC(cid: string, mccKey: keyof typeof MCC_CONFIGS) {
+  dynamicMccMap.set(cid, mccKey);
+}
+
+export function resolveMccKeyForFeed(feedName: string | null | undefined): keyof typeof MCC_CONFIGS | null {
+  if (!feedName) return null;
+  return FEED_TO_MCC[feedName] || null;
+}
+
 export function getMCCForAccount(customerId: string): MCCCredentials | null {
-  const mccKey = ACCOUNT_TO_MCC[customerId];
-  if (!mccKey) {
-    console.warn(`[MCC] No mapping for account ${customerId}`);
-    return null;
-  }
-  return MCC_CONFIGS[mccKey] || null;
+  // 1. Static overrides (hand-curated for anomalies)
+  const staticKey = ACCOUNT_TO_MCC[customerId];
+  if (staticKey) return MCC_CONFIGS[staticKey] || null;
+
+  // 2. Dynamic cache populated from DB
+  const cachedKey = dynamicMccMap.get(customerId);
+  if (cachedKey) return MCC_CONFIGS[cachedKey] || null;
+
+  console.warn(`[MCC] No mapping for account ${customerId}`);
+  return null;
 }
 
 export function getAccountsByMCC(mccKey: keyof typeof MCC_CONFIGS): string[] {
