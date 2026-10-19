@@ -47,7 +47,7 @@ export default function UserPerformancePage() {
   const [budgetSavingKey, setBudgetSavingKey] = useState<string | null>(null);
 
   const [filters, setFilters] = useState<FilterValues>({
-    adsAccount: 'all', adsenseAccount: 'androidadvice', range: defaultRange(),
+    adsAccount: 'all', adsenseAccount: 'all', range: defaultRange(),
   });
   const [summary, setSummary] = useState<{ cost: number; revenue: number; profit: number; roi: number; adsenseClicks: number } | null>(null);
   const [delta, setDelta] = useState<{ cost: number | null; revenue: number | null; profit: number | null; roi: number | null } | null>(null);
@@ -87,6 +87,7 @@ export default function UserPerformancePage() {
         startDate: start.format('YYYY-MM-DD'),
         endDate: end.format('YYYY-MM-DD'),
         account: filters.adsAccount,
+        feed: filters.adsenseAccount,
         scopeUserId: userId,
       });
       const [sumRes, accRes, campRes] = await Promise.all([

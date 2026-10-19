@@ -20,6 +20,7 @@ export async function GET(req: NextRequest) {
   }
 
   const scopeUserId = searchParams.get('scopeUserId');
+  const feed = (searchParams.get('feed') || 'all').trim();
   const effectiveUserId = scopeUserId && session.role === 'admin' ? scopeUserId : session.userId;
   const effectiveRole = scopeUserId && session.role === 'admin' ? 'user' : session.role;
   // Only true admin views (no scopeUserId) see publisher-wide unattributed revenue.
@@ -27,7 +28,8 @@ export async function GET(req: NextRequest) {
   const showUnattributed = session.role === 'admin' && !scopeUserId;
 
   const allowed = await getAccountsForUser(effectiveUserId, effectiveRole);
-  const targets = account && account !== 'all' ? allowed.filter((c) => c === account) : allowed;
+  const feedScoped = feed === 'all' ? allowed : await filterByFeed(allowed, feed);
+  const targets = account && account !== 'all' ? feedScoped.filter((c) => c === account) : feedScoped;
   if (targets.length === 0) {
     return NextResponse.json({ summary: emptySummary(), byDay: [], delta: emptyDelta() });
   }
@@ -232,4 +234,13 @@ function emptySummary() {
 }
 function emptyDelta() {
   return { cost: null, revenue: null, profit: null, roi: null };
+}
+
+async function filterByFeed(cids: string[], feedName: string): Promise<string[]> {
+  if (cids.length === 0) return cids;
+  const rows = await prisma.account.findMany({
+    where: { cid: { in: cids }, feedName },
+    select: { cid: true },
+  });
+  return rows.map((r) => r.cid);
 }

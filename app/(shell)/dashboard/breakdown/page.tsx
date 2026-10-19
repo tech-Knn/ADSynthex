@@ -27,7 +27,7 @@ type AccountMeta = { cid: string; seq: number | null; feedName?: string };
 
 export default function BreakdownPage() {
   const [filters, setFilters] = useState<FilterValues>({
-    adsAccount: 'all', adsenseAccount: 'androidadvice', range: defaultRange(),
+    adsAccount: 'all', adsenseAccount: 'all', range: defaultRange(),
   });
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [meta, setMeta] = useState<Record<string, AccountMeta>>({});
@@ -60,6 +60,7 @@ export default function BreakdownPage() {
         startDate: start.format('YYYY-MM-DD'),
         endDate: end.format('YYYY-MM-DD'),
         account: filters.adsAccount,
+        feed: filters.adsenseAccount,
       });
       const [accRes, sumRes] = await Promise.all([
         fetch(`/api/dash/accounts-daily?${qs.toString()}`).then((r) => r.json()),
