@@ -8,11 +8,12 @@ import { formatAccountLabel } from '@/lib/account-label';
 
 export type FilterValues = {
   adsAccount: string;
-  adsenseAccount: string;
+  adsenseAccount: string;  // 'all' | '<feedName>' — the chosen feed
   range: [Dayjs, Dayjs];
 };
 
 interface AccountOpt { cid: string; seq: number | null; feedName?: string }
+interface FeedOpt { feedName: string; publisherId: string | null }
 
 interface Props {
   value: FilterValues;
@@ -24,10 +25,17 @@ interface Props {
   scopeUserId?: string;
 }
 
+const FEED_DISPLAY: Record<string, string> = {
+  androidadvice: 'AndroidAdvice',
+  founderzest: 'Founderzest',
+};
+const feedDisplayName = (f: string) => FEED_DISPLAY[f] || f;
+
 export default function FilterBar({
   value, onChange, onRefresh, onExport, showExport, loading, scopeUserId,
 }: Props) {
   const [accounts, setAccounts] = useState<AccountOpt[]>([]);
+  const [feeds, setFeeds] = useState<FeedOpt[]>([]);
 
   useEffect(() => {
     const url = scopeUserId ? `/api/accounts/mine?scopeUserId=${scopeUserId}` : '/api/accounts/mine';
@@ -35,14 +43,42 @@ export default function FilterBar({
       .then((r) => r.json())
       .then((d) => setAccounts(d.accounts || []))
       .catch(() => setAccounts([]));
+    fetch('/api/feeds')
+      .then((r) => r.json())
+      .then((d) => setFeeds(d.feeds || []))
+      .catch(() => setFeeds([]));
   }, [scopeUserId]);
 
+  const feedOptions = useMemo(
+    () => [
+      { value: 'all', label: 'All Feeds' },
+      ...feeds.map((f) => ({ value: f.feedName, label: feedDisplayName(f.feedName) })),
+    ],
+    [feeds],
+  );
+
+  // Google Ads account dropdown — scoped to the chosen feed if one is picked.
   const adsOptions = useMemo(() => {
+    const scoped = value.adsenseAccount === 'all'
+      ? accounts
+      : accounts.filter((a) => a.feedName === value.adsenseAccount);
     return [
-      { value: 'all', label: 'All Accounts' },
-      ...accounts.map((a) => ({ value: a.cid, label: formatAccountLabel(a.cid, a.seq, a.feedName) })),
+      { value: 'all', label: value.adsenseAccount === 'all'
+        ? 'All Accounts'
+        : `All ${feedDisplayName(value.adsenseAccount)} Accounts` },
+      ...scoped.map((a) => ({ value: a.cid, label: formatAccountLabel(a.cid, a.seq, a.feedName) })),
     ];
-  }, [accounts]);
+  }, [accounts, value.adsenseAccount]);
+
+  // If the user switches feeds and the current adsAccount no longer belongs to it, reset to 'all'.
+  useEffect(() => {
+    if (value.adsAccount === 'all') return;
+    const stillValid = accounts.find((a) =>
+      a.cid === value.adsAccount &&
+      (value.adsenseAccount === 'all' || a.feedName === value.adsenseAccount),
+    );
+    if (!stillValid) onChange({ ...value, adsAccount: 'all' });
+  }, [value.adsenseAccount, accounts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="filter-bar">
@@ -61,7 +97,7 @@ export default function FilterBar({
         <label>AdSense Account</label>
         <Select
           value={value.adsenseAccount}
-          options={[{ value: 'androidadvice', label: 'AndroidAdvice' }]}
+          options={feedOptions}
           onChange={(v) => onChange({ ...value, adsenseAccount: v })}
           style={{ width: '100%' }}
         />

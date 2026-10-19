@@ -31,7 +31,7 @@ export default function CampaignsPage() {
   const [budgetDraft, setBudgetDraft] = useState<Record<string, number | null>>({});
   const [budgetSavingKey, setBudgetSavingKey] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterValues>({
-    adsAccount: 'all', adsenseAccount: 'androidadvice', range: defaultRange(),
+    adsAccount: 'all', adsenseAccount: 'all', range: defaultRange(),
   });
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [overview, setOverview] = useState<{ cost: number; revenue: number; profit: number; roi: number; adsenseClicks: number; unattributedRevenue?: number } | null>(null);
@@ -54,6 +54,7 @@ export default function CampaignsPage() {
         startDate: start.format('YYYY-MM-DD'),
         endDate: end.format('YYYY-MM-DD'),
         account: filters.adsAccount,
+        feed: filters.adsenseAccount,
       });
       const [campaignsRes, summaryRes] = await Promise.all([
         fetch(`/api/dash/campaigns-daily?${qs.toString()}`).then((r) => r.json()),

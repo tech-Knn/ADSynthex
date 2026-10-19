@@ -32,7 +32,7 @@ interface SummaryResponse {
 export default function DashboardPage() {
   const [filters, setFilters] = useState<FilterValues>({
     adsAccount: 'all',
-    adsenseAccount: 'androidadvice',
+    adsenseAccount: 'all',
     range: defaultRange(),
   });
   const [data, setData] = useState<SummaryResponse | null>(null);
@@ -48,6 +48,7 @@ export default function DashboardPage() {
       url.searchParams.set('startDate', start.format('YYYY-MM-DD'));
       url.searchParams.set('endDate', end.format('YYYY-MM-DD'));
       url.searchParams.set('account', filters.adsAccount);
+      url.searchParams.set('feed', filters.adsenseAccount);
       const res = await fetch(url.toString());
       const json: SummaryResponse = await res.json();
       if (id === seq.current) setData(json);

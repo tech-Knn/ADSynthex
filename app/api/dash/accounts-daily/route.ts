@@ -38,10 +38,14 @@ export async function GET(req: NextRequest) {
   }
 
   const scopeUserId = searchParams.get('scopeUserId');
+  const feed = (searchParams.get('feed') || 'all').trim();
   const effectiveUserId = scopeUserId && session.role === 'admin' ? scopeUserId : session.userId;
   const effectiveRole = scopeUserId && session.role === 'admin' ? 'user' : session.role;
   const allowed = await getAccountsForUser(effectiveUserId, effectiveRole);
-  const targets = account && account !== 'all' ? allowed.filter((c) => c === account) : allowed;
+  const feedScoped = feed === 'all' ? allowed : (await prisma.account.findMany({
+    where: { cid: { in: allowed }, feedName: feed }, select: { cid: true },
+  })).map((r) => r.cid);
+  const targets = account && account !== 'all' ? feedScoped.filter((c) => c === account) : feedScoped;
   if (targets.length === 0) return NextResponse.json({ accounts: [] });
 
   const rows = await prisma.$queryRaw<any[]>`
