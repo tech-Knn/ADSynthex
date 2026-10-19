@@ -31,12 +31,14 @@ export interface SyncResult {
 export async function syncRange(
   startDate: string,
   endDate: string,
-  accountIds?: string[]
+  accountIds?: string[],
+  feedNameArg?: string,
 ): Promise<SyncResult> {
   const t0 = Date.now();
   const errors: string[] = [];
+  const feedName = feedNameArg || FEED;
 
-  console.log(`\n[SYNC] ===== ${startDate} -> ${endDate} =====`);
+  console.log(`\n[SYNC] ===== feed=${feedName} ${startDate} -> ${endDate} =====`);
 
   // Make sure every account-mapping (including newly-added ones) is loaded
   // into the dynamic MCC cache before we start fanning out requests.
@@ -64,7 +66,7 @@ export async function syncRange(
     targets = accountIds;
   } else {
     const rows = await prisma.account.findMany({
-      where: { feedName: FEED, active: true },
+      where: { feedName, active: true },
       select: { cid: true },
     });
     targets = rows.map((r) => r.cid);
@@ -87,7 +89,7 @@ export async function syncRange(
   for (const cid of targets) {
     try {
       console.log(`[SYNC] Google Ads: account ${cid}...`);
-      const data = await fetchGoogleAdsDataForSync(startDate, endDate, cid, FEED as any);
+      const data = await fetchGoogleAdsDataForSync(startDate, endDate, cid, feedName as any);
       const campaigns = data.campaigns || [];
       const ads = data.ads || [];
       console.log(`[SYNC]   ${campaigns.length} campaign rows, ${ads.length} ads`);
@@ -189,13 +191,15 @@ export async function syncRange(
 
   let adsenseDailyUpserted = 0;
   try {
-    const feed = await prisma.feed.findUnique({ where: { feedName: FEED } });
-    const publisherId = feed?.publisherId || process.env.ANDROIDADVICE_PUBLISHER_ID;
-    if (!publisherId) throw new Error('publisher id missing');
+    const feed = await prisma.feed.findUnique({ where: { feedName } });
+    // Legacy fallback: only applies to the primary 'androidadvice' feed.
+    const envPublisher = feedName === 'androidadvice' ? process.env.ANDROIDADVICE_PUBLISHER_ID : undefined;
+    const publisherId = feed?.publisherId || envPublisher;
+    if (!publisherId) throw new Error(`publisher id missing for feed ${feedName}`);
 
-    console.log(`[SYNC] AdSense: publisher ${publisherId}...`);
+    console.log(`[SYNC][${feedName}] AdSense: publisher ${publisherId}...`);
     const revenues: AdSenseRevenue[] = await fetchAdSenseRevenueByStyleId(
-      publisherId, startDate, endDate, undefined, FEED as any
+      publisherId, startDate, endDate, undefined, feedName as any
     );
     console.log(`[SYNC]   ${revenues.length} revenue rows`);
 
