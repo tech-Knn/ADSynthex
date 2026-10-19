@@ -16,8 +16,8 @@ export async function GET(req: NextRequest) {
 
   const accounts = await prisma.account.findMany({
     where: { cid: { in: cids } },
-    select: { cid: true, seq: true },
-    orderBy: { seq: 'asc' },
+    select: { cid: true, seq: true, feedName: true },
+    orderBy: [{ feedName: 'asc' }, { seq: 'asc' }],
   });
   return NextResponse.json({ accounts });
 }
