@@ -24,8 +24,11 @@ export async function GET(req: NextRequest) {
   const effectiveUserId = scopeUserId && session.role === 'admin' ? scopeUserId : session.userId;
   const effectiveRole = scopeUserId && session.role === 'admin' ? 'user' : session.role;
   // Only true admin views (no scopeUserId) see publisher-wide unattributed revenue.
-  // Non-admins and per-user admin views do not.
-  const showUnattributed = session.role === 'admin' && !scopeUserId;
+  // Non-admins and per-user admin views do not. Also hidden when a specific
+  // feed is picked — unattributed adsense rows aren't tagged by feed/publisher
+  // in the DB, so a per-feed slice would be misleading (it'd show AndroidAdvice
+  // unattributed under a Founderzest filter, etc.).
+  const showUnattributed = session.role === 'admin' && !scopeUserId && feed === 'all';
 
   const allowed = await getAccountsForUser(effectiveUserId, effectiveRole);
   const feedScoped = feed === 'all' ? allowed : await filterByFeed(allowed, feed);
