@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Select, DatePicker, Button } from 'antd';
 import { ReloadOutlined, ExportOutlined, CalendarOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
+import { formatAccountLabel } from '@/lib/account-label';
 
 export type FilterValues = {
   adsAccount: string;
@@ -11,7 +12,7 @@ export type FilterValues = {
   range: [Dayjs, Dayjs];
 };
 
-interface AccountOpt { cid: string; seq: number | null }
+interface AccountOpt { cid: string; seq: number | null; feedName?: string }
 
 interface Props {
   value: FilterValues;
@@ -37,11 +38,9 @@ export default function FilterBar({
   }, [scopeUserId]);
 
   const adsOptions = useMemo(() => {
-    const label = (a: AccountOpt) =>
-      a.seq != null ? `androidadvices ${String(a.seq).padStart(2, '0')} (${a.cid})` : a.cid;
     return [
-      { value: 'all', label: 'All AndroidAdvice Accounts' },
-      ...accounts.map((a) => ({ value: a.cid, label: label(a) })),
+      { value: 'all', label: 'All Accounts' },
+      ...accounts.map((a) => ({ value: a.cid, label: formatAccountLabel(a.cid, a.seq, a.feedName) })),
     ];
   }, [accounts]);
 

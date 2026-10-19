@@ -10,6 +10,7 @@ import {
 } from '@ant-design/icons';
 import FilterBar, { FilterValues, defaultRange } from '@/components/AppShell/FilterBar';
 import Kpi, { fmtDate, fmtInt, fmtMoney, fmtPct } from '@/components/AppShell/Kpi';
+import { formatAccountLabel } from '@/lib/account-label';
 
 type DayAcc = { date: string; cost: number; revenue: number; profit: number; roi: number; conversions: number };
 type Account = {
@@ -27,7 +28,7 @@ type Campaign = {
   daily: DayCamp[];
 };
 
-type AccountMeta = { cid: string; seq: number | null };
+type AccountMeta = { cid: string; seq: number | null; feedName?: string };
 type UserInfo = {
   id: string; email: string; username: string | null;
   role: 'admin' | 'user'; status: string;
@@ -195,7 +196,7 @@ export default function UserPerformancePage() {
 
   const label = (cid: string) => {
     const m = meta[cid];
-    return m?.seq != null ? `androidadvices ${String(m.seq).padStart(2, '0')} (${cid})` : cid;
+    return formatAccountLabel(cid, m?.seq ?? null, m?.feedName);
   };
 
   const filteredAccounts = useMemo(() => {

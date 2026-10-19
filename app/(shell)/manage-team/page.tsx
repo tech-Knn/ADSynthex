@@ -9,6 +9,7 @@ import {
   CheckCircleOutlined, CloseCircleOutlined,
 } from '@ant-design/icons';
 import Kpi, { fmtInt } from '@/components/AppShell/Kpi';
+import { formatAccountLabel } from '@/lib/account-label';
 
 interface TeamUser {
   id: string;
@@ -51,8 +52,8 @@ export default function ManageTeamPage() {
   const [verify, setVerify] = useState<VerifyState>({ phase: 'idle' });
   const [addingAccount, setAddingAccount] = useState(false);
 
-  const accountLabel = (cid: string, seq: number | null) =>
-    seq != null ? `androidadvices ${String(seq).padStart(2, '0')} (${cid})` : cid;
+  const accountLabel = (cid: string, seq: number | null, feedName?: string) =>
+    formatAccountLabel(cid, seq, feedName);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -223,7 +224,7 @@ export default function ManageTeamPage() {
     const heldBy = holders[a.cid];
     const isOwn = editing?.accounts?.includes(a.cid);
     const blocked = !!heldBy && !isOwn;
-    const label = accountLabel(a.cid, a.seq);
+    const label = accountLabel(a.cid, a.seq, a.feedName);
     return {
       value: a.cid,
       label: blocked ? `${label} — ${heldBy}` : label,

@@ -9,6 +9,7 @@ import {
 } from '@ant-design/icons';
 import FilterBar, { FilterValues, defaultRange, loadRange, saveRange } from '@/components/AppShell/FilterBar';
 import Kpi, { fmtDate, fmtInt, fmtMoney, fmtPct } from '@/components/AppShell/Kpi';
+import { formatAccountLabel } from '@/lib/account-label';
 
 type Daily = { date: string; cost: number; revenue: number; profit: number; roi: number; conversions: number };
 type Account = {
@@ -22,7 +23,7 @@ type Account = {
   daily: Daily[];
 };
 
-type AccountMeta = { cid: string; seq: number | null };
+type AccountMeta = { cid: string; seq: number | null; feedName?: string };
 
 export default function BreakdownPage() {
   const [filters, setFilters] = useState<FilterValues>({
@@ -83,7 +84,7 @@ export default function BreakdownPage() {
 
   const label = (cid: string) => {
     const m = meta[cid];
-    return m?.seq != null ? `androidadvices ${String(m.seq).padStart(2, '0')} (${cid})` : cid;
+    return formatAccountLabel(cid, m?.seq ?? null, m?.feedName);
   };
 
   const filtered = useMemo(() => {
