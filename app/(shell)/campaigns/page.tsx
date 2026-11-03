@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { App, Input, InputNumber, Select, Table, Button, Dropdown, Switch, Tooltip, Spin } from 'antd';
+import { Alert, App, Input, InputNumber, Select, Table, Button, Dropdown, Switch, Tooltip, Spin } from 'antd';
 import {
   AppstoreOutlined, DollarOutlined, LineChartOutlined, RiseOutlined,
   SearchOutlined, DownOutlined, RightOutlined, MoreOutlined, CalendarOutlined,
@@ -28,6 +28,7 @@ export default function CampaignsPage() {
   const [budgetByCampaign, setBudgetByCampaign] = useState<Record<string, { dailyAmountUsd: number; isShared: boolean }>>({});
   const [budgetsLoading, setBudgetsLoading] = useState(false);
   // Per-row pending edit value & save state (keyed by "accountCid:campaignId")
+  const [euPolicyAccounts, setEuPolicyAccounts] = useState<Set<string>>(new Set());
   const [budgetDraft, setBudgetDraft] = useState<Record<string, number | null>>({});
   const [budgetSavingKey, setBudgetSavingKey] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterValues>({
@@ -170,7 +171,18 @@ export default function CampaignsPage() {
           });
           let data: any = {};
           try { data = await res.json(); } catch { /* non-JSON (e.g. ALB 502 HTML) */ }
-          if (!res.ok) throw new Error(data?.error || `Request failed (${res.status} ${res.statusText || ''})`);
+          if (!res.ok) {
+            if (data?.euPolicyBlock) {
+              setEuPolicyAccounts((prev) => new Set([...prev, row.accountCid]));
+              setCampaigns((prev) => prev.map((c) =>
+                c.accountCid === row.accountCid && c.campaignId === row.campaignId
+                  ? { ...c, status: row.status }
+                  : c,
+              ));
+              return;
+            }
+            throw new Error(data?.error || `Request failed (${res.status} ${res.statusText || ''})`);
+          }
           message.success(`${verb}d on Google Ads`);
         } catch (e: any) {
           // Revert
@@ -199,6 +211,25 @@ export default function CampaignsPage() {
     }
     if (!isFinite(draft) || draft < 1 || draft > 10000) {
       message.error('Enter a daily budget between $1 and $10,000');
+      setBudgetDraft((prev) => { const n = { ...prev }; delete n[key]; return n; });
+      return;
+    }
+
+    const info = budgetByCampaign[key];
+    const confirmed = await new Promise<boolean>((resolve) => {
+      modal.confirm({
+        title: info?.isShared ? 'Update Shared Budget?' : `Change budget to $${draft.toFixed(2)}/day?`,
+        content: info?.isShared
+          ? `This budget is shared. Changing to $${draft.toFixed(2)}/day will affect ALL campaigns using this budget — not just "${row.campaignName}".`
+          : `Change daily budget for "${row.campaignName}" from $${current?.toFixed(2)} to $${draft.toFixed(2)}?`,
+        okText: info?.isShared ? 'Yes, update all' : 'Confirm',
+        okButtonProps: info?.isShared ? { danger: true } : {},
+        cancelText: 'Cancel',
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+    if (!confirmed) {
       setBudgetDraft((prev) => { const n = { ...prev }; delete n[key]; return n; });
       return;
     }
@@ -357,6 +388,32 @@ export default function CampaignsPage() {
         value={filters} onChange={(v) => { setFilters(v); saveRange(v.range); }} onRefresh={load}
         onExport={() => exportCsv(filtered)} showExport loading={loading}
       />
+
+      {euPolicyAccounts.size > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          closable
+          onClose={() => setEuPolicyAccounts(new Set())}
+          style={{ marginBottom: 16 }}
+          message="EU Political Advertising Declaration Required"
+          description={
+            <span>
+              {euPolicyAccounts.size === 1
+                ? `Account ${[...euPolicyAccounts][0]}`
+                : `${euPolicyAccounts.size} accounts`}{' '}
+              cannot be mutated until the EU Political Advertising Declaration is submitted in Google Ads.{' '}
+              <a
+                href="https://ads.google.com/aw/policymanager/declarations"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Complete declaration in Google Ads →
+              </a>
+            </span>
+          }
+        />
+      )}
 
       <div className={`kpi-grid ${overview?.unattributedRevenue !== undefined ? 'cols-6' : 'cols-5'}`}>
         <Kpi label="Total Campaigns" tone="indigo" value={fmtInt(summary.count)} icon={<AppstoreOutlined />} />

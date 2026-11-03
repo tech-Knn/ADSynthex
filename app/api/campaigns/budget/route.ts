@@ -79,9 +79,15 @@ export async function POST(req: NextRequest) {
       accountCid, campaignId, dailyBudget, ms: Date.now() - t0,
       err: err?.message || String(err),
       errors: err?.errors || err?.failure?.errors,
+      errorCode: err?.errors?.[0]?.error_code || err?.failure?.errors?.[0]?.error_code,
+      fullErr: JSON.stringify(err, Object.getOwnPropertyNames(err)).slice(0, 2000),
     });
     const details = err?.errors?.[0]?.message || err?.failure?.errors?.[0]?.message || err?.message;
-    return NextResponse.json({ error: details || 'Google Ads update failed' }, { status: 500 });
+    const isEuPolicy = details && (details.toLowerCase().includes('eu political') || details.toLowerCase().includes('political advertising declaration'));
+    return NextResponse.json(
+      { error: isEuPolicy ? 'EU_POLITICAL_ADS_DECLARATION_REQUIRED' : (details || 'Google Ads update failed'), euPolicyBlock: !!isEuPolicy },
+      { status: isEuPolicy ? 422 : 500 },
+    );
   }
 }
 

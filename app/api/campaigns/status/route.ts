@@ -56,11 +56,19 @@ export async function POST(req: NextRequest) {
       accountCid, campaignId, status, ms: Date.now() - t0,
       err: err?.message || String(err),
       errors: err?.errors || err?.failure?.errors,
+      errorCode: err?.errors?.[0]?.error_code || err?.failure?.errors?.[0]?.error_code,
+      fullErr: JSON.stringify(err, Object.getOwnPropertyNames(err)).slice(0, 2000),
     });
     const details = extractGoogleAdsError(err);
+    const isEuPolicy = isEuPoliticalAdsError(details);
     return NextResponse.json(
-      { error: details || 'Google Ads update failed' },
-      { status: 500 },
+      {
+        error: isEuPolicy
+          ? 'EU_POLITICAL_ADS_DECLARATION_REQUIRED'
+          : (details || 'Google Ads update failed'),
+        euPolicyBlock: isEuPolicy,
+      },
+      { status: 422 },
     );
   }
 
@@ -77,4 +85,9 @@ function extractGoogleAdsError(err: any): string | null {
   const errors = err?.errors || err?.failure?.errors;
   if (Array.isArray(errors) && errors[0]?.message) return errors[0].message;
   return err?.message || null;
+}
+
+function isEuPoliticalAdsError(msg: string | null): boolean {
+  if (!msg) return false;
+  return msg.toLowerCase().includes('eu political') || msg.toLowerCase().includes('political advertising declaration');
 }

@@ -151,6 +151,13 @@ export const ACCOUNT_TO_MCC: Record<string, keyof typeof MCC_CONFIGS> = {
   '9220539746': 'primary',  // androidadvices 17
   '8693469647': 'primary',  // androidadvices 18
   '9722524142': 'primary',  // androidadvices 19
+
+  // Founderzest MCC accounts (confirmed via API test 2026-11-02)
+  '1301794017': 'founderzest',
+  '7543934648': 'founderzest',
+  '3820989800': 'founderzest',
+  '5043379568': 'founderzest',
+  '4679174227': 'founderzest',
 };
 
 /**

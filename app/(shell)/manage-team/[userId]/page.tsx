@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { App, Button, Input, InputNumber, Select, Switch, Table, Dropdown, Spin, Tabs, Tooltip } from 'antd';
+import { App, Alert, Button, Input, InputNumber, Select, Switch, Table, Dropdown, Spin, Tabs, Tooltip } from 'antd';
 import {
   ArrowLeftOutlined, CalendarOutlined, DollarOutlined, LineChartOutlined, RiseOutlined,
   SearchOutlined, DownOutlined, RightOutlined, MoreOutlined,
@@ -35,12 +35,13 @@ type UserInfo = {
 };
 
 export default function UserPerformancePage() {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const params = useParams<{ userId: string }>();
   const router = useRouter();
   const userId = params.userId;
   const [user, setUser] = useState<UserInfo | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [euPolicyAccounts, setEuPolicyAccounts] = useState<Set<string>>(new Set());
   const [budgetByCampaign, setBudgetByCampaign] = useState<Record<string, { dailyAmountUsd: number; isShared: boolean }>>({});
   const [budgetsLoading, setBudgetsLoading] = useState(false);
   const [budgetDraft, setBudgetDraft] = useState<Record<string, number | null>>({});
@@ -130,31 +131,52 @@ export default function UserPerformancePage() {
     return () => { cancelled = true; };
   }, [campaigns]);
 
-  const toggleStatus = async (row: Campaign) => {
+  const toggleStatus = (row: Campaign) => {
     const nextStatus = row.status === 'ENABLED' ? 'PAUSED' : 'ENABLED';
-    const key = `${row.accountCid}::${row.campaignId}`;
-    setTogglingId(key);
-    setCampaigns((prev) => prev.map((c) =>
-      c.accountCid === row.accountCid && c.campaignId === row.campaignId ? { ...c, status: nextStatus } : c,
-    ));
-    try {
-      const res = await fetch('/api/campaigns/status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accountCid: row.accountCid, campaignId: row.campaignId, status: nextStatus }),
-      });
-      let data: any = {};
-      try { data = await res.json(); } catch { }
-      if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
-      message.success(`${nextStatus === 'PAUSED' ? 'Paused' : 'Resumed'} on Google Ads`);
-    } catch (e: any) {
-      setCampaigns((prev) => prev.map((c) =>
-        c.accountCid === row.accountCid && c.campaignId === row.campaignId ? { ...c, status: row.status } : c,
-      ));
-      message.error(e.message || 'Update failed');
-    } finally {
-      setTogglingId(null);
-    }
+    const verb = nextStatus === 'PAUSED' ? 'Pause' : 'Resume';
+    modal.confirm({
+      title: `${verb} "${row.campaignName}"?`,
+      content: nextStatus === 'PAUSED'
+        ? 'This will pause the campaign on Google Ads immediately.'
+        : 'This will resume the campaign on Google Ads.',
+      okText: verb,
+      cancelText: 'Cancel',
+      okButtonProps: nextStatus === 'PAUSED' ? { danger: true } : {},
+      onOk: async () => {
+        const key = `${row.accountCid}::${row.campaignId}`;
+        setTogglingId(key);
+        setCampaigns((prev) => prev.map((c) =>
+          c.accountCid === row.accountCid && c.campaignId === row.campaignId ? { ...c, status: nextStatus } : c,
+        ));
+        try {
+          const res = await fetch('/api/campaigns/status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ accountCid: row.accountCid, campaignId: row.campaignId, status: nextStatus }),
+          });
+          let data: any = {};
+          try { data = await res.json(); } catch { }
+          if (!res.ok) {
+            if (data?.euPolicyBlock) {
+              setEuPolicyAccounts((prev) => new Set([...prev, row.accountCid]));
+              setCampaigns((prev) => prev.map((c) =>
+                c.accountCid === row.accountCid && c.campaignId === row.campaignId ? { ...c, status: row.status } : c,
+              ));
+              return;
+            }
+            throw new Error(data?.error || `Request failed (${res.status})`);
+          }
+          message.success(`${nextStatus === 'PAUSED' ? 'Paused' : 'Resumed'} on Google Ads`);
+        } catch (e: any) {
+          setCampaigns((prev) => prev.map((c) =>
+            c.accountCid === row.accountCid && c.campaignId === row.campaignId ? { ...c, status: row.status } : c,
+          ));
+          message.error(e.message || 'Update failed');
+        } finally {
+          setTogglingId(null);
+        }
+      },
+    });
   };
 
   const commitBudget = async (row: Campaign) => {
@@ -170,6 +192,25 @@ export default function UserPerformancePage() {
       setBudgetDraft((prev) => { const n = { ...prev }; delete n[key]; return n; });
       return;
     }
+    const info = budgetByCampaign[key];
+    const confirmed = await new Promise<boolean>((resolve) => {
+      modal.confirm({
+        title: info?.isShared ? 'Update Shared Budget?' : `Change budget to $${draft.toFixed(2)}/day?`,
+        content: info?.isShared
+          ? `This budget is shared. Changing to $${draft.toFixed(2)}/day will affect ALL campaigns using this budget — not just "${row.campaignName}".`
+          : `Change daily budget for "${row.campaignName}" from $${current?.toFixed(2)} to $${draft.toFixed(2)}?`,
+        okText: info?.isShared ? 'Yes, update all' : 'Confirm',
+        okButtonProps: info?.isShared ? { danger: true } : {},
+        cancelText: 'Cancel',
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+    if (!confirmed) {
+      setBudgetDraft((prev) => { const n = { ...prev }; delete n[key]; return n; });
+      return;
+    }
+
     setBudgetSavingKey(key);
     try {
       const res = await fetch('/api/campaigns/budget', {
@@ -333,6 +374,32 @@ export default function UserPerformancePage() {
         onExport={() => exportCampaigns(filteredCampaigns)} showExport loading={loading}
         scopeUserId={userId}
       />
+
+      {euPolicyAccounts.size > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          closable
+          onClose={() => setEuPolicyAccounts(new Set())}
+          style={{ marginBottom: 16 }}
+          message="EU Political Advertising Declaration Required"
+          description={
+            <span>
+              {euPolicyAccounts.size === 1
+                ? `Account ${[...euPolicyAccounts][0]}`
+                : `${euPolicyAccounts.size} accounts`}{' '}
+              cannot be mutated until the EU Political Advertising Declaration is submitted in Google Ads.{' '}
+              <a
+                href={`https://ads.google.com/aw/policymanager/declarations`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Complete declaration in Google Ads →
+              </a>
+            </span>
+          }
+        />
+      )}
 
       <div className="kpi-grid cols-5">
         <Kpi label="Total Cost" tone="red" value={fmtMoney(summary?.cost ?? 0)} delta={delta?.cost ?? null} invertDelta icon={<CalendarOutlined />} />
