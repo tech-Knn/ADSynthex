@@ -6,6 +6,7 @@ import { resolveMccKeyForFeed, registerAccountMCC } from '@/lib/mcc-config';
 import { enums } from 'google-ads-api';
 import sharp from 'sharp';
 import { buildCreative, generateLogoPng } from '@/lib/ad-creative';
+import { getAccountsForUser } from '@/lib/account-scope';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -52,6 +53,13 @@ export async function POST(req: NextRequest) {
     if (!setup?.adAccount) return NextResponse.json({ error: 'No ad account in saved setup. Pick an account and click Save setup.' }, { status: 400 });
 
     const accountCid = String(setup.adAccount);
+    // non-admins may only launch into their assigned accounts
+    if (session.role !== 'admin') {
+      const mine = await getAccountsForUser((session as any).userId, session.role);
+      if (!mine.includes(accountCid)) {
+        return NextResponse.json({ error: 'You are not assigned to this ad account.' }, { status: 403 });
+      }
+    }
     const ctry = country || setup.defaultCountry || 'US';
     const topic = String(articleTitle || '').slice(0, 60) || 'Untitled';
     const businessName = setup.businessName || 'AndroidAdvice';

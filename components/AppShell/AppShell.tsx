@@ -24,7 +24,7 @@ const NAV: NavItem[] = [
   { key: 'dashboard', label: 'Dashboard', href: '/dashboard', icon: <DashboardOutlined /> },
   { key: 'breakdown', label: 'Breakdown', href: '/dashboard/breakdown', icon: <CalendarOutlined /> },
   { key: 'campaigns', label: 'Campaigns', href: '/campaigns', icon: <BarChartOutlined /> },
-  { key: 'ad-launcher', label: 'Ads Launcher', href: '/ad-launcher', icon: <RocketOutlined />, adminOnly: true },
+  { key: 'ad-launcher', label: 'Ads Launcher', href: '/ad-launcher', icon: <RocketOutlined /> },
   { key: 'manage-team', label: 'Manage Team', href: '/manage-team', icon: <TeamOutlined />, adminOnly: true },
 ];
 
@@ -91,7 +91,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       fetch('/api/notifications')
         .then((r) => r.ok ? r.json() : { notifications: [] })
         .then((d) => { if (!cancelled) setNotifs(d.notifications || []); })
-        .catch(() => {});
+        .catch(() => { });
     load();
     const t = setInterval(load, 60000);
     return () => { cancelled = true; clearInterval(t); };
