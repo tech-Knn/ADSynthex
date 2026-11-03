@@ -14,6 +14,7 @@ import {
   CalendarOutlined,
   WarningOutlined,
   CheckCircleOutlined,
+  RocketOutlined,
 } from '@ant-design/icons';
 import AsxLogo from './AsxLogo';
 
@@ -23,6 +24,7 @@ const NAV: NavItem[] = [
   { key: 'dashboard', label: 'Dashboard', href: '/dashboard', icon: <DashboardOutlined /> },
   { key: 'breakdown', label: 'Breakdown', href: '/dashboard/breakdown', icon: <CalendarOutlined /> },
   { key: 'campaigns', label: 'Campaigns', href: '/campaigns', icon: <BarChartOutlined /> },
+  { key: 'ad-launcher', label: 'Ads Launcher', href: '/ad-launcher', icon: <RocketOutlined />, adminOnly: true },
   { key: 'manage-team', label: 'Manage Team', href: '/manage-team', icon: <TeamOutlined />, adminOnly: true },
 ];
 

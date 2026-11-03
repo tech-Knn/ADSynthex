@@ -248,7 +248,7 @@ export default function UserPerformancePage() {
 
   const campaignCols = [
     { title: 'Campaign', dataIndex: 'campaignName', render: (v: string) => <span style={{ fontWeight: 500, color: '#0f172a' }}>{v}</span> },
-    { title: 'Style ID', dataIndex: 'styleId', width: 120, render: (v: string) => <span className="m-muted">{v}</span> },
+    { title: 'Channel ID', dataIndex: 'styleId', width: 120, render: (v: string) => <span className="m-muted">{v}</span> },
     { title: 'Country', dataIndex: 'country', width: 100, render: (v: string) => <span className="m-muted">{v}</span> },
     {
       title: 'Status', dataIndex: 'status', width: 100, align: 'center' as const,
@@ -387,7 +387,7 @@ export default function UserPerformancePage() {
               <div className="panel">
                 <div className="table-toolbar">
                   <div className="toolbar-left">
-                    <Input placeholder="Search campaign name, style ID, or country..." prefix={<SearchOutlined />} allowClear
+                    <Input placeholder="Search campaign name, channel ID, or country..." prefix={<SearchOutlined />} allowClear
                       value={campaignSearch} onChange={(e) => setCampaignSearch(e.target.value)} />
                   </div>
                   <div className="toolbar-right">

@@ -44,6 +44,7 @@
     "react-chartjs-2": "^5.2.0",
     "react-dom": "18.2.0",
     "react-world-flags": "^1.6.0",
+    "sharp": "^0.35.5",
     "tailwindcss": "^4.1.10",
     "typescript": "5.3.3"
   },

@@ -373,7 +373,7 @@ export default function CampaignsPage() {
         <div className="table-toolbar">
           <div className="toolbar-left">
             <Input
-              placeholder="Search campaign name, style ID, or country..."
+              placeholder="Search campaign name, channel ID, or country..."
               value={search} onChange={(e) => setSearch(e.target.value)}
               prefix={<SearchOutlined />} allowClear
             />

@@ -49,6 +49,25 @@ model Campaign {
   @@map("campaigns")
 }
 
+model LaunchedCampaign {
+  id           String   @id @default(cuid())
+  articleUrl   String
+  articleTitle String?
+  feed         String
+  accountCid   String
+  country      String
+  campaignId   String
+  campaignName String
+  resourceName String
+  launchedBy   String?
+  createdAt    DateTime @default(now())
+
+  @@unique([articleUrl, accountCid])
+  @@index([accountCid])
+  @@index([feed])
+  @@map("launched_campaigns")
+}
+
 model AdsDaily {
   accountCid  String   @map("account_cid")
   campaignId  String   @map("campaign_id")
