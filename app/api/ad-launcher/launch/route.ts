@@ -145,8 +145,19 @@ export async function POST(req: NextRequest) {
     // 5) ad copy (cached from the preview, or generated now)
     const cacheRow = await prisma.appSetting.findUnique({ where: { key: 'creative:' + articleUrl } });
     const creative = cacheRow?.value ? JSON.parse(cacheRow.value) : await buildCreative({ title: topic, articleUrl, businessName, cta });
-    const headlines = (creative.headlines || []).slice(0, 5);
-    const descriptions = (creative.descriptions || []).slice(0, 5);
+
+    // Demand Gen limits: headline ≤ 40 chars, description ≤ 90 chars.
+    // Trim each (and drop empties/dupes) so a long auto headline can't fail the whole launch.
+    const clamp = (arr: any[], max: number) =>
+      Array.from(new Set(
+        (arr || [])
+          .map((t) => String(t ?? '').trim())
+          .filter(Boolean)
+          .map((t) => (t.length > max ? t.slice(0, max).trim() : t))
+      ));
+
+    const headlines = clamp(creative.headlines, 40).slice(0, 5);
+    const descriptions = clamp(creative.descriptions, 90).slice(0, 5);
     if (!headlines.length || !descriptions.length) throw new Error('No ad copy available (headlines/descriptions).');
 
     // 6) process images + logo → upload all as image assets in one call
