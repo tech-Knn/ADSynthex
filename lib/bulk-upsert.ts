@@ -93,7 +93,6 @@ export async function bulkUpsertCampaigns(
       ON CONFLICT (account_cid, campaign_id)
       DO UPDATE SET
         name       = EXCLUDED.name,
-        status     = EXCLUDED.status,
         country    = COALESCE(NULLIF(EXCLUDED.country, ''), campaigns.country),
         updated_at = now()
     `;
